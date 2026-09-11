@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "SettleUp",
+    "slug": "settleup",
+    "scheme": "settleup",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.settleup.mobile"
+    },
+    "android": {
+      "package": "app.settleup.mobile",
+      "permissions": ["android.permission.READ_SMS"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "name": "SettleUp"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan a UPI QR code after you choose to enable the camera.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Choose a person to split with. Your address book is not uploaded."
+        }
+      ],
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose a bill photo to attach or read its items.",
+          "cameraPermission": "Take a bill photo or scan a UPI code.",
+          "microphonePermission": false
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

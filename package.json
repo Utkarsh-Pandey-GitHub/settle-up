@@ -1,0 +1,61 @@
+{
+  "name": "settleup",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run web -w @settleup/mobile",
+    "mobile": "npm run start -w @settleup/mobile",
+    "api": "tsx watch apps/api/src/server.ts",
+    "worker": "tsx apps/api/src/worker.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p apps/mobile/tsconfig.json",
+    "test": "vitest run",
+    "test:integration": "RUN_DB_TESTS=1 vitest run tests/integration.test.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "build:web": "npm run export -w @settleup/mobile",
+    "check": "npm run db:generate && npm run typecheck && npm test",
+    "db:local": "node scripts/local-db.mjs",
+    "format": "prettier --write apps packages tests scripts docs README.md",
+    "test:e2e": "playwright test",
+    "format:check": "prettier --check apps packages tests scripts docs README.md"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.0",
+    "libphonenumber-js": "^1.12.33",
+    "luxon": "^3.7.2",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "zod": "^3.25.76",
+    "react-native-reanimated": "4.1.7",
+    "react-native-worklets": "0.5.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.1",
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^22.19.0",
+    "@types/react": "~19.1.10",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "prettier": "^3.9.6",
+    "prisma": "6.19.0",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "overrides": {
+    "react-native": "0.81.5",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native-reanimated": "4.1.7",
+    "react-native-worklets": "0.5.1"
+  },
+  "type": "module"
+}

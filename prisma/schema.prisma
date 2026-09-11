@@ -1,0 +1,457 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionType {
+  PERSONAL_EXPENSE
+  SHARED_EXPENSE
+  LOAN
+  LOAN_REPAYMENT
+  SETTLEMENT
+  ADJUSTMENT
+  REVERSAL
+}
+
+enum TransactionStatus {
+  PENDING
+  SETTLED
+  DISPUTED
+  REVERSED
+  PENDING_LOAN
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model User {
+  ledgerActivity   LedgerActivity[]
+  openedDisputes   Dispute[]                @relation("DisputeOpener")
+  resolvedDisputes Dispute[]                @relation("DisputeResolver")
+  notificationJobs NotificationJob[]
+  id               String                   @id @default(uuid()) @db.Uuid
+  createdAt        DateTime                 @default(now()) @db.Timestamptz
+  deletedAt        DateTime?                @db.Timestamptz
+  profile          UserProfile?
+  phone            PhoneIdentity?
+  sessions         DeviceSession[]
+  peers            ContactPeer[]            @relation("PeerOwner")
+  linkedPeers      ContactPeer[]            @relation("LinkedUser")
+  groupMembers     GroupMember[]
+  ledgerMembers    LedgerMember[]
+  transactions     Transaction[]            @relation("Source")
+  received         Transaction[]            @relation("Destination")
+  participants     TransactionParticipant[]
+  splits           ExpenseSplit[]
+  owed             Obligation[]             @relation("Debtor")
+  receivable       Obligation[]             @relation("Creditor")
+  tags             Tag[]
+  goals            Goal[]
+  imports          SmsImportRecord[]
+  links            SharedAnalyticsLink[]
+  notifications    NotificationPreference?
+  events           AuditEvent[]
+  blocks           UserBlock[]              @relation("Blocker")
+  blockedBy        UserBlock[]              @relation("Blocked")
+}
+
+model UserProfile {
+  userId       String  @id @db.Uuid
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String  @db.VarChar(100)
+  email        String? @db.VarChar(254)
+  avatar       String? @db.VarChar(500)
+  currency     String  @default("INR") @db.Char(3)
+  timezone     String  @default("Asia/Kolkata") @db.VarChar(64)
+  discoverable Boolean @default(false)
+}
+
+model PhoneIdentity {
+  userId     String   @id @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone      String   @unique @db.VarChar(16)
+  verifiedAt DateTime @db.Timestamptz
+}
+
+model OtpChallenge {
+  id         String    @id @default(uuid()) @db.Uuid
+  phone      String    @db.VarChar(16)
+  digest     String
+  expiresAt  DateTime  @db.Timestamptz
+  attempts   Int       @default(0)
+  consumedAt DateTime? @db.Timestamptz
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+
+  @@index([phone, createdAt])
+  @@index([expiresAt])
+}
+
+model DeviceSession {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  familyId      String    @db.Uuid
+  refreshDigest String    @unique
+  expiresAt     DateTime  @db.Timestamptz
+  rotatedAt     DateTime? @db.Timestamptz
+  revokedAt     DateTime? @db.Timestamptz
+  createdAt     DateTime  @default(now()) @db.Timestamptz
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@index([expiresAt])
+}
+
+model ContactPeer {
+  id              String    @id @default(uuid()) @db.Uuid
+  ownerId         String    @db.Uuid
+  owner           User      @relation("PeerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  name            String    @db.VarChar(100)
+  phone           String    @db.VarChar(16)
+  linkedUserId    String?   @db.Uuid
+  linkedUser      User?     @relation("LinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  inviteDigest    String?   @unique
+  inviteExpiresAt DateTime? @db.Timestamptz
+
+  @@unique([ownerId, phone])
+}
+
+model UserBlock {
+  blockerId String @db.Uuid
+  blocker   User   @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String @db.Uuid
+  blocked   User   @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+}
+
+model Group {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String        @db.VarChar(100)
+  description String?       @db.VarChar(500)
+  createdAt   DateTime      @default(now()) @db.Timestamptz
+  archivedAt  DateTime?     @db.Timestamptz
+  members     GroupMember[]
+  ledgers     Ledger[]
+}
+
+model GroupMember {
+  groupId  String    @db.Uuid
+  group    Group     @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  userId   String    @db.Uuid
+  user     User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role     Role      @default(MEMBER)
+  joinedAt DateTime  @default(now()) @db.Timestamptz
+  leftAt   DateTime? @db.Timestamptz
+
+  @@id([groupId, userId])
+  @@index([userId, leftAt])
+}
+
+model Ledger {
+  id           String           @id @default(uuid()) @db.Uuid
+  groupId      String           @db.Uuid
+  group        Group            @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  name         String           @db.VarChar(100)
+  currency     String           @db.Char(3)
+  archivedAt   DateTime?        @db.Timestamptz
+  createdAt    DateTime         @default(now()) @db.Timestamptz
+  updatedAt    DateTime         @updatedAt @db.Timestamptz
+  members      LedgerMember[]
+  transactions Transaction[]
+  obligations  Obligation[]
+  activity     LedgerActivity[]
+  goalScopes   GoalScope[]
+}
+
+model LedgerMember {
+  ledgerId String    @db.Uuid
+  ledger   Ledger    @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
+  userId   String    @db.Uuid
+  user     User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role     Role      @default(MEMBER)
+  leftAt   DateTime? @db.Timestamptz
+
+  @@id([ledgerId, userId])
+  @@index([userId, leftAt])
+}
+
+model Transaction {
+  id               String                   @id @default(uuid()) @db.Uuid
+  sourceId         String                   @db.Uuid
+  source           User                     @relation("Source", fields: [sourceId], references: [id], onDelete: Restrict)
+  destinationId    String?                  @db.Uuid
+  destination      User?                    @relation("Destination", fields: [destinationId], references: [id], onDelete: Restrict)
+  ledgerId         String?                  @db.Uuid
+  ledger           Ledger?                  @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
+  title            String                   @db.VarChar(120)
+  amountMinor      BigInt
+  currency         String                   @db.Char(3)
+  type             TransactionType
+  status           TransactionStatus
+  occurredAt       DateTime                 @db.Timestamptz
+  notes            String?                  @db.VarChar(2000)
+  icon             String?                  @db.VarChar(16)
+  paymentReference String?                  @db.VarChar(128)
+  idempotencyKey   String                   @db.Uuid
+  requestDigest    String
+  version          Int                      @default(1)
+  correctsId       String?                  @db.Uuid
+  corrects         Transaction?             @relation("Correction", fields: [correctsId], references: [id], onDelete: Restrict)
+  corrections      Transaction[]            @relation("Correction")
+  createdAt        DateTime                 @default(now()) @db.Timestamptz
+  participants     TransactionParticipant[]
+  splits           ExpenseSplit[]
+  obligations      Obligation[]
+  settlements      Settlement[]
+  tags             TransactionTag[]
+  disputes         Dispute[]
+  attachments      Attachment[]
+  items            TransactionItem[]
+
+  @@unique([sourceId, idempotencyKey])
+  @@index([sourceId, occurredAt])
+  @@index([destinationId, occurredAt])
+  @@index([ledgerId, occurredAt])
+  @@index([currency, status, occurredAt])
+}
+
+model TransactionParticipant {
+  transactionId String      @db.Uuid
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  userId        String      @db.Uuid
+  user          User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([transactionId, userId])
+  @@index([userId])
+}
+
+model ExpenseSplit {
+  transactionId String      @db.Uuid
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  userId        String      @db.Uuid
+  user          User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  amountMinor   BigInt
+  method        String      @db.VarChar(16)
+  weight        BigInt?
+
+  @@id([transactionId, userId])
+}
+
+model Obligation {
+  id             String       @id @default(uuid()) @db.Uuid
+  transactionId  String       @db.Uuid
+  transaction    Transaction  @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  ledgerId       String       @db.Uuid
+  ledger         Ledger       @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
+  debtorId       String       @db.Uuid
+  debtor         User         @relation("Debtor", fields: [debtorId], references: [id], onDelete: Restrict)
+  creditorId     String       @db.Uuid
+  creditor       User         @relation("Creditor", fields: [creditorId], references: [id], onDelete: Restrict)
+  amountMinor    BigInt
+  remainingMinor BigInt
+  currency       String       @db.Char(3)
+  version        Int          @default(1)
+  settlements    Settlement[]
+
+  @@unique([transactionId, debtorId, creditorId])
+  @@index([ledgerId, debtorId, creditorId, currency])
+}
+
+model Settlement {
+  id            String      @id @default(uuid()) @db.Uuid
+  transactionId String      @db.Uuid
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  obligationId  String      @db.Uuid
+  obligation    Obligation  @relation(fields: [obligationId], references: [id], onDelete: Restrict)
+  amountMinor   BigInt
+
+  @@unique([transactionId, obligationId])
+}
+
+model Tag {
+  id           String           @id @default(uuid()) @db.Uuid
+  ownerId      String           @db.Uuid
+  owner        User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name         String           @db.VarChar(40)
+  color        String           @db.VarChar(7)
+  archivedAt   DateTime?        @db.Timestamptz
+  transactions TransactionTag[]
+  scopes       GoalScope[]
+
+  @@unique([ownerId, name])
+}
+
+model TransactionTag {
+  transactionId String      @db.Uuid
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  tagId         String      @db.Uuid
+  tag           Tag         @relation(fields: [tagId], references: [id], onDelete: Restrict)
+
+  @@id([transactionId, tagId])
+  @@index([tagId])
+}
+
+model LedgerActivity {
+  actor     User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  id        String   @id @default(uuid()) @db.Uuid
+  ledgerId  String   @db.Uuid
+  ledger    Ledger   @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
+  actorId   String   @db.Uuid
+  event     String   @db.VarChar(50)
+  message   String   @db.VarChar(250)
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([ledgerId, createdAt])
+}
+
+model Dispute {
+  opener         User              @relation("DisputeOpener", fields: [openedBy], references: [id], onDelete: Restrict)
+  resolver       User?             @relation("DisputeResolver", fields: [resolvedBy], references: [id], onDelete: Restrict)
+  id             String            @id @default(uuid()) @db.Uuid
+  transactionId  String            @db.Uuid
+  transaction    Transaction       @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  openedBy       String            @db.Uuid
+  reason         String            @db.VarChar(1000)
+  previousStatus TransactionStatus
+  createdAt      DateTime          @default(now()) @db.Timestamptz
+  resolvedBy     String?           @db.Uuid
+  resolvedAt     DateTime?         @db.Timestamptz
+  resolution     String?           @db.VarChar(1000)
+
+  @@index([transactionId, resolvedAt])
+}
+
+model Goal {
+  id                 String      @id @default(uuid()) @db.Uuid
+  ownerId            String      @db.Uuid
+  owner              User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name               String      @db.VarChar(100)
+  amountMinor        BigInt
+  currency           String      @db.Char(3)
+  period             String      @db.VarChar(10)
+  start              DateTime    @db.Timestamptz
+  end                DateTime    @db.Timestamptz
+  thresholds         Int[]       @default([50, 80, 100])
+  notifiedThresholds Int[]       @default([])
+  scopes             GoalScope[]
+
+  @@index([ownerId, end])
+}
+
+model GoalScope {
+  id       String  @id @default(uuid()) @db.Uuid
+  goalId   String  @db.Uuid
+  goal     Goal    @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  tagId    String? @db.Uuid
+  tag      Tag?    @relation(fields: [tagId], references: [id], onDelete: Restrict)
+  ledgerId String? @db.Uuid
+  ledger   Ledger? @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
+}
+
+model SmsImportRecord {
+  id          String   @id @default(uuid()) @db.Uuid
+  ownerId     String   @db.Uuid
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  fingerprint String   @db.Char(64)
+  decision    String   @db.VarChar(10)
+  expiresAt   DateTime @db.Timestamptz
+
+  @@unique([ownerId, fingerprint])
+  @@index([expiresAt])
+}
+
+model SharedAnalyticsLink {
+  id           String                   @id @default(uuid()) @db.Uuid
+  ownerId      String                   @db.Uuid
+  owner        User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tokenDigest  String                   @unique @db.Char(64)
+  privatePhone String?                  @db.VarChar(16)
+  expiresAt    DateTime                 @db.Timestamptz
+  revokedAt    DateTime?                @db.Timestamptz
+  createdAt    DateTime                 @default(now()) @db.Timestamptz
+  snapshot     SharedAnalyticsSnapshot?
+  accessEvents SharedLinkAccessEvent[]
+
+  @@index([expiresAt])
+  @@index([ownerId])
+}
+
+model SharedAnalyticsSnapshot {
+  linkId  String              @id @db.Uuid
+  link    SharedAnalyticsLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  payload Json
+}
+
+model SharedLinkAccessEvent {
+  id        String              @id @default(uuid()) @db.Uuid
+  linkId    String              @db.Uuid
+  link      SharedAnalyticsLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  allowed   Boolean
+  createdAt DateTime            @default(now()) @db.Timestamptz
+
+  @@index([linkId, createdAt])
+}
+
+model Attachment {
+  id            String      @id @default(uuid()) @db.Uuid
+  transactionId String      @db.Uuid
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  objectKey     String      @unique
+  contentType   String      @db.VarChar(50)
+  size          Int
+  state         String      @default("QUARANTINED") @db.VarChar(16)
+}
+
+model NotificationPreference {
+  userId    String  @id @db.Uuid
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goals     Boolean @default(false)
+  activity  Boolean @default(false)
+  pushToken String?
+}
+
+model NotificationJob {
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  key         String    @unique
+  message     String    @db.VarChar(250)
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+  deliveredAt DateTime? @db.Timestamptz
+  attempts    Int       @default(0)
+
+  @@index([deliveredAt, createdAt])
+}
+
+model AuditEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String   @db.Uuid
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  resourceId String   @db.Uuid
+  action     String   @db.VarChar(50)
+  detail     Json
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  @@index([actorId, createdAt])
+  @@index([resourceId, createdAt])
+}
+
+// Line totals include quantity. Tax/discount can be separate signed lines.
+model TransactionItem {
+  transactionId String      @db.Uuid
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  position      Int
+  name          String      @db.VarChar(120)
+  quantity      Decimal     @db.Decimal(10, 3)
+  amountMinor   BigInt
+
+  @@id([transactionId, position])
+}
