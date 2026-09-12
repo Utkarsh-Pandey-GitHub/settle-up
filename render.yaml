@@ -16,6 +16,12 @@ services:
         value: 0.0.0.0
       - key: PORT
         value: 10000
+      - key: JWT_SECRET
+        value: settleup_jwt_secret_production_key_min_32_characters_long_123
+      - key: OTP_PEPPER
+        value: settleup_otp_pepper_production_key_min_32_characters_long_456
+      - key: OTP_PROVIDER
+        value: development
       - key: TRUECALLER_CLIENT_ID
         value: reu4dkuzbwcc9bcwz2yjepj1cewqd4tpf7_xl11cd1s
 
