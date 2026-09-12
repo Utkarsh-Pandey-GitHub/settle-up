@@ -15,8 +15,9 @@ class ScanQrWidget : AppWidgetProvider() {
   override fun onUpdate(context: Context, mgr: AppWidgetManager, ids: IntArray) {
     for (id in ids) {
       val views = RemoteViews(context.packageName, R.layout.widget_action)
-      views.setImageViewResource(R.id.widget_icon, R.drawable.widget_qr_icon)
+      views.setImageViewResource(R.id.widget_icon, R.drawable.widget_mascot_qr)
       views.setTextViewText(R.id.widget_title, context.getString(R.string.widget_qr_name))
+      views.setTextViewText(R.id.widget_subtitle, "Tap to scan QR")
       views.setOnClickPendingIntent(R.id.widget_root, deepLink(context, "settleup://scan"))
       mgr.updateAppWidget(id, views)
     }
@@ -24,14 +25,15 @@ class ScanQrWidget : AppWidgetProvider() {
 }
 
 /**
- * A simple 2×1 action widget that opens the add-transaction screen.
+ * A simple 2×2 action widget that opens the add-transaction screen.
  */
 class RecordTransactionWidget : AppWidgetProvider() {
   override fun onUpdate(context: Context, mgr: AppWidgetManager, ids: IntArray) {
     for (id in ids) {
       val views = RemoteViews(context.packageName, R.layout.widget_action)
-      views.setImageViewResource(R.id.widget_icon, R.drawable.widget_transaction_icon)
+      views.setImageViewResource(R.id.widget_icon, R.drawable.widget_mascot_checklist)
       views.setTextViewText(R.id.widget_title, context.getString(R.string.widget_transaction_name))
+      views.setTextViewText(R.id.widget_subtitle, "Tap to record")
       views.setOnClickPendingIntent(R.id.widget_root, deepLink(context, "settleup://add"))
       mgr.updateAppWidget(id, views)
     }
@@ -39,14 +41,15 @@ class RecordTransactionWidget : AppWidgetProvider() {
 }
 
 /**
- * A simple 2×1 action widget that opens the bill scanner / camera.
+ * A simple 2×2 action widget that opens the bill scanner / camera.
  */
 class ScanBillWidget : AppWidgetProvider() {
   override fun onUpdate(context: Context, mgr: AppWidgetManager, ids: IntArray) {
     for (id in ids) {
       val views = RemoteViews(context.packageName, R.layout.widget_action)
-      views.setImageViewResource(R.id.widget_icon, R.drawable.widget_bill_icon)
+      views.setImageViewResource(R.id.widget_icon, R.drawable.widget_mascot_bill)
       views.setTextViewText(R.id.widget_title, context.getString(R.string.widget_bill_name))
+      views.setTextViewText(R.id.widget_subtitle, "Tap to scan bill")
       views.setOnClickPendingIntent(R.id.widget_root, deepLink(context, "settleup://add?bill=1"))
       mgr.updateAppWidget(id, views)
     }

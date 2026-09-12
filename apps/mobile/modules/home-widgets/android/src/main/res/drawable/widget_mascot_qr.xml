@@ -1,0 +1,99 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+
+  <!-- Background Soft Radial Glow -->
+  <path
+      android:pathData="M60,10 A50,50 0 1,1 59.9,10 Z"
+      android:fillColor="#3D2075"
+      android:fillAlpha="0.3"/>
+
+  <!-- Mascot Body (Pip) Arms holding scanner -->
+  <path
+      android:pathData="M25,82 L42,65 M95,82 L78,65"
+      android:strokeColor="#7B51D0"
+      android:strokeWidth="8"
+      android:strokeLineCap="round"/>
+
+  <!-- Main Body -->
+  <path
+      android:pathData="M32,38 h56 a20,20 0 0,1 20,20 v38 a20,20 0 0,1 -20,20 h-56 a20,20 0 0,1 -20,-20 v-38 a20,20 0 0,1 20,-20 z"
+      android:fillColor="#9F6DE4"/>
+  <!-- Highlight Curve on Head -->
+  <path
+      android:pathData="M38,48 q30,-16 44,0"
+      android:strokeColor="#C1A0F0"
+      android:strokeWidth="5"
+      android:strokeLineCap="round"/>
+
+  <!-- Mascot Crown/Badge -->
+  <path
+      android:pathData="M52,22 h16 a6,6 0 0,1 6,6 v10 h-28 v-10 a6,6 0 0,1 6,-6 z"
+      android:fillColor="#F3BC5A"/>
+  <path
+      android:pathData="M58,28 l3,4 l6,-5"
+      android:strokeColor="#9A651E"
+      android:strokeWidth="2.5"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"/>
+
+  <!-- Mascot Eyes -->
+  <path
+      android:pathData="M48,60 A5,7 0 1,1 47.9,60 Z"
+      android:fillColor="#38255E"/>
+  <path
+      android:pathData="M72,60 A5,7 0 1,1 71.9,60 Z"
+      android:fillColor="#38255E"/>
+  <!-- Eye Highlights -->
+  <path
+      android:pathData="M49,58 A1.5,1.5 0 1,1 48.9,58 Z"
+      android:fillColor="#FFFFFF"/>
+  <path
+      android:pathData="M73,58 A1.5,1.5 0 1,1 72.9,58 Z"
+      android:fillColor="#FFFFFF"/>
+
+  <!-- Cheeks -->
+  <path
+      android:pathData="M42,68 A7,3.5 0 1,1 41.9,68 Z"
+      android:fillColor="#B691EA"/>
+  <path
+      android:pathData="M78,68 A7,3.5 0 1,1 77.9,68 Z"
+      android:fillColor="#B691EA"/>
+
+  <!-- Smile -->
+  <path
+      android:pathData="M54,69 q6,8 12,0"
+      android:strokeColor="#38255E"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"
+      android:fillColor="#00000000"/>
+
+  <!-- Viewfinder corners -->
+  <path
+      android:pathData="M24,40 h12 M24,40 v12 M96,40 h-12 M96,40 v12 M24,100 h12 M24,100 v-12 M96,100 h-12 M96,100 v-12"
+      android:strokeColor="#00E5FF"
+      android:strokeWidth="4"
+      android:strokeLineCap="round"/>
+
+  <!-- QR Code Tile Floating in Center -->
+  <path
+      android:pathData="M72,78 h20 v20 h-20 z"
+      android:fillColor="#FFFFFF"/>
+  <!-- QR Finder Squares -->
+  <path
+      android:pathData="M74,80 h6 v6 h-6 z M84,80 h6 v6 h-6 z M74,90 h6 v6 h-6 z"
+      android:fillColor="#38255E"/>
+  <path
+      android:pathData="M85,91 h4 v4 h-4 z"
+      android:fillColor="#38255E"/>
+
+  <!-- Scan Beam Line -->
+  <path
+      android:pathData="M20,85 h80"
+      android:strokeColor="#00E5FF"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"/>
+
+</vector>

@@ -1,0 +1,103 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+
+  <!-- Background Soft Radial Glow -->
+  <path
+      android:pathData="M60,10 A50,50 0 1,1 59.9,10 Z"
+      android:fillColor="#3D2075"
+      android:fillAlpha="0.3"/>
+
+  <!-- Mascot Body (Pip) -->
+  <path
+      android:pathData="M24,30 h56 a20,20 0 0,1 20,20 v38 a20,20 0 0,1 -20,20 h-56 a20,20 0 0,1 -20,-20 v-38 a20,20 0 0,1 20,-20 z"
+      android:fillColor="#9F6DE4"/>
+  <!-- Highlight Curve on Head -->
+  <path
+      android:pathData="M30,40 q30,-16 44,0"
+      android:strokeColor="#C1A0F0"
+      android:strokeWidth="5"
+      android:strokeLineCap="round"/>
+
+  <!-- Mascot Crown/Badge -->
+  <path
+      android:pathData="M44,14 h16 a6,6 0 0,1 6,6 v10 h-28 v-10 a6,6 0 0,1 6,-6 z"
+      android:fillColor="#F3BC5A"/>
+  <path
+      android:pathData="M50,20 l3,4 l6,-5"
+      android:strokeColor="#9A651E"
+      android:strokeWidth="2.5"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"/>
+
+  <!-- Mascot Eyes (Reading/Scanning expression) -->
+  <path
+      android:pathData="M38,54 q5,5 10,0"
+      android:strokeColor="#38255E"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"
+      android:fillColor="#00000000"/>
+  <path
+      android:pathData="M62,54 q5,5 10,0"
+      android:strokeColor="#38255E"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"
+      android:fillColor="#00000000"/>
+
+  <!-- Cheeks -->
+  <path
+      android:pathData="M34,60 A7,3.5 0 1,1 33.9,60 Z"
+      android:fillColor="#B691EA"/>
+  <path
+      android:pathData="M70,60 A7,3.5 0 1,1 69.9,60 Z"
+      android:fillColor="#B691EA"/>
+
+  <!-- Mouth -->
+  <path
+      android:pathData="M48,63 q4,6 8,0"
+      android:strokeColor="#38255E"
+      android:strokeWidth="2.5"
+      android:strokeLineCap="round"
+      android:fillColor="#00000000"/>
+
+  <!-- Bill / Receipt (Held in front) -->
+  <path
+      android:pathData="M48,46 h52 v66 l-6,-4 l-6,4 l-6,-4 l-6,4 l-6,-4 l-6,4 l-6,-4 l-6,4 l-4,-4 v-62 z"
+      android:fillColor="#FFFFFF"/>
+  <!-- Bill Header Bar -->
+  <path
+      android:pathData="M54,54 h40"
+      android:strokeColor="#6D3CC3"
+      android:strokeWidth="4"
+      android:strokeLineCap="round"/>
+
+  <!-- Bill Line Items -->
+  <path
+      android:pathData="M54,64 h24 M86,64 h8"
+      android:strokeColor="#A080D0"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"/>
+  <path
+      android:pathData="M54,73 h18 M84,73 h10"
+      android:strokeColor="#A080D0"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"/>
+  <path
+      android:pathData="M54,82 h28 M88,82 h6"
+      android:strokeColor="#A080D0"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"/>
+
+  <!-- Bill Total Badge -->
+  <path
+      android:pathData="M70,95 h24 a4,4 0 0,1 4,4 v8 a4,4 0 0,1 -4,4 h-24 a4,4 0 0,1 -4,-4 v-8 a4,4 0 0,1 4,-4 z"
+      android:fillColor="#F3BC5A"/>
+  <path
+      android:pathData="M74,103 h16"
+      android:strokeColor="#9A651E"
+      android:strokeWidth="3.5"
+      android:strokeLineCap="round"/>
+
+</vector>

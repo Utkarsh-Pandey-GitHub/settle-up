@@ -1,0 +1,124 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+
+  <!-- Background Soft Radial Glow -->
+  <path
+      android:pathData="M60,10 A50,50 0 1,1 59.9,10 Z"
+      android:fillColor="#3D2075"
+      android:fillAlpha="0.3"/>
+
+  <!-- Mascot Body (Pip) -->
+  <path
+      android:pathData="M24,30 h56 a20,20 0 0,1 20,20 v38 a20,20 0 0,1 -20,20 h-56 a20,20 0 0,1 -20,-20 v-38 a20,20 0 0,1 20,-20 z"
+      android:fillColor="#9F6DE4"/>
+  <!-- Highlight Curve on Head -->
+  <path
+      android:pathData="M30,40 q30,-16 44,0"
+      android:strokeColor="#C1A0F0"
+      android:strokeWidth="5"
+      android:strokeLineCap="round"/>
+
+  <!-- Mascot Crown/Badge -->
+  <path
+      android:pathData="M44,14 h16 a6,6 0 0,1 6,6 v10 h-28 v-10 a6,6 0 0,1 6,-6 z"
+      android:fillColor="#F3BC5A"/>
+  <path
+      android:pathData="M50,20 l3,4 l6,-5"
+      android:strokeColor="#9A651E"
+      android:strokeWidth="2.5"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"/>
+
+  <!-- Mascot Eyes -->
+  <path
+      android:pathData="M40,52 A5,7 0 1,1 39.9,52 Z"
+      android:fillColor="#38255E"/>
+  <path
+      android:pathData="M64,52 A5,7 0 1,1 63.9,52 Z"
+      android:fillColor="#38255E"/>
+  <!-- Eye Highlights -->
+  <path
+      android:pathData="M41,50 A1.5,1.5 0 1,1 40.9,50 Z"
+      android:fillColor="#FFFFFF"/>
+  <path
+      android:pathData="M65,50 A1.5,1.5 0 1,1 64.9,50 Z"
+      android:fillColor="#FFFFFF"/>
+
+  <!-- Cheeks -->
+  <path
+      android:pathData="M34,60 A7,3.5 0 1,1 33.9,60 Z"
+      android:fillColor="#B691EA"/>
+  <path
+      android:pathData="M70,60 A7,3.5 0 1,1 69.9,60 Z"
+      android:fillColor="#B691EA"/>
+
+  <!-- Smile -->
+  <path
+      android:pathData="M46,61 q6,8 12,0"
+      android:strokeColor="#38255E"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"
+      android:fillColor="#00000000"/>
+
+  <!-- Checklist Clipboard (Held by Mascot) -->
+  <path
+      android:pathData="M50,55 h54 a6,6 0 0,1 6,6 v50 a6,6 0 0,1 -6,6 h-54 a6,6 0 0,1 -6,-6 v-50 a6,6 0 0,1 6,-6 z"
+      android:fillColor="#FFFFFF"/>
+  <!-- Clipboard Header Band -->
+  <path
+      android:pathData="M66,51 h22 a3,3 0 0,1 3,3 v6 h-28 v-6 a3,3 0 0,1 3,-3 z"
+      android:fillColor="#F3BC5A"/>
+
+  <!-- Checklist Lines and Checkmarks -->
+  <!-- Item 1 (Checked) -->
+  <path
+      android:pathData="M56,69 l4,4 l8,-8"
+      android:strokeColor="#00E676"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"
+      android:fillColor="#00000000"/>
+  <path
+      android:pathData="M72,67 h26"
+      android:strokeColor="#7C52BF"
+      android:strokeWidth="3.5"
+      android:strokeLineCap="round"/>
+
+  <!-- Item 2 (Checked) -->
+  <path
+      android:pathData="M56,83 l4,4 l8,-8"
+      android:strokeColor="#00E676"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"
+      android:fillColor="#00000000"/>
+  <path
+      android:pathData="M72,81 h20"
+      android:strokeColor="#7C52BF"
+      android:strokeWidth="3.5"
+      android:strokeLineCap="round"/>
+
+  <!-- Item 3 (In progress with Pencil) -->
+  <path
+      android:pathData="M56,97 h8"
+      android:strokeColor="#B090DE"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"/>
+  <path
+      android:pathData="M72,95 h24"
+      android:strokeColor="#B090DE"
+      android:strokeWidth="3.5"
+      android:strokeLineCap="round"/>
+
+  <!-- Pencil held by mascot writing on checklist -->
+  <path
+      android:pathData="M98,75 L112,89 L96,95 Z"
+      android:fillColor="#FFD54F"/>
+  <path
+      android:pathData="M96,95 L92,97 L95,92 Z"
+      android:fillColor="#38255E"/>
+
+</vector>

@@ -4,28 +4,29 @@
   android:layout_height="match_parent"
   android:background="@drawable/widget_action_bg"
   android:padding="14dp"
-  android:gravity="center_vertical"
-  android:orientation="horizontal">
+  android:gravity="center"
+  android:orientation="vertical">
 
   <ImageView
     android:id="@+id/widget_icon"
-    android:layout_width="46dp"
-    android:layout_height="46dp"
-    android:padding="10dp"
-    android:background="@drawable/widget_icon_circle"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:scaleType="fitCenter"
+    android:adjustViewBounds="true"
     android:contentDescription="@null"
     android:importantForAccessibility="no" />
 
   <LinearLayout
-    android:layout_width="0dp"
-    android:layout_weight="1"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginStart="12dp"
-    android:orientation="vertical">
+    android:gravity="center"
+    android:orientation="vertical"
+    android:layout_marginTop="6dp">
 
     <TextView
       android:id="@+id/widget_title"
-      android:layout_width="match_parent"
+      android:layout_width="wrap_content"
       android:layout_height="wrap_content"
       android:text="@string/widget_brand"
       android:textSize="15sp"
@@ -33,10 +34,11 @@
       android:textColor="#FFFFFF"
       android:maxLines="1"
       android:ellipsize="end"
-      android:shadowColor="#00000040"
+      android:gravity="center"
+      android:shadowColor="#00000080"
       android:shadowDx="0"
       android:shadowDy="1"
-      android:shadowRadius="2" />
+      android:shadowRadius="3" />
 
     <TextView
       android:id="@+id/widget_subtitle"
@@ -44,17 +46,11 @@
       android:layout_height="wrap_content"
       android:text="@string/widget_brand"
       android:textSize="11sp"
-      android:textColor="#FFFFFFCC"
+      android:textColor="#D1C4E9"
+      android:maxLines="1"
+      android:ellipsize="end"
+      android:gravity="center"
       android:layout_marginTop="2dp" />
   </LinearLayout>
-
-  <ImageView
-    android:id="@+id/widget_arrow"
-    android:layout_width="20dp"
-    android:layout_height="20dp"
-    android:src="@drawable/widget_arrow"
-    android:contentDescription="@null"
-    android:importantForAccessibility="no"
-    android:layout_marginEnd="2dp" />
 
 </LinearLayout>

@@ -60,75 +60,86 @@ export function OnboardingScreen() {
   return (
     <Shell>
       <YStack
-        gap={26}
-        maxWidth={660}
+        flex={1}
+        gap={24}
         width="100%"
         alignSelf="center"
-        paddingVertical={20}
+        justifyContent="space-between"
+        paddingVertical={12}
       >
-        <XStack justifyContent="space-between" alignItems="center">
-          <Label muted size={11} bold letterSpacing={1.5}>
-            A LITTLE TOUR
-          </Label>
-          <Button secondary compact onPress={() => router.push("/auth")}>
-            Skip intro
-          </Button>
-        </XStack>
-        <Card style={{ backgroundColor: [c.butter, c.peach, c.blue][step] }}>
-          <YStack gap={22} alignItems="center" paddingVertical={16}>
-            <ReferenceArt scene={slides[step].scene} size={260} />
-            <XStack gap={8}>
-              {slides.map((s, i) => (
-                <Pressable
-                  key={s.mood}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Introduction step ${i + 1}`}
-                  accessibilityState={{ selected: step === i }}
-                  onPress={() => setStep(i)}
+        <YStack
+          flex={1}
+          alignItems="center"
+          justifyContent="center"
+          gap={24}
+          width="100%"
+          paddingHorizontal={16}
+        >
+          <ReferenceArt scene={slides[step].scene} size={290} />
+
+          <XStack gap={8}>
+            {slides.map((s, i) => (
+              <Pressable
+                key={s.mood}
+                accessibilityRole="button"
+                accessibilityLabel={`Introduction step ${i + 1}`}
+                accessibilityState={{ selected: step === i }}
+                onPress={() => setStep(i)}
+                style={{
+                  minWidth: 44,
+                  minHeight: 44,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <View
                   style={{
-                    minWidth: 44,
-                    minHeight: 44,
-                    alignItems: "center",
-                    justifyContent: "center",
+                    width: step === i ? 28 : 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: step === i ? "#6F6CD9" : c.line,
                   }}
-                >
-                  <View
-                    style={{
-                      width: step === i ? 25 : 7,
-                      height: 7,
-                      borderRadius: 4,
-                      backgroundColor: step === i ? "#6F6CD9" : "#DCDDD5",
-                    }}
-                  />
-                </Pressable>
-              ))}
-            </XStack>
-            <Heading size={30} textAlign="center">
+                />
+              </Pressable>
+            ))}
+          </XStack>
+
+          <View style={{ maxWidth: 560 }}>
+            <Heading size={32} textAlign="center">
               {slides[step].title}
             </Heading>
-            <XStack alignItems="center" gap={10}>
-              <Mascot mood={slides[step].mood} size={64} />
-              <Label muted size={15} flex={1}>
-                {slides[step].text}
-              </Label>
-            </XStack>
-          </YStack>
-        </Card>
-        <Button
-          onPress={() =>
-            step === 2 ? router.push("/auth") : setStep(step + 1)
-          }
-        >
-          {step === 2 ? "Let’s get started" : "Continue"}
-        </Button>
-        {step > 0 && (
-          <Button secondary onPress={() => setStep(step - 1)}>
-            Back
+          </View>
+
+          <XStack
+            alignItems="center"
+            gap={14}
+            maxWidth={540}
+            paddingHorizontal={12}
+          >
+            <Mascot mood={slides[step].mood} size={68} />
+            <Label muted size={16} flex={1}>
+              {slides[step].text}
+            </Label>
+          </XStack>
+        </YStack>
+
+        <YStack gap={12} width="100%" maxWidth={540} alignSelf="center">
+          <Button
+            onPress={() =>
+              step === 2 ? router.push("/auth") : setStep(step + 1)
+            }
+          >
+            {step === 2 ? "Let’s get started" : "Continue"}
           </Button>
-        )}
-        <Label muted size={11} textAlign="center">
-          SettleUp records payments. It does not hold or transfer money.
-        </Label>
+          {step > 0 && (
+            <Button secondary onPress={() => setStep(step - 1)}>
+              Back
+            </Button>
+          )}
+          <Label muted size={11} textAlign="center" style={{ marginTop: 4 }}>
+            SettleUp records payments. It does not hold or transfer money.
+          </Label>
+        </YStack>
       </YStack>
     </Shell>
   );

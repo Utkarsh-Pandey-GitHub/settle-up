@@ -72,7 +72,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
             marginBottom={18}
           >
             <Brand />
-            {account && account.name !== "New friend" && (
+            {path === "/onboarding" || path?.endsWith("/onboarding") ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push("/auth")}
+                style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 4 }}
+              >
+                <Label muted size={13}>
+                  Skip intro
+                </Label>
+              </Pressable>
+            ) : account && account.name !== "New friend" ? (
               <Pressable
                 accessibilityRole="button"
                 onPress={() => router.replace("/accounts")}
@@ -82,7 +92,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   Back to accounts
                 </Label>
               </Pressable>
-            )}
+            ) : null}
           </XStack>
           {children}
         </ScrollView>
