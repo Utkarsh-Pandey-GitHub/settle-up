@@ -1,7 +1,60 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/widget_card" android:padding="12dp" android:gravity="center_vertical" android:orientation="horizontal">
-  <ImageView android:id="@+id/widget_icon" android:layout_width="42dp" android:layout_height="42dp" android:padding="9dp" android:background="@drawable/widget_accent" android:contentDescription="@null" android:importantForAccessibility="no" />
-  <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginStart="10dp" android:orientation="vertical">
-    <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/widget_brand" android:textSize="14sp" android:textStyle="bold" android:textColor="#262231" android:maxLines="2" android:ellipsize="end"/>
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/widget_brand" android:textSize="10sp" android:textColor="#766C83" android:layout_marginTop="3dp" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/widget_action_bg"
+  android:padding="14dp"
+  android:gravity="center_vertical"
+  android:orientation="horizontal">
+
+  <ImageView
+    android:id="@+id/widget_icon"
+    android:layout_width="46dp"
+    android:layout_height="46dp"
+    android:padding="10dp"
+    android:background="@drawable/widget_icon_circle"
+    android:contentDescription="@null"
+    android:importantForAccessibility="no" />
+
+  <LinearLayout
+    android:layout_width="0dp"
+    android:layout_weight="1"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="12dp"
+    android:orientation="vertical">
+
+    <TextView
+      android:id="@+id/widget_title"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:text="@string/widget_brand"
+      android:textSize="15sp"
+      android:textStyle="bold"
+      android:textColor="#FFFFFF"
+      android:maxLines="1"
+      android:ellipsize="end"
+      android:shadowColor="#00000040"
+      android:shadowDx="0"
+      android:shadowDy="1"
+      android:shadowRadius="2" />
+
+    <TextView
+      android:id="@+id/widget_subtitle"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:text="@string/widget_brand"
+      android:textSize="11sp"
+      android:textColor="#FFFFFFCC"
+      android:layout_marginTop="2dp" />
   </LinearLayout>
+
+  <ImageView
+    android:id="@+id/widget_arrow"
+    android:layout_width="20dp"
+    android:layout_height="20dp"
+    android:src="@drawable/widget_arrow"
+    android:contentDescription="@null"
+    android:importantForAccessibility="no"
+    android:layout_marginEnd="2dp" />
+
 </LinearLayout>

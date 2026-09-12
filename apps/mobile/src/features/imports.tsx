@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Platform, View, Pressable, StyleSheet } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 import { YStack, XStack } from "tamagui";
 import { useRouter } from "expo-router";
 import {
@@ -55,6 +56,28 @@ export function ScanScreen() {
     }
   };
 
+  const pickImage = async () => {
+    try {
+      const picked = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.85,
+      });
+      if (picked.canceled || !picked.assets.length) return;
+      const uri = picked.assets[0].uri;
+      if (typeof (CameraView as any).scanFromURLAsync === "function") {
+        const results = await (CameraView as any).scanFromURLAsync(uri, ["qr"]);
+        if (results && results.length > 0 && results[0].data) {
+          inspect(results[0].data);
+          return;
+        }
+      }
+      action.setError("No valid QR code detected in this photo. Try pasting the UPI link below.");
+      setPasteMode(true);
+    } catch (e) {
+      action.setError((e as Error).message);
+    }
+  };
+
   // Permission request screen
   if (!permission?.granted) {
     return (
@@ -99,6 +122,9 @@ export function ScanScreen() {
               }
             >
               Allow camera access
+            </Button>
+            <Button secondary icon="image" onPress={pickImage}>
+              Choose QR photo from gallery
             </Button>
             <Button secondary onPress={() => setPasteMode(true)}>
               Paste UPI link instead
@@ -547,6 +573,27 @@ export function ScanScreen() {
           </View>
           <Label size={13} color="#FFF">
             Record this payment in SettleUp (Settled)
+          </Label>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={pickImage}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            backgroundColor: "rgba(255,255,255,0.18)",
+            paddingVertical: 10,
+            paddingHorizontal: 16,
+            borderRadius: 14,
+            marginTop: 4,
+          }}
+        >
+          <Icon name="image" color="#FFF" size={18} />
+          <Label bold size={13} color="#FFF">
+            Choose QR from Gallery / Photos
           </Label>
         </Pressable>
       </View>

@@ -57,6 +57,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
       title?: string;
       amount?: string;
       pending?: string;
+      bill?: string;
     }>(),
     router = useRouter(),
     action = useAction();
@@ -267,6 +268,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
               photo={photo}
               onPhoto={setPhoto}
               onBusy={setScanning}
+              autoCamera={params.bill === "1" || params.bill === "camera"}
             />
           )}
           <Card>

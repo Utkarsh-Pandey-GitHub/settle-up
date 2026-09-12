@@ -32,6 +32,7 @@ export function BillEditor({
   photo,
   onPhoto,
   onBusy,
+  autoCamera,
 }: {
   currency: string;
   amount: string;
@@ -41,6 +42,7 @@ export function BillEditor({
   photo: BillPhoto | null;
   onPhoto(photo: BillPhoto | null): void;
   onBusy(busy: boolean): void;
+  autoCamera?: boolean;
 }) {
   const c = useColors();
   const [busy, setBusy] = useState(false),
@@ -54,6 +56,21 @@ export function BillEditor({
     [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null),
     [ready, setReady] = useState(false);
+
+  React.useEffect(() => {
+    if (autoCamera) {
+      task(async () => {
+        const access = permission?.granted
+          ? permission
+          : await requestPermission();
+        if (access.granted) {
+          setReady(false);
+          setCamera(true);
+        }
+      });
+    }
+  }, [autoCamera]);
+
   useFocusEffect(useCallback(() => () => setCamera(false), []));
   const task = async (work: () => Promise<void>) => {
     if (busy) return;
