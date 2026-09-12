@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import {
   Pressable,
@@ -6,6 +6,9 @@ import {
   View,
   TextInput,
   type TextInputProps,
+  AccessibilityInfo,
+  Animated,
+  Platform,
 } from "react-native";
 import { Text, YStack, XStack } from "tamagui";
 import Svg, { Path, Circle, Rect, Ellipse, G } from "react-native-svg";
@@ -169,12 +172,20 @@ export function Label({
 export function Heading({
   children,
   size = 26,
+  textAlign = "left",
 }: {
   children: React.ReactNode;
   size?: number;
+  textAlign?: "left" | "center" | "right";
 }) {
   return (
-    <Label size={size} bold letterSpacing={-0.8} accessibilityRole="header">
+    <Label
+      size={size}
+      bold
+      letterSpacing={-0.8}
+      accessibilityRole="header"
+      textAlign={textAlign}
+    >
       {children}
     </Label>
   );
@@ -438,9 +449,13 @@ export function Notice({
         padding: 15,
         backgroundColor: error ? "#FFF0F0" : "#F2EDF8",
         borderRadius: 12,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
       }}
     >
-      <Label size={13} color={error ? "#A12435" : "#5B4980"}>
+      <Mascot size={44} mood={error ? "help" : "wave"} animate={false} />
+      <Label flex={1} size={13} color={error ? "#A12435" : "#5B4980"}>
         {children}
       </Label>
     </View>
@@ -458,14 +473,27 @@ export function Empty({
   onPress?(): void;
 }) {
   return (
-    <YStack alignItems="center" padding={32} gap={12}>
-      <Icon name="wallet" size={32} color="#7F5BC7" />
-      <Heading size={20}>{title}</Heading>
-      <Label muted textAlign="center">
-        {detail}
-      </Label>
-      {!!action && <Button onPress={onPress}>{action}</Button>}
-    </YStack>
+    <XStack
+      alignItems="center"
+      paddingVertical={12}
+      gap={12}
+      maxWidth={520}
+      width="100%"
+      alignSelf="center"
+    >
+      <Mascot size={76} />
+      <YStack flex={1} gap={8} alignItems="flex-start">
+        <Heading size={20}>{title}</Heading>
+        <Label muted size={13}>
+          {detail}
+        </Label>
+        {!!action && (
+          <Button compact onPress={onPress}>
+            {action}
+          </Button>
+        )}
+      </YStack>
+    </XStack>
   );
 }
 export type PipMood = "wave" | "reading" | "success" | "help";
@@ -479,127 +507,217 @@ export function PipFeedback({
   return (
     <XStack gap={10} alignItems="center" accessibilityLiveRegion="polite">
       <Mascot size={76} mood={mood} />
-      <Label bold size={13} flex={1}>
+      <Label bold size={13} flex={1} lineHeight={20}>
         {message}
       </Label>
     </XStack>
   );
 }
-export function Mascot({
+export function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <XStack
+      gap={8}
+      alignItems="center"
+      accessible
+      accessibilityLabel="SettleUp"
+    >
+      <Mascot size={compact ? 32 : 40} mark animate={false} />
+      <Label bold size={compact ? 20 : 24} letterSpacing={-1}>
+        settle
+        <Label bold size={compact ? 20 : 24} color="#6F6CD9">
+          up.
+        </Label>
+      </Label>
+    </XStack>
+  );
+}
+export const Mascot = React.memo(function Mascot({
   size = 170,
   mood = "wave",
+  mark = false,
+  animate = true,
 }: {
   size?: number;
   mood?: PipMood;
+  mark?: boolean;
+  animate?: boolean;
 }) {
+  const motion = useRef(new Animated.Value(0)).current;
+  const [reducedMotion, setReducedMotion] = useState(true);
+  useEffect(() => {
+    if (!animate || mark) return;
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((value) => {
+        if (mounted) setReducedMotion(value);
+      })
+      .catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener(
+      "reduceMotionChanged",
+      setReducedMotion,
+    );
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, [animate, mark]);
+  useEffect(() => {
+    motion.setValue(0);
+    if (!animate || mark || reducedMotion) return;
+    const animation = Animated.sequence([
+      Animated.timing(motion, {
+        toValue: 1,
+        duration: 240,
+        useNativeDriver: Platform.OS !== "web",
+      }),
+      Animated.spring(motion, {
+        toValue: 0,
+        friction: 3,
+        tension: 90,
+        useNativeDriver: Platform.OS !== "web",
+      }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [animate, mark, mood, motion, reducedMotion]);
   return (
-    <Svg
-      width={size}
-      height={size}
-      viewBox="0 0 200 200"
-      accessibilityLabel="Pip, SettleUp’s friendly geometric companion"
+    <Animated.View
+      accessible={false}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      pointerEvents="none"
+      style={{
+        width: size,
+        height: size,
+        flexShrink: 0,
+        transform: [
+          {
+            translateY: motion.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, mood === "success" ? -10 : -4],
+            }),
+          },
+          {
+            rotate: motion.interpolate({
+              inputRange: [0, 1],
+              outputRange: ["0deg", mood === "help" ? "-5deg" : "5deg"],
+            }),
+          },
+        ],
+      }}
     >
-      <Ellipse
-        cx="109"
-        cy="175"
-        rx="60"
-        ry="10"
-        fill="#D9CEE8"
-        opacity="0.55"
-      />
-      <G rotation="-9" origin="100,100">
-        <Path
-          d="M55 140 41 160M142 140l14 23"
-          stroke="#502A9C"
-          strokeWidth="12"
-          strokeLinecap="round"
-        />
-        <Path
-          d={
-            mood === "success"
-              ? "M50 105 26 63M154 97l20-42"
-              : mood === "reading"
-                ? "M50 105 70 135M154 97l-19 38"
-                : mood === "help"
-                  ? "M50 105 27 105M154 97l19 8"
-                  : "M50 105 27 90M154 97l19-19"
-          }
-          stroke="#7B51D0"
-          strokeWidth="12"
-          strokeLinecap="round"
-        />
-        <Rect x="45" y="39" width="113" height="114" rx="36" fill="#9F6DE4" />
-        <Path
-          d="M58 60q30-24 80-4"
-          stroke="#C1A0F0"
-          strokeWidth="8"
-          strokeLinecap="round"
-        />
-        <Ellipse cx="83" cy="94" rx="7" ry="10" fill="#38255E" />
-        <Ellipse cx="125" cy="94" rx="7" ry="10" fill="#38255E" />
-        <Circle cx="85" cy="91" r="2" fill="#FFF" />
-        <Circle cx="127" cy="91" r="2" fill="#FFF" />
-        <Path
-          d={
-            mood === "help"
-              ? "M92 117q12-5 24 0"
-              : mood === "success"
-                ? "M90 112q14 23 28-2"
-                : "M92 113q12 15 24-1"
-          }
-          stroke="#38255E"
-          strokeWidth="4"
-          strokeLinecap="round"
-          fill="none"
-        />
-        <Ellipse cx="68" cy="111" rx="10" ry="5" fill="#B691EA" />
-        <Ellipse cx="139" cy="111" rx="10" ry="5" fill="#B691EA" />
-        <Rect
-          x="91"
-          y="15"
-          width="40"
-          height="32"
-          rx="11"
-          fill="#F3BC5A"
-          rotation="10"
-        />
-        <Path
-          d="m104 26 5 7 10-8"
-          stroke="#9A651E"
-          strokeWidth="3"
-          fill="none"
-        />
-        {mood === "reading" && (
-          <G>
-            <Rect
-              x="65"
-              y="125"
-              width="80"
-              height="48"
-              rx="6"
-              fill="#FFF"
-              stroke="#7C52BF"
-              strokeWidth="3"
-            />
+      <Svg
+        width={size}
+        height={size}
+        viewBox={mark ? "36 8 134 150" : "0 0 200 200"}
+      >
+        {!mark && (
+          <Ellipse
+            cx="109"
+            cy="175"
+            rx="60"
+            ry="10"
+            fill="#D9CEE8"
+            opacity="0.55"
+          />
+        )}
+        <G rotation={mark ? 0 : -9} origin="100,100">
+          {!mark && (
             <Path
-              d="M78 137h52 M78 148h34 M78 159h44"
-              stroke="#A080D0"
+              d="M55 140 41 160M142 140l14 23"
+              stroke="#502A9C"
+              strokeWidth="12"
+              strokeLinecap="round"
+            />
+          )}
+          {!mark && (
+            <Path
+              d={
+                mood === "success"
+                  ? "M50 105 26 63M154 97l20-42"
+                  : mood === "reading"
+                    ? "M50 105 70 135M154 97l-19 38"
+                    : mood === "help"
+                      ? "M50 105 27 105M154 97l19 8"
+                      : "M50 105 27 90M154 97l19-19"
+              }
+              stroke="#7B51D0"
+              strokeWidth="12"
+              strokeLinecap="round"
+            />
+          )}
+          <Rect x="45" y="39" width="113" height="114" rx="36" fill="#9F6DE4" />
+          <Path
+            d="M58 60q30-24 80-4"
+            fill="none"
+            stroke="#C1A0F0"
+            strokeWidth="8"
+            strokeLinecap="round"
+          />
+          <Ellipse cx="83" cy="94" rx="7" ry="10" fill="#38255E" />
+          <Ellipse cx="125" cy="94" rx="7" ry="10" fill="#38255E" />
+          <Circle cx="85" cy="91" r="2" fill="#FFF" />
+          <Circle cx="127" cy="91" r="2" fill="#FFF" />
+          <Path
+            d={
+              mood === "help"
+                ? "M92 117q12-5 24 0"
+                : mood === "success"
+                  ? "M90 112q14 23 28-2"
+                  : "M92 113q12 15 24-1"
+            }
+            stroke="#38255E"
+            strokeWidth="4"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <Ellipse cx="68" cy="111" rx="10" ry="5" fill="#B691EA" />
+          <Ellipse cx="139" cy="111" rx="10" ry="5" fill="#B691EA" />
+          <G rotation="10" origin="111,31">
+            <Rect x="91" y="15" width="40" height="32" rx="11" fill="#F3BC5A" />
+            <Path
+              d="m104 26 5 7 10-8"
+              stroke="#9A651E"
               strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
             />
           </G>
+          {!mark && mood === "reading" && (
+            <G>
+              <Rect
+                x="65"
+                y="125"
+                width="80"
+                height="48"
+                rx="6"
+                fill="#FFF"
+                stroke="#7C52BF"
+                strokeWidth="3"
+              />
+              <Path
+                d="M78 137h52 M78 148h34 M78 159h44"
+                stroke="#A080D0"
+                strokeWidth="3"
+              />
+            </G>
+          )}
+          {!mark && mood === "success" && (
+            <G fill="#A78BFA">
+              <Path d="m18 45 7 5-5 7-7-5Z M164 14l8 5-5 8-8-5Z" />
+              <Circle cx="183" cy="100" r="5" />
+            </G>
+          )}
+        </G>
+        {!mark && (
+          <Path d="m174 32 3 9 9 3-9 3-3 9-3-9-9-3 9-3Z" fill="#B090DE" />
         )}
-        {mood === "success" && (
-          <G fill="#A78BFA">
-            <Path d="m18 45 7 5-5 7-7-5Z M164 14l8 5-5 8-8-5Z" />
-            <Circle cx="183" cy="100" r="5" />
-          </G>
-        )}
-      </G>
-      <Path d="m174 32 3 9 9 3-9 3-3 9-3-9-9-3 9-3Z" fill="#B090DE" />
-      <Circle cx="28" cy="44" r="4" fill="#F3BA69" />
-    </Svg>
+        {!mark && <Circle cx="28" cy="44" r="4" fill="#F3BA69" />}
+      </Svg>
+    </Animated.View>
   );
-}
+});
 
 const referenceArt = {
   coins: require("../../assets/finance/coins.png"),

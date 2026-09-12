@@ -1,0 +1,15 @@
+<resources>
+  <string name="widget_qr_name">Scan QR</string>
+  <string name="widget_transaction_name">Record transaction</string>
+  <string name="widget_bill_name">Scan bill</string>
+  <string name="widget_spending_name">Spending &amp; goals</string>
+  <string name="widget_qr_description">Open the UPI QR scanner.</string>
+  <string name="widget_transaction_description">Quickly record a transaction in SettleUp.</string>
+  <string name="widget_bill_description">Open the camera to capture a bill.</string>
+  <string name="widget_spending_description">Weekly or monthly spending, daily graph, and active goals from your last app sync.</string>
+  <string name="widget_brand">SettleUp</string>
+  <string name="widget_week">Week</string>
+  <string name="widget_month">Month</string>
+  <string name="widget_open">Open SettleUp to sync</string>
+  <string name="widget_goals">Your goals</string>
+</resources>

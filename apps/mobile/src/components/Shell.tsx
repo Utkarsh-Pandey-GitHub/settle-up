@@ -18,6 +18,8 @@ import {
   useColors,
   type IconName,
   PipFeedback,
+  Brand,
+  Mascot,
 } from "./ui";
 import { useSession, DEMO } from "../data/session";
 const navigation: { label: string; path: string; icon: IconName }[] = [
@@ -69,9 +71,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             alignItems="center"
             marginBottom={18}
           >
-            <Label bold size={24}>
-              settleup.
-            </Label>
+            <Brand />
             {account && account.name !== "New friend" && (
               <Pressable
                 accessibilityRole="button"
@@ -177,26 +177,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               marginBottom: 48,
             }}
           >
-            <View
-              style={{
-                width: 35,
-                height: 35,
-                backgroundColor: "#6F6CD9",
-                borderRadius: 12,
-                justifyContent: "center",
-                alignItems: "center",
-                transform: [{ rotate: "-8deg" }],
-              }}
-            >
-              <Icon name="check" color="#FFF" size={24} />
-            </View>
-            <Label bold size={24} letterSpacing={-1}>
-              settle
-              <Label bold size={24} color="#6F6CD9">
-                up
-              </Label>
-              <Label color="#6F6CD9">.</Label>
-            </Label>
+            <Brand />
           </Pressable>
           <Label
             size={10}
@@ -241,7 +222,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               marginBottom: 20,
             }}
           >
-            <Icon name="lock" color="#6F6CD9" size={22} />
+            <Mascot size={68} mood="reading" animate={false} />
             <Label size={12} bold marginTop={10}>
               Your money. Your business.
             </Label>
@@ -299,12 +280,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
           }}
         >
           <XStack alignItems="center" gap={10}>
-            <Label size={desktop ? 14 : 20} bold={!desktop}>
-              {desktop
-                ? (navigation.find((n) => n.path === path)?.label ??
-                  "Your space")
-                : "settleup."}
-            </Label>
+            {desktop ? (
+              <Label size={14}>
+                {navigation.find((n) => n.path === path)?.label ?? "Your space"}
+              </Label>
+            ) : (
+              <Brand compact />
+            )}
             {DEMO && (
               <View
                 style={{

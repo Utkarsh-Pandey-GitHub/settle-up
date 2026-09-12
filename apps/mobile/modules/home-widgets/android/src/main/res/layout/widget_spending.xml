@@ -1,0 +1,18 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/widget_card" android:orientation="vertical" android:padding="14dp">
+  <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:orientation="horizontal" android:gravity="center_vertical">
+    <ImageView android:id="@+id/widget_brand" android:layout_width="28dp" android:layout_height="28dp" android:contentDescription="@null" android:importantForAccessibility="no"/>
+    <TextView android:id="@+id/widget_title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="@string/widget_spending_name" android:textColor="#262231" android:textSize="12sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end"/>
+    <TextView android:id="@+id/widget_week" android:layout_width="48dp" android:layout_height="36dp" android:gravity="center" android:text="@string/widget_week" android:textSize="11sp" android:textColor="#544274"/>
+    <TextView android:id="@+id/widget_month" android:layout_width="48dp" android:layout_height="36dp" android:gravity="center" android:text="@string/widget_month" android:textSize="11sp" android:textColor="#544274"/>
+  </LinearLayout>
+  <TextView android:id="@+id/widget_total" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/widget_open" android:textColor="#262231" android:textSize="26sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end"/>
+  <TextView android:id="@+id/widget_period" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#766C83" android:textSize="10sp" android:maxLines="1"/>
+  <ImageView android:id="@+id/widget_graph" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:minHeight="42dp" android:layout_marginTop="5dp" android:scaleType="fitXY"/>
+  <LinearLayout android:id="@+id/widget_goals" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingTop="5dp">
+    <TextView android:id="@+id/widget_goal_1" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/widget_goals" android:textSize="11sp" android:textColor="#544274" android:maxLines="1" android:ellipsize="end"/>
+    <ProgressBar android:id="@+id/widget_progress_1" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="4dp" android:max="100" android:progressTint="#8770BE" android:progressBackgroundTint="#E5DDF6"/>
+    <TextView android:id="@+id/widget_goal_2" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:textSize="11sp" android:textColor="#544274" android:maxLines="1" android:ellipsize="end"/>
+    <ProgressBar android:id="@+id/widget_progress_2" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="4dp" android:max="100" android:progressTint="#67A594" android:progressBackgroundTint="#E0EEE9"/>
+  </LinearLayout>
+  <TextView android:id="@+id/widget_updated" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="7dp" android:text="@string/widget_open" android:textSize="9sp" android:textColor="#766C83" android:maxLines="1" android:ellipsize="end"/>
+</LinearLayout>

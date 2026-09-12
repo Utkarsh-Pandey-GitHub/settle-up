@@ -15,6 +15,7 @@ import {
   Notice,
   Avatar,
   Chip,
+  Mascot,
   ReferenceArt,
   useColors,
   Empty,
@@ -38,16 +39,19 @@ export function OnboardingScreen() {
     [step, setStep] = useState(0);
   const slides = [
     {
+      mood: "wave" as const,
       scene: "coins" as const,
       title: "Make space for what matters.",
       text: "See your everyday spending in one clear picture. Small entries, a little more peace of mind.",
     },
     {
+      mood: "reading" as const,
       scene: "wallet" as const,
       title: "Every shared moment. A fair share.",
       text: "From a coffee to a weekend away, keep the split clear and the friendships easy.",
     },
     {
+      mood: "success" as const,
       scene: "privacy" as const,
       title: "Your money. Your own space.",
       text: "Private accounts, thoughtful sharing, and every bill right where you need it.",
@@ -72,11 +76,11 @@ export function OnboardingScreen() {
         </XStack>
         <Card style={{ backgroundColor: [c.butter, c.peach, c.blue][step] }}>
           <YStack gap={22} alignItems="center" paddingVertical={16}>
-            <ReferenceArt key={step} scene={slides[step].scene} size={260} />
+            <ReferenceArt scene={slides[step].scene} size={260} />
             <XStack gap={8}>
               {slides.map((s, i) => (
                 <Pressable
-                  key={s.scene}
+                  key={s.mood}
                   accessibilityRole="button"
                   accessibilityLabel={`Introduction step ${i + 1}`}
                   accessibilityState={{ selected: step === i }}
@@ -99,10 +103,15 @@ export function OnboardingScreen() {
                 </Pressable>
               ))}
             </XStack>
-            <Heading size={30}>{slides[step].title}</Heading>
-            <Label muted size={15} textAlign="center">
-              {slides[step].text}
-            </Label>
+            <Heading size={30} textAlign="center">
+              {slides[step].title}
+            </Heading>
+            <XStack alignItems="center" gap={10}>
+              <Mascot mood={slides[step].mood} size={64} />
+              <Label muted size={15} flex={1}>
+                {slides[step].text}
+              </Label>
+            </XStack>
           </YStack>
         </Card>
         <Button
@@ -191,24 +200,58 @@ export function AuthScreen() {
             scene={stage === "ready" ? "coins" : "privacy"}
             size={stage === "phone" ? 155 : 100}
           />
-          <Heading size={27}>
-            {stage === "phone"
-              ? "A little more peace of mind."
-              : stage === "code"
-                ? "You’re one code away."
-                : stage === "profile"
-                  ? "Make yourself at home."
-                  : `You’re all set, ${name.split(" ")[0]}.`}
-          </Heading>
-          <Label muted size={13} textAlign="center">
-            {stage === "phone"
-              ? "One place for your spending, shared plans, and the people in them."
-              : stage === "code"
-                ? `Enter the six-digit code sent to ${phone}.`
-                : stage === "profile"
-                  ? "Just the essentials. You can change these later."
-                  : "Your private space is ready. Start small, make it yours."}
-          </Label>
+          <XStack alignItems="center" gap={10} width="100%">
+            <Mascot
+              mood={
+                action.error
+                  ? "help"
+                  : action.busy || stage === "code"
+                    ? "reading"
+                    : stage === "ready"
+                      ? "success"
+                      : "wave"
+              }
+              size={64}
+            />
+            <YStack
+              gap={8}
+              flex={1}
+              padding={16}
+              borderRadius={22}
+              backgroundColor={c.soft}
+            >
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  left: -6,
+                  top: 36,
+                  width: 14,
+                  height: 14,
+                  backgroundColor: c.soft,
+                  transform: [{ rotate: "45deg" }],
+                }}
+              />
+              <Heading size={23}>
+                {stage === "phone"
+                  ? "A little more peace of mind."
+                  : stage === "code"
+                    ? "You’re one code away."
+                    : stage === "profile"
+                      ? "Make yourself at home."
+                      : `You’re all set, ${name.split(" ")[0]}.`}
+              </Heading>
+              <Label muted size={13}>
+                {stage === "phone"
+                  ? "One place for your spending, shared plans, and the people in them."
+                  : stage === "code"
+                    ? `Enter the six-digit code sent to ${phone}.`
+                    : stage === "profile"
+                      ? "Just the essentials. You can change these later."
+                      : "Your private space is ready. Start small, make it yours."}
+              </Label>
+            </YStack>
+          </XStack>
         </YStack>
         {DEMO && stage !== "ready" && (
           <Notice>
@@ -362,17 +405,15 @@ export function AuthScreen() {
                       });
                       const session = getTokenSession(verifiedId);
                       if (!session) throw new Error("Please sign in again.");
-                      await useSession
-                        .getState()
-                        .add({
-                          ...session,
-                          account: {
-                            ...session.account,
-                            name: name.trim(),
-                            currency,
-                            avatar: name.trim().slice(0, 2).toUpperCase(),
-                          },
-                        });
+                      await useSession.getState().add({
+                        ...session,
+                        account: {
+                          ...session.account,
+                          name: name.trim(),
+                          currency,
+                          avatar: name.trim().slice(0, 2).toUpperCase(),
+                        },
+                      });
                       setName(name.trim());
                       setStage("ready");
                     }, "Your space is ready")
