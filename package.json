@@ -32,9 +32,12 @@
     "@prisma/client": "6.19.0",
     "libphonenumber-js": "^1.12.33",
     "luxon": "^3.7.2",
+    "prisma": "6.19.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.2",
     "zod": "^3.25.76",
     "react-native-reanimated": "4.1.7",
     "react-native-worklets": "0.5.1"
@@ -46,9 +49,6 @@
     "@types/react": "~19.1.10",
     "embedded-postgres": "^18.4.0-beta.17",
     "prettier": "^3.9.6",
-    "prisma": "6.19.0",
-    "tsx": "^4.20.6",
-    "typescript": "~5.9.2",
     "vitest": "^3.2.4"
   },
   "prisma": {

@@ -3,8 +3,8 @@ services:
     name: settleup-api
     env: node
     plan: free
-    buildCommand: npm install && npx prisma generate
-    startCommand: npx prisma migrate deploy && tsx apps/api/src/server.ts
+    buildCommand: npm install --include=dev && npx prisma generate
+    startCommand: npx prisma migrate deploy && npx tsx apps/api/src/server.ts
     envVars:
       - key: DATABASE_URL
         fromDatabase:
