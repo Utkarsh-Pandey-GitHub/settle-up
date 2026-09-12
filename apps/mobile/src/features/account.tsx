@@ -19,7 +19,11 @@ import {
   useColors,
   Empty,
 } from "../components/ui";
-import { DEMO, useSession } from "../data/session";
+import {
+  authorizeWithTruecaller,
+  truecallerAvailable,
+} from "../../modules/truecaller/client";
+import { DEMO, useSession, getTokenSession } from "../data/session";
 import { request, extra } from "../data/repository";
 import { useAction } from "../data/hooks";
 import { DataScreen, SectionTitle } from "./overview";
@@ -123,108 +127,282 @@ export function OnboardingScreen() {
 export function AuthScreen() {
   const router = useRouter(),
     action = useAction(),
-    [phone, setPhone] = useState(""),
+    c = useColors();
+  const active = useSession((s) => s.accounts.find((a) => a.id === s.activeId));
+  const [stage, setStage] = useState<"phone" | "code" | "profile" | "ready">(
+    active?.name === "New friend" ? "profile" : "phone",
+  );
+  const [phone, setPhone] = useState(""),
     [code, setCode] = useState(""),
     [challenge, setChallenge] = useState(""),
     [devCode, setDevCode] = useState("");
+  const [name, setName] = useState(""),
+    [currency, setCurrency] = useState("INR");
+  const [verifiedId, setVerifiedId] = useState(
+    active?.name === "New friend" ? active.id : "",
+  );
+  const acceptSession = async (
+    session: Session & { suggestedName?: string },
+  ) => {
+    await useSession.getState().add(session);
+    if (session.account.name !== "New friend") {
+      router.replace("/");
+      return;
+    }
+    setVerifiedId(session.account.id);
+    setName(session.suggestedName ?? "");
+    setCurrency(session.account.currency);
+    setStage("profile");
+  };
+  const step =
+    stage === "phone" || stage === "code" ? 1 : stage === "profile" ? 2 : 3;
   return (
     <Shell>
       <YStack
-        gap={22}
-        maxWidth={450}
-        alignSelf="center"
+        gap={20}
+        maxWidth={500}
         width="100%"
-        paddingVertical={30}
+        alignSelf="center"
+        paddingVertical={12}
       >
-        <Heading>
-          {challenge
-            ? "A little check. Then you’re in."
-            : "Your number. Your space."}
-        </Heading>
-        <Label muted>Verify your phone to keep your ledger yours.</Label>
-        {DEMO && (
+        <XStack justifyContent="space-between" alignItems="center">
+          <Label bold size={11} letterSpacing={1.5}>
+            YOUR FRESH START
+          </Label>
+          <Label muted size={11}>
+            Step {step} of 3
+          </Label>
+        </XStack>
+        <XStack gap={6}>
+          {[1, 2, 3].map((i) => (
+            <View
+              key={i}
+              style={{
+                flex: 1,
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: i <= step ? "#6F6CD9" : c.line,
+              }}
+            />
+          ))}
+        </XStack>
+        <YStack alignItems="center" gap={10} paddingVertical={8}>
+          <ReferenceArt
+            scene={stage === "ready" ? "coins" : "privacy"}
+            size={stage === "phone" ? 155 : 100}
+          />
+          <Heading size={27}>
+            {stage === "phone"
+              ? "A little more peace of mind."
+              : stage === "code"
+                ? "You’re one code away."
+                : stage === "profile"
+                  ? "Make yourself at home."
+                  : `You’re all set, ${name.split(" ")[0]}.`}
+          </Heading>
+          <Label muted size={13} textAlign="center">
+            {stage === "phone"
+              ? "One place for your spending, shared plans, and the people in them."
+              : stage === "code"
+                ? `Enter the six-digit code sent to ${phone}.`
+                : stage === "profile"
+                  ? "Just the essentials. You can change these later."
+                  : "Your private space is ready. Start small, make it yours."}
+          </Label>
+        </YStack>
+        {DEMO && stage !== "ready" && (
           <Notice>
-            You’re exploring fictional demo accounts. Real phone sign-in
-            requires EXPO_PUBLIC_DEMO=false and the API server.
+            This is a demo. Phone verification becomes available when the live
+            API is connected.
           </Notice>
         )}
-        <Card>
-          <YStack gap={18}>
-            <Field
-              label="Phone number"
-              placeholder="+91 …"
-              keyboardType="phone-pad"
-              value={phone}
-              onChangeText={setPhone}
-              editable={!challenge}
-            />
-            {!!challenge && (
-              <Field
-                label="Six-digit verification code"
-                placeholder="000000"
-                value={code}
-                onChangeText={setCode}
-                keyboardType="number-pad"
-                maxLength={6}
-                textContentType="oneTimeCode"
-              />
-            )}
-            {!!devCode && (
-              <Notice>
-                Development provider code: {devCode}. Never displayed in
-                production.
-              </Notice>
-            )}
-            {!!action.error && <Notice error>{action.error}</Notice>}
-            <Button
-              disabled={action.busy || DEMO}
-              onPress={() =>
-                action.run(
-                  async () => {
-                    if (!challenge) {
+        <Card style={{ padding: 22 }}>
+          <YStack gap={16}>
+            {stage === "phone" && (
+              <>
+                {truecallerAvailable && (
+                  <>
+                    <Button
+                      disabled={action.busy || DEMO}
+                      onPress={() =>
+                        action.run(async () => {
+                          const proof = await authorizeWithTruecaller();
+                          const session = await request<
+                            Session & { suggestedName?: string }
+                          >("/auth/truecaller", { body: proof });
+                          await acceptSession(session);
+                        }, "Phone verified")
+                      }
+                    >
+                      Continue with Truecaller
+                    </Button>
+                    <Label muted size={11} textAlign="center">
+                      Or use a phone verification code
+                    </Label>
+                  </>
+                )}
+                <Field
+                  label="Phone number"
+                  placeholder="+91 98765 43210"
+                  keyboardType="phone-pad"
+                  textContentType="telephoneNumber"
+                  value={phone}
+                  onChangeText={setPhone}
+                  editable={!action.busy}
+                />
+                <Button
+                  disabled={action.busy || DEMO || !phone.trim()}
+                  onPress={() =>
+                    action.run(async () => {
+                      const normalized = normalizePhone(phone);
                       const result = await request<{
                         challengeId: string;
                         developmentCode?: string;
-                      }>("/auth/otp", {
-                        body: { phone: normalizePhone(phone) },
-                      });
+                      }>("/auth/otp", { body: { phone: normalized } });
+                      setPhone(normalized);
                       setChallenge(result.challengeId);
                       setDevCode(result.developmentCode ?? "");
-                    } else {
-                      const session = await request<Session>("/auth/verify", {
-                        body: { challengeId: challenge, code },
-                      });
-                      await useSession.getState().add(session);
-                      router.replace("/");
-                    }
-                  },
-                  challenge ? "Signed in" : "Code sent",
-                )
-              }
-            >
-              {action.busy
-                ? "One moment…"
-                : challenge
-                  ? "Verify & continue"
-                  : "Send verification code"}
-            </Button>
-            {!!challenge && (
-              <Button
-                secondary
-                onPress={() => {
-                  setChallenge("");
-                  setCode("");
-                  setDevCode("");
-                }}
-              >
-                Use a different number
-              </Button>
+                      setStage("code");
+                    }, "Code sent")
+                  }
+                >
+                  {action.busy ? "Sending code…" : "Continue with phone"}
+                </Button>
+                <Label muted size={11}>
+                  We use your number to verify your account. Your address book
+                  is not required.
+                </Label>
+              </>
             )}
+            {stage === "code" && (
+              <>
+                <Field
+                  label="Six-digit verification code"
+                  placeholder="000000"
+                  value={code}
+                  onChangeText={(value) => setCode(value.replace(/\D/g, ""))}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  textContentType="oneTimeCode"
+                  editable={!action.busy}
+                />
+                {!!devCode && (
+                  <Notice>
+                    Development provider code: {devCode}. Never displayed in
+                    production.
+                  </Notice>
+                )}
+                <Button
+                  disabled={action.busy || code.length !== 6}
+                  onPress={() =>
+                    action.run(async () => {
+                      await acceptSession(
+                        await request<Session>("/auth/verify", {
+                          body: { challengeId: challenge, code },
+                        }),
+                      );
+                    }, "Phone verified")
+                  }
+                >
+                  {action.busy ? "Checking…" : "Verify & continue"}
+                </Button>
+                <Button
+                  secondary
+                  disabled={action.busy}
+                  onPress={() => {
+                    setStage("phone");
+                    setCode("");
+                    setChallenge("");
+                    setDevCode("");
+                    action.setError("");
+                  }}
+                >
+                  Use a different number
+                </Button>
+                <Label muted size={11}>
+                  Code expired? Go back and request a new one.
+                </Label>
+              </>
+            )}
+            {stage === "profile" && (
+              <>
+                <Field
+                  label="What should we call you?"
+                  placeholder="Your name"
+                  value={name}
+                  onChangeText={setName}
+                  maxLength={100}
+                  textContentType="name"
+                  editable={!action.busy}
+                />
+                <Label size={12} bold>
+                  Your everyday currency
+                </Label>
+                <XStack gap={8} flexWrap="wrap">
+                  {["INR", "USD", "EUR", "GBP"].map((value) => (
+                    <Chip
+                      key={value}
+                      selected={currency === value}
+                      onPress={() => setCurrency(value)}
+                    >
+                      {value}
+                    </Chip>
+                  ))}
+                </XStack>
+                <Button
+                  disabled={action.busy || !name.trim()}
+                  onPress={() =>
+                    action.run(async () => {
+                      if (name.trim() === "New friend")
+                        throw new Error("Please use your name or a nickname.");
+                      await request("/profile", {
+                        accountId: verifiedId,
+                        method: "PATCH",
+                        body: { name: name.trim(), currency },
+                      });
+                      const session = getTokenSession(verifiedId);
+                      if (!session) throw new Error("Please sign in again.");
+                      await useSession
+                        .getState()
+                        .add({
+                          ...session,
+                          account: {
+                            ...session.account,
+                            name: name.trim(),
+                            currency,
+                            avatar: name.trim().slice(0, 2).toUpperCase(),
+                          },
+                        });
+                      setName(name.trim());
+                      setStage("ready");
+                    }, "Your space is ready")
+                  }
+                >
+                  {action.busy ? "Creating your space…" : "Make it mine"}
+                </Button>
+              </>
+            )}
+            {stage === "ready" && (
+              <>
+                <Label bold size={14}>
+                  Start with something from today.
+                </Label>
+                <Label muted size={12}>
+                  A coffee, a grocery run, or a bill you shared.
+                </Label>
+                <Button icon="plus" onPress={() => router.replace("/add")}>
+                  Add my first expense
+                </Button>
+                <Button secondary onPress={() => router.replace("/")}>
+                  Explore my dashboard
+                </Button>
+              </>
+            )}
+            {!!action.error && <Notice error>{action.error}</Notice>}
           </YStack>
         </Card>
-        <Label muted size={11}>
-          Codes expire in five minutes. We store a protected digest, never the
-          code itself.
+        <Label muted size={11} textAlign="center">
+          Your money. Your people. Shared only when you choose.
         </Label>
       </YStack>
     </Shell>

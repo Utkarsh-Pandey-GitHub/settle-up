@@ -60,3 +60,7 @@ No API keys: Tesseract.js runs in a browser worker, bundled ML Kit handles Andro
 - [Expo SDK 54 image picker](https://docs.expo.dev/versions/v54.0.0/sdk/imagepicker/)
 
 The free local demo and local API need no new provider credentials. Existing production SMS and storage integrations may have operational costs; this change adds no paid OCR service.
+
+## Truecaller onboarding
+
+Optional Android consent-based sign-in lives in `apps/mobile/modules/truecaller`, with a reusable native bridge, Expo configuration plugin and standalone server verifier. See its README for registration, client ID, signing fingerprints and reuse instructions. The app always retains OTP fallback. Android is implemented; iOS, desktop web and unsupported devices use the form. The API accepts only a one-use authorization code and PKCE verifier, exchanges them server-side, and requires a verified phone from Truecaller before issuing its own session. New users then review their display name and currency. No new tables are introduced.

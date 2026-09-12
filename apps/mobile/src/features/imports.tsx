@@ -13,7 +13,6 @@ import {
   AndroidSmsProvider,
   paymentLauncher,
   paymentRequest,
-  chooseContact,
 } from "../services/device";
 import { repository } from "../data/repository";
 import { useAction } from "../data/hooks";
@@ -38,12 +37,7 @@ export function ScanScreen() {
     [track, setTrack] = useState(true),
     [amount, setAmount] = useState(""),
     [processed, setProcessed] = useState(false),
-    [pasteMode, setPasteMode] = useState(false),
-    [contactModal, setContactModal] = useState<{
-      name: string;
-      phone: string;
-      upiId: string;
-    } | null>(null);
+    [pasteMode, setPasteMode] = useState(false);
   const action = useAction();
   const router = useRouter();
   const c = useColors();
@@ -123,132 +117,6 @@ export function ScanScreen() {
               </YStack>
             )}
             {!!action.error && <Notice error>{action.error}</Notice>}
-          </YStack>
-        )}
-      </DataScreen>
-    );
-  }
-
-  // Contact UPI setup screen
-  if (contactModal) {
-    return (
-      <DataScreen>
-        {() => (
-          <YStack gap={22} maxWidth={500} width="100%" alignSelf="center">
-            <XStack alignItems="center" gap={12}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Cancel contact payment"
-                onPress={() => setContactModal(null)}
-                style={{
-                  minHeight: 44,
-                  minWidth: 44,
-                  justifyContent: "center",
-                }}
-              >
-                <Icon name="arrow" size={20} />
-              </Pressable>
-              <Heading size={20}>Pay Contact via UPI</Heading>
-            </XStack>
-
-            <Card style={{ padding: 20 }}>
-              <YStack gap={18}>
-                <YStack
-                  alignItems="center"
-                  gap={8}
-                  paddingBottom={12}
-                  borderBottomWidth={1}
-                  borderColor={c.line}
-                >
-                  <View
-                    style={{
-                      width: 56,
-                      height: 56,
-                      borderRadius: 18,
-                      backgroundColor: "#6F6CD915",
-                      justifyContent: "center",
-                      alignItems: "center",
-                    }}
-                  >
-                    <Label bold size={24} color="#6F6CD9">
-                      {contactModal.name.charAt(0).toUpperCase()}
-                    </Label>
-                  </View>
-                  <Heading size={20}>{contactModal.name}</Heading>
-                  <Label muted size={12}>
-                    {contactModal.phone}
-                  </Label>
-                </YStack>
-
-                <YStack gap={6}>
-                  <Field
-                    label="Contact UPI ID / VPA"
-                    placeholder="e.g. 9876543210@paytm or name@okicici"
-                    value={contactModal.upiId}
-                    onChangeText={(text) =>
-                      setContactModal({ ...contactModal, upiId: text })
-                    }
-                  />
-                  <Label muted size={11}>
-                    Tap to select handle extension:
-                  </Label>
-                  <XStack flexWrap="wrap" gap={6}>
-                    {[
-                      "@paytm",
-                      "@ybl",
-                      "@okicici",
-                      "@oksbi",
-                      "@upi",
-                      "@axl",
-                      "@icici",
-                    ].map((ext) => (
-                      <Chip
-                        key={ext}
-                        selected={contactModal.upiId.endsWith(ext)}
-                        onPress={() => {
-                          const base = contactModal.upiId.includes("@")
-                            ? contactModal.upiId.split("@")[0]
-                            : contactModal.upiId;
-                          setContactModal({
-                            ...contactModal,
-                            upiId: `${base}${ext}`,
-                          });
-                        }}
-                      >
-                        {ext}
-                      </Chip>
-                    ))}
-                  </XStack>
-                </YStack>
-
-                <Field
-                  label="Amount (INR)"
-                  value={amount}
-                  onChangeText={setAmount}
-                  keyboardType="decimal-pad"
-                  placeholder="0.00"
-                />
-
-                {!!action.error && <Notice error>{action.error}</Notice>}
-
-                <Button
-                  onPress={() => {
-                    if (!contactModal.upiId.trim()) {
-                      action.setError(
-                        "Enter or select a valid UPI ID for this contact.",
-                      );
-                      return;
-                    }
-                    const activeUpi = contactModal.upiId.trim();
-                    const upiUri = `upi://pay?pa=${encodeURIComponent(activeUpi)}&pn=${encodeURIComponent(contactModal.name)}${amount ? `&am=${amount}` : ""}`;
-                    setContactModal(null);
-                    inspect(upiUri);
-                  }}
-                >
-                  Continue to pay {amount ? `₹${amount}` : ""}
-                </Button>
-              </YStack>
-            </Card>
           </YStack>
         )}
       </DataScreen>
@@ -679,40 +547,6 @@ export function ScanScreen() {
           </View>
           <Label size={13} color="#FFF">
             Record this payment in SettleUp (Settled)
-          </Label>
-        </Pressable>
-
-        <Pressable
-          onPress={() =>
-            action.run(async () => {
-              const contact = await chooseContact();
-              if (contact) {
-                const rawPhone = contact.phone.replace(/[^0-9]/g, "");
-                const phone10 =
-                  rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
-                const initialUpi = phone10 ? `${phone10}@paytm` : "";
-                setContactModal({
-                  name: contact.name,
-                  phone: contact.phone,
-                  upiId: initialUpi,
-                });
-              }
-            }, "Contact selected")
-          }
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            backgroundColor: "rgba(255,255,255,0.18)",
-            borderRadius: 12,
-            paddingVertical: 11,
-            paddingHorizontal: 16,
-          }}
-        >
-          <Icon name="groups" color="#FFF" size={18} />
-          <Label size={13} bold color="#FFF">
-            Pay a contact (Phone Book)
           </Label>
         </Pressable>
       </View>

@@ -35,17 +35,34 @@ export async function request<T>(
   const session = options.accountId
     ? getTokenSession(options.accountId)
     : undefined;
-  const response = await fetch(`${API_URL}${path}`, {
-    method: options.method ?? (options.body !== undefined ? "POST" : "GET"),
-    headers: {
-      "content-type": "application/json",
-      ...(session ? { authorization: `Bearer ${session.accessToken}` } : {}),
-    },
-    ...(options.body !== undefined
-      ? { body: JSON.stringify(options.body) }
-      : {}),
-    signal: AbortSignal.timeout(15000),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let response: Response;
+  let result: any;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method: options.method ?? (options.body !== undefined ? "POST" : "GET"),
+      headers: {
+        "content-type": "application/json",
+        ...(session ? { authorization: `Bearer ${session.accessToken}` } : {}),
+      },
+      ...(options.body !== undefined
+        ? { body: JSON.stringify(options.body) }
+        : {}),
+      signal: controller.signal,
+    });
+    result = await response.json();
+  } catch (error) {
+    if (controller.signal.aborted)
+      throw new DomainError(
+        "TIMEOUT",
+        "The request timed out. Check your connection and try again.",
+        408,
+      );
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   if (response.status === 401 && session && options.accountId && !retried) {
     const id = options.accountId;
     if (!refreshing.has(id))
@@ -65,7 +82,6 @@ export async function request<T>(
     await refreshing.get(id);
     return request(path, options, true);
   }
-  const result = await response.json();
   if (!response.ok)
     throw new DomainError(
       result.code ?? "NETWORK",

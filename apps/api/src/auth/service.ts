@@ -126,35 +126,7 @@ export class AuthService {
         where: { id },
         data: { consumedAt: new Date() },
       });
-      let identity = await tx.phoneIdentity.findUnique({
-        where: { phone: c.phone },
-        include: { user: true },
-      });
-      if (identity?.user.deletedAt) return null;
-      if (!identity) {
-        const user = await tx.user.create({
-          data: {
-            profile: { create: { name: "New friend" } },
-            phone: { create: { phone: c.phone, verifiedAt: new Date() } },
-            notifications: { create: {} },
-            tags: {
-              create: [
-                { name: "Food", color: "#D946EF" },
-                { name: "Transport", color: "#F59E0B" },
-                { name: "Shopping", color: "#6D7CE0" },
-                { name: "Travel", color: "#22A381" },
-                { name: "Utilities", color: "#FB7185" },
-                { name: "Rent", color: "#A78BFA" },
-              ],
-            },
-          },
-        });
-        identity = await tx.phoneIdentity.findUniqueOrThrow({
-          where: { userId: user.id },
-          include: { user: true },
-        });
-      }
-      return this.newSession(tx, identity.userId, randomUUID());
+      return this.verifiedPhoneSession(tx, c.phone);
     });
     if (!result)
       throw new DomainError(
@@ -163,6 +135,52 @@ export class AuthService {
         401,
       );
     return result;
+  }
+  // Only call after OTP consumption or server-side provider verification.
+  async verifiedPhoneSession(
+    tx: Db,
+    rawPhone: string,
+  ): Promise<Session | null> {
+    const phone = normalizePhone(rawPhone);
+    let identity = await tx.phoneIdentity.findUnique({
+      where: { phone: phone },
+      include: { user: true },
+    });
+    if (identity?.user.deletedAt) return null;
+    if (!identity) {
+      const user = await tx.user.create({
+        data: {
+          profile: { create: { name: "New friend" } },
+          phone: { create: { phone: phone, verifiedAt: new Date() } },
+          notifications: { create: {} },
+          tags: {
+            create: [
+              { name: "Food", color: "#D946EF" },
+              { name: "Transport", color: "#F59E0B" },
+              { name: "Shopping", color: "#6D7CE0" },
+              { name: "Travel", color: "#22A381" },
+              { name: "Utilities", color: "#FB7185" },
+              { name: "Rent", color: "#A78BFA" },
+            ],
+          },
+        },
+      });
+      identity = await tx.phoneIdentity.findUniqueOrThrow({
+        where: { userId: user.id },
+        include: { user: true },
+      });
+    }
+    return this.newSession(tx, identity.userId, randomUUID());
+  }
+  async signInWithVerifiedPhone(phone: string): Promise<Session> {
+    const session = await atomic((tx) => this.verifiedPhoneSession(tx, phone));
+    if (!session)
+      throw new DomainError(
+        "UNAUTHORIZED",
+        "This account is unavailable.",
+        401,
+      );
+    return session;
   }
   async newSession(tx: Db, userId: string, familyId: string): Promise<Session> {
     const refreshToken = randomBytes(48).toString("base64url");

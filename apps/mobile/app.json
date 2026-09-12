@@ -13,8 +13,12 @@
     },
     "android": {
       "package": "app.settleup.mobile",
-      "permissions": ["android.permission.READ_SMS"],
-      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+      "permissions": [
+        "android.permission.READ_SMS"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -45,7 +49,8 @@
           "cameraPermission": "Take a bill photo or scan a UPI code.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "./modules/truecaller/app.plugin.js"
     ],
     "experiments": {
       "typedRoutes": true

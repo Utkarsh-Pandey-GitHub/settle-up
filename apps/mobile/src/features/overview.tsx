@@ -46,6 +46,8 @@ export function DataScreen({
     ready = useSession((s) => s.ready),
     id = useSession((s) => s.activeId);
   if (ready && !id) return <Redirect href="/onboarding" />;
+  if (query.data?.account.name === "New friend")
+    return <Redirect href="/auth" />;
   return (
     <Shell>
       {query.isLoading || !ready ? (

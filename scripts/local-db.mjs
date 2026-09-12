@@ -1,4 +1,5 @@
 import EmbeddedPostgres from "embedded-postgres";
+import { access } from "node:fs/promises";
 const pg = new EmbeddedPostgres({
   databaseDir: "/tmp/settleup-postgres",
   user: "settleup",
@@ -10,7 +11,27 @@ const pg = new EmbeddedPostgres({
   onLog: () => {},
   onError: (message) => console.error(String(message)),
 });
-await pg.initialise();
+const probe = pg.getPgClient("postgres", "127.0.0.1");
+let running = false;
+try {
+  await probe.connect();
+  await probe.query("SELECT 1");
+  running = true;
+} catch (error) {
+  if (error.code !== "ECONNREFUSED") throw error;
+} finally {
+  await probe.end();
+}
+if (running) {
+  console.log("Local PostgreSQL is already running on 127.0.0.1:55432.");
+  process.exit(0);
+}
+try {
+  await access("/tmp/settleup-postgres/PG_VERSION");
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+  await pg.initialise();
+}
 await pg.start();
 const client = pg.getPgClient();
 await client.connect();

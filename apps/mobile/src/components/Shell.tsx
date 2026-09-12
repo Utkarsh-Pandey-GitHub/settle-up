@@ -46,6 +46,48 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const account = useSession((s) =>
     s.accounts.find((a) => a.id === s.activeId),
   );
+  if (path === "/auth" || path === "/onboarding")
+    return (
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1, backgroundColor: c.bg }}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingHorizontal: 20,
+            paddingTop: insets.top + 22,
+            paddingBottom: insets.bottom + 24,
+          }}
+        >
+          <XStack
+            maxWidth={660}
+            width="100%"
+            alignSelf="center"
+            justifyContent="space-between"
+            alignItems="center"
+            marginBottom={18}
+          >
+            <Label bold size={24}>
+              settleup.
+            </Label>
+            {account && account.name !== "New friend" && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.replace("/accounts")}
+                style={{ minHeight: 44, justifyContent: "center" }}
+              >
+                <Label muted size={12}>
+                  Back to accounts
+                </Label>
+              </Pressable>
+            )}
+          </XStack>
+          {children}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
   const tabPaths = new Set([
     "/",
     "/activity",

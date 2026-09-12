@@ -1,3 +1,7 @@
+import {
+  truecallerProofSchema,
+  verifyTruecallerAuthorization,
+} from "../../mobile/modules/truecaller/server";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -122,6 +126,32 @@ export async function createApp() {
         .object({ challengeId: idSchema, code: z.string().regex(/^\d{6}$/) })
         .parse(req.body);
       return auth.verifyOtp(b.challengeId, b.code);
+    },
+  );
+  app.post(
+    "/auth/truecaller",
+    { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
+    async (req) => {
+      const clientId = process.env.TRUECALLER_CLIENT_ID;
+      if (!clientId)
+        throw new DomainError(
+          "TRUECALLER_DISABLED",
+          "Use phone verification to continue.",
+          503,
+        );
+      const proof = truecallerProofSchema.parse(req.body);
+      let verified;
+      try {
+        verified = await verifyTruecallerAuthorization(proof, clientId);
+      } catch {
+        throw new DomainError(
+          "TRUECALLER_FAILED",
+          "Truecaller verification failed. Please try again or use a phone code.",
+          401,
+        );
+      }
+      const session = await auth.signInWithVerifiedPhone(verified.phone);
+      return { ...session, suggestedName: verified.suggestedName };
     },
   );
   app.post("/auth/refresh", async (req) =>
