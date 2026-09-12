@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: settleup-api
+    env: node
+    plan: free
+    buildCommand: npm install && npx prisma generate
+    startCommand: npx prisma migrate deploy && tsx apps/api/src/server.ts
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: settleup-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: TRUECALLER_CLIENT_ID
+        value: reu4dkuzbwcc9bcwz2yjepj1cewqd4tpf7_xl11cd1s
+
+databases:
+  - name: settleup-db
+    plan: free
+    databaseName: settleup
+    user: settleup

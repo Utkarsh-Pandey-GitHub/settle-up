@@ -8,6 +8,8 @@
   ],
   "scripts": {
     "dev": "npm run web -w @settleup/mobile",
+    "build": "npm run db:generate",
+    "start": "npm run db:migrate && tsx apps/api/src/server.ts",
     "mobile": "npm run start -w @settleup/mobile",
     "apk:android": "bash apps/mobile/android/gradlew -p apps/mobile/android :app:assembleDebug -PreactNativeArchitectures=arm64-v8a -Pexpo.useLegacyPackaging=true",
     "api": "tsx watch apps/api/src/server.ts",
