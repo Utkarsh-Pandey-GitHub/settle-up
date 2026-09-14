@@ -51,7 +51,16 @@ export async function request<T>(
         : {}),
       signal: controller.signal,
     });
-    result = await response.json();
+    const text = await response.text();
+    try {
+      result = JSON.parse(text);
+    } catch {
+      result = {
+        code: "SERVER_ERROR",
+        message: text.trim() || `Server error (${response.status})`,
+      };
+    }
+
   } catch (error) {
     if (controller.signal.aborted)
       throw new DomainError(

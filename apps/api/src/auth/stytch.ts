@@ -30,20 +30,20 @@ export class StytchOtpProvider {
     );
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
+    const baseUrl = projectId.startsWith("project-test-")
+      ? "https://test.stytch.com"
+      : "https://api.stytch.com";
     try {
-      const response = await this.fetcher(
-        `https://api.stytch.com${path}`,
-        {
-          method: "POST",
-          redirect: "error",
-          headers: {
-            Authorization: `Basic ${credentials}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
+      const response = await this.fetcher(`${baseUrl}${path}`, {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
       if (response.status === 429)
         throw new DomainError(
           "RATE_LIMIT",
@@ -51,18 +51,20 @@ export class StytchOtpProvider {
           429,
         );
       if (!response.ok) {
+        const errJson = await response.json().catch(() => null);
+        const errMsg = errJson?.error_message || errJson?.error_type;
         if (
           path.includes("authenticate") &&
           [400, 401, 403, 422].includes(response.status)
         )
           throw new DomainError(
             "OTP_INVALID",
-            "The code is invalid or expired.",
+            errMsg || "The code is invalid or expired.",
             401,
           );
         throw new DomainError(
           "OTP_DELIVERY",
-          "Phone verification is unavailable. Check your SMS provider configuration or use Truecaller.",
+          errMsg || "Phone verification is unavailable. Check your SMS provider configuration or use Truecaller.",
           503,
         );
       }
