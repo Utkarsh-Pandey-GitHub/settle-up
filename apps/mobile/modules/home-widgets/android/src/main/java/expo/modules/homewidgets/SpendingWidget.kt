@@ -1,189 +1,141 @@
 package expo.modules.homewidgets
 
+import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.LinearGradient
+import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Shader
+import android.net.Uri
+import android.os.Bundle
 import android.view.View
 import android.widget.RemoteViews
 import org.json.JSONObject
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Currency
+import java.util.Date
 import java.util.Locale
+import kotlin.math.max
+import kotlin.math.pow
 
-/**
- * A 4×3 spending analytics widget.
- *
- * Reads the cached JSON snapshot from SharedPreferences (pushed by the JS
- * layer via [HomeWidgetsModule.updateSnapshot]) and renders:
- *   - Total spent this week or month
- *   - A sparkline bar graph of daily spend
- *   - Up to 2 active budget goals with progress bars
- *   - "Last synced" timestamp
- *
- * If no snapshot is available the widget shows "Open SettleUp to sync".
- */
 class SpendingWidget : AppWidgetProvider() {
-
-  override fun onUpdate(context: Context, mgr: AppWidgetManager, ids: IntArray) {
-    val prefs = context.getSharedPreferences(HomeWidgetsModule.PREFS, Context.MODE_PRIVATE)
-    val accountId = prefs.getString(HomeWidgetsModule.KEY_ACCOUNT, null)
-    val raw = if (accountId != null) prefs.getString("snapshot_$accountId", null) else null
-
-    for (id in ids) {
-      val views = RemoteViews(context.packageName, R.layout.widget_spending)
-      // Tapping anywhere opens the analytics screen.
-      views.setOnClickPendingIntent(R.id.widget_root, deepLink(context, "settleup://analytics"))
-
-      if (raw == null) {
-        views.setTextViewText(R.id.widget_total, context.getString(R.string.widget_open))
-        views.setTextViewText(R.id.widget_period, "")
-        views.setImageViewBitmap(R.id.widget_graph, null)
-        views.setViewVisibility(R.id.widget_goals, View.GONE)
-        views.setTextViewText(R.id.widget_updated, context.getString(R.string.widget_open))
-        mgr.updateAppWidget(id, views)
-        continue
-      }
-
-      val snap = JSONObject(raw)
-      val currency = snap.optString("currency", "INR")
-      val digits = snap.optInt("digits", 2)
-      val days = snap.optJSONObject("days") ?: JSONObject()
-      val goals = snap.optJSONArray("goals")
-      val updatedAt = snap.optLong("updatedAt", 0L)
-
-      // Current week: Monday → Sunday.
-      val cal = Calendar.getInstance()
-      val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-      val labelFmt = SimpleDateFormat("MMM d", Locale.US)
-
-      // Move to Monday of this week.
-      cal.firstDayOfWeek = Calendar.MONDAY
-      cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-      val weekStart = cal.time
-
-      // Collect daily totals for the 7-day week.
-      val amounts = mutableListOf<Long>()
-      var total = 0L
-      for (i in 0 until 7) {
-        if (i > 0) cal.add(Calendar.DAY_OF_MONTH, 1)
-        val key = dateFmt.format(cal.time)
-        val amt = days.optLong(key, 0L)
-        amounts.add(amt)
-        total += amt
-      }
-      val weekEnd = cal.time
-
-      // Format total as currency.
-      val fmt = try {
-        NumberFormat.getCurrencyInstance(Locale("en", "IN")).apply {
-          this.currency = Currency.getInstance(currency)
-          minimumFractionDigits = if (digits == 0) 0 else digits
-          maximumFractionDigits = digits
-        }
-      } catch (_: Exception) {
-        NumberFormat.getInstance()
-      }
-      val divisor = Math.pow(10.0, digits.toDouble())
-      views.setTextViewText(R.id.widget_total, fmt.format(total / divisor))
-      views.setTextViewText(R.id.widget_period,
-        "This week · ${labelFmt.format(weekStart)} – ${labelFmt.format(weekEnd)}")
-
-      // Draw sparkline bar graph.
-      views.setImageViewBitmap(R.id.widget_graph, drawSparkline(amounts, 600, 160))
-
-      // Goals (up to 2).
-      if (goals != null && goals.length() > 0) {
-        views.setViewVisibility(R.id.widget_goals, View.VISIBLE)
-        for (i in 0 until minOf(goals.length(), 2)) {
-          val goal = goals.getJSONObject(i)
-          val name = goal.optString("name", "Budget")
-          val limit = goal.optLong("limit", 1L)
-          val spent = goal.optLong("spent", 0L)
-          val pct = if (limit > 0) ((spent * 100) / limit).toInt().coerceIn(0, 100) else 0
-          val goalText = "$name · $pct%"
-          when (i) {
-            0 -> {
-              views.setTextViewText(R.id.widget_goal_1, goalText)
-              views.setProgressBar(R.id.widget_progress_1, 100, pct, false)
-              views.setViewVisibility(R.id.widget_goal_1, View.VISIBLE)
-              views.setViewVisibility(R.id.widget_progress_1, View.VISIBLE)
-            }
-            1 -> {
-              views.setTextViewText(R.id.widget_goal_2, goalText)
-              views.setProgressBar(R.id.widget_progress_2, 100, pct, false)
-              views.setViewVisibility(R.id.widget_goal_2, View.VISIBLE)
-              views.setViewVisibility(R.id.widget_progress_2, View.VISIBLE)
-            }
-          }
-        }
-        if (goals.length() < 2) {
-          views.setViewVisibility(R.id.widget_goal_2, View.GONE)
-          views.setViewVisibility(R.id.widget_progress_2, View.GONE)
-        }
-      } else {
-        views.setViewVisibility(R.id.widget_goals, View.GONE)
-      }
-
-      // Last synced label.
-      if (updatedAt > 0) {
-        val mins = ((System.currentTimeMillis() - updatedAt) / 60_000).toInt()
-        val syncText = when {
-          mins < 1 -> "Synced just now"
-          mins < 60 -> "Synced ${mins}m ago"
-          mins < 1440 -> "Synced ${mins / 60}h ago"
-          else -> "Synced ${mins / 1440}d ago"
-        }
-        views.setTextViewText(R.id.widget_updated, syncText)
-      } else {
-        views.setTextViewText(R.id.widget_updated, context.getString(R.string.widget_open))
-      }
-
-      mgr.updateAppWidget(id, views)
+  override fun onReceive(context: Context, intent: Intent) {
+    super.onReceive(context, intent)
+    if (intent.action == "${context.packageName}.WIDGET_PERIOD") {
+      val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+      val manager = AppWidgetManager.getInstance(context)
+      if (manager.getAppWidgetInfo(id)?.provider != ComponentName(context, SpendingWidget::class.java)) return
+      WidgetStore.prefs(context).edit().putBoolean("week_$id", intent.getBooleanExtra("week", false)).apply()
+      onUpdate(context, manager, intArrayOf(id))
     }
   }
-
-  /** Draw rounded vertical bars for each day's spend. */
-  private fun drawSparkline(amounts: List<Long>, w: Int, h: Int): Bitmap {
-    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bmp)
-    val max = (amounts.maxOrNull() ?: 1L).coerceAtLeast(1L).toFloat()
-    val barCount = amounts.size
-    val spacing = 8f
-    val barWidth = (w.toFloat() - spacing * (barCount + 1)) / barCount
-    val cornerRadius = barWidth / 2f
-
-    val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-      shader = LinearGradient(
-        0f, 0f, 0f, h.toFloat(),
-        0xFF8770BE.toInt(), 0xFFB8A5E0.toInt(),
-        Shader.TileMode.CLAMP
-      )
+  override fun onDeleted(context: Context, ids: IntArray) {
+    val edit = WidgetStore.prefs(context).edit()
+    ids.forEach { edit.remove("week_$it") }
+    edit.apply()
+  }
+  override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) = onUpdate(context, manager, intArrayOf(id))
+  override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+    ids.forEach { id -> manager.updateAppWidget(id, render(context, id)) }
+  }
+  private fun toggle(context: Context, id: Int, week: Boolean): PendingIntent {
+    val intent = Intent(context, SpendingWidget::class.java)
+      .setAction("${context.packageName}.WIDGET_PERIOD")
+      .setData(Uri.parse("settleup-widget://period/$id/$week"))
+      .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id).putExtra("week", week)
+    return PendingIntent.getBroadcast(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+  }
+  private fun render(context: Context, id: Int): RemoteViews {
+    val views = RemoteViews(context.packageName, R.layout.widget_spending)
+    val week = WidgetStore.prefs(context).getBoolean("week_$id", false)
+    val snapshot = WidgetStore.snapshot(context)
+    val route = "analytics?period=${if (week) "WEEK" else "MONTH"}"
+    views.setImageViewResource(R.id.widget_brand, context.applicationInfo.icon)
+    views.setOnClickPendingIntent(R.id.widget_root, WidgetStore.launch(context, route))
+    views.setOnClickPendingIntent(R.id.widget_goals, WidgetStore.launch(context, "goals"))
+    views.setOnClickPendingIntent(R.id.widget_week, toggle(context, id, true))
+    views.setOnClickPendingIntent(R.id.widget_month, toggle(context, id, false))
+    views.setInt(R.id.widget_week, "setBackgroundResource", if (week) R.drawable.widget_accent else 0)
+    views.setInt(R.id.widget_month, "setBackgroundResource", if (week) 0 else R.drawable.widget_accent)
+    views.setContentDescription(R.id.widget_week, if (week) "Week, selected" else "Show this week")
+    views.setContentDescription(R.id.widget_month, if (week) "Show this month" else "Month, selected")
+    views.setViewVisibility(R.id.widget_goal_2, View.GONE)
+    views.setViewVisibility(R.id.widget_progress_1, View.GONE)
+    views.setViewVisibility(R.id.widget_progress_2, View.GONE)
+    if (snapshot == null) {
+      views.setTextViewText(R.id.widget_total, "Your spending")
+      views.setTextViewText(R.id.widget_period, "Open SettleUp to load your active account")
+      views.setTextViewText(R.id.widget_goal_1, "Your goals will appear here")
+      views.setViewVisibility(R.id.widget_graph, View.INVISIBLE)
+      return views
     }
-
-    for (i in amounts.indices) {
-      val barH = (amounts[i].toFloat() / max) * (h - 12f)
-      if (barH < 1f) continue  // Skip zero-spend days.
-      val left = spacing + i * (barWidth + spacing)
-      val top = h - barH
-      val right = left + barWidth
-      val bottom = h.toFloat()
-      canvas.drawRoundRect(left, top, right, bottom, cornerRadius, cornerRadius, barPaint)
+    val dates = WidgetSeries.dates(week)
+    val days = snapshot.optJSONObject("days") ?: JSONObject()
+    val values = dates.map { days.optDouble(it, 0.0).coerceAtLeast(0.0) }
+    val currency = snapshot.optString("currency", "INR")
+    val digits = snapshot.optInt("digits", 2).coerceIn(0, 4)
+    fun money(minor: Double): String = try {
+      NumberFormat.getCurrencyInstance(Locale("en", "IN")).apply {
+        this.currency = Currency.getInstance(currency)
+        minimumFractionDigits = digits; maximumFractionDigits = digits
+      }.format(minor / 10.0.pow(digits))
+    } catch (_: Exception) { "$currency ${minor / 10.0.pow(digits)}" }
+    views.setTextViewText(R.id.widget_title, "${snapshot.optString("name", "Your")} · spending")
+    views.setTextViewText(R.id.widget_total, money(values.sum()))
+    views.setTextViewText(R.id.widget_period, if (week) "This week · Mon–Sun · IST" else "This month · daily spending · IST")
+    views.setViewVisibility(R.id.widget_graph, View.VISIBLE)
+    views.setImageViewBitmap(R.id.widget_graph, graph(dates, values, week))
+    views.setContentDescription(R.id.widget_graph, dates.zip(values).joinToString("; ") { "${it.first}: ${money(it.second)}" })
+    val goals = snapshot.optJSONArray("goals")
+    val active = (0 until (goals?.length() ?: 0)).mapNotNull { goals?.optJSONObject(it) }
+      .filter { it.optLong("end") > System.currentTimeMillis() }
+      .sortedBy { if (it.optString("period") == if (week) "WEEK" else "MONTH") 0 else 1 }.take(2)
+    views.setTextViewText(R.id.widget_goal_1, "No active goals · tap to add one")
+    active.forEachIndexed { index, goal ->
+      val label = if (index == 0) R.id.widget_goal_1 else R.id.widget_goal_2
+      val progress = if (index == 0) R.id.widget_progress_1 else R.id.widget_progress_2
+      val spent = goal.optDouble("spent", 0.0).coerceAtLeast(0.0)
+      val limit = goal.optDouble("limit", 0.0)
+      val percent = if (limit > 0) (spent / limit * 100).toInt() else 0
+      val text = "${goal.optString("name")} · $percent% of ${money(limit)}"
+      views.setTextViewText(label, text)
+      views.setContentDescription(label, "$text, ${money(spent)} spent")
+      views.setViewVisibility(label, View.VISIBLE)
+      views.setViewVisibility(progress, View.VISIBLE)
+      views.setProgressBar(progress, 100, percent.coerceIn(0, 100), false)
     }
-
-    // Subtle baseline.
-    val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-      color = 0x20544274
-      strokeWidth = 2f
+    val dateFormat = SimpleDateFormat("d MMM, h:mm a", Locale("en", "IN")).apply { timeZone = WidgetSeries.zone }
+    views.setTextViewText(R.id.widget_updated, "Synced ${dateFormat.format(Date(snapshot.optLong("updatedAt")))} IST · tap to refresh in app")
+    return views
+  }
+  private fun graph(dates: List<String>, values: List<Double>, week: Boolean): Bitmap {
+    val bitmap = Bitmap.createBitmap(640, 154, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val peak = max(values.maxOrNull() ?: 0.0, 1.0)
+    val step = 608f / values.size
+    paint.color = Color.rgb(229, 223, 242); paint.strokeWidth = 1f
+    canvas.drawLine(16f, 25f, 624f, 25f, paint)
+    canvas.drawLine(16f, 118f, 624f, 118f, paint)
+    values.forEachIndexed { index, value ->
+      paint.color = Color.rgb(135, 112, 190)
+      val left = 16f + index * step + step * 0.15f
+      val height = (value / peak * 90).toFloat()
+      if (height > 0) canvas.drawRoundRect(left, 118f - height, left + step * 0.7f, 118f, 4f, 4f, paint)
+      if (week || index == 0 || index == values.size / 2 || index == values.lastIndex) {
+        paint.color = Color.rgb(118, 108, 131); paint.textSize = 19f; paint.textAlign = Paint.Align.CENTER
+        canvas.drawText(if (week) listOf("M", "T", "W", "T", "F", "S", "S")[index] else dates[index].takeLast(2).toInt().toString(), 16f + (index + 0.5f) * step, 148f, paint)
+      }
     }
-    canvas.drawLine(0f, h - 1f, w.toFloat(), h - 1f, linePaint)
-
-    return bmp
+    if (values.sum() == 0.0) {
+      paint.color = Color.rgb(118, 108, 131); paint.textSize = 23f; paint.textAlign = Paint.Align.CENTER
+      canvas.drawText("No spending recorded yet", 320f, 80f, paint)
+    }
+    return bitmap
   }
 }

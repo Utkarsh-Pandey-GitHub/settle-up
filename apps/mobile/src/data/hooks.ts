@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "./session";
 import { syncGoalNotifications } from "../services/device";
 import { repository } from "./repository";
+import { syncWidgets } from "../../modules/home-widgets/client";
 export function useDashboard() {
   const id = useSession((s) => s.activeId);
   const result = useQuery({
@@ -12,7 +13,10 @@ export function useDashboard() {
     staleTime: 15000,
   });
   useEffect(() => {
-    if (result.data) syncGoalNotifications(result.data).catch(() => {});
+    if (result.data) {
+      syncGoalNotifications(result.data).catch(() => {});
+      syncWidgets(result.data).catch(() => {});
+    }
   }, [result.data]);
   return result;
 }

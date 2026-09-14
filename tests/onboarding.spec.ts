@@ -15,33 +15,42 @@ test("new user verifies, completes profile, and reaches the first action", async
   };
   let checked = false,
     saved = false;
-  await page.route("http://localhost:4000/**", async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    if (path === "/auth/otp")
-      return route.fulfill({ json: { challengeId: "test-challenge" } });
-    if (path === "/auth/verify") {
-      if (route.request().postDataJSON().code !== "123456")
-        return route.fulfill({
-          status: 401,
-          json: { message: "The code is invalid or expired." },
+  // Keep the flow entirely local even when the developer uses a hosted API.
+  await page.route("**/*", (route) =>
+    new URL(route.request().url()).origin === "http://localhost:8082"
+      ? route.continue()
+      : route.abort(),
+  );
+  await page.route(
+    /^https?:\/\/[^/]+\/(?:auth\/(?:otp|verify)|profile)(?:\?.*)?$/,
+    async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/auth/otp")
+        return route.fulfill({ json: { challengeId: "test-challenge" } });
+      if (path === "/auth/verify") {
+        if (route.request().postDataJSON().code !== "123456")
+          return route.fulfill({
+            status: 401,
+            json: { message: "The code is invalid or expired." },
+          });
+        checked = true;
+        return route.fulfill({ json: session });
+      }
+      if (path === "/profile") {
+        expect(checked).toBe(true);
+        expect(route.request().headers().authorization).toBe(
+          "Bearer test-access",
+        );
+        expect(route.request().postDataJSON()).toEqual({
+          name: "Sam",
+          currency: "EUR",
         });
-      checked = true;
-      return route.fulfill({ json: session });
-    }
-    if (path === "/profile") {
-      expect(checked).toBe(true);
-      expect(route.request().headers().authorization).toBe(
-        "Bearer test-access",
-      );
-      expect(route.request().postDataJSON()).toEqual({
-        name: "Sam",
-        currency: "EUR",
-      });
-      saved = true;
-      return route.fulfill({ json: { name: "Sam", currency: "EUR" } });
-    }
-    return route.fulfill({ json: {} });
-  });
+        saved = true;
+        return route.fulfill({ json: { name: "Sam", currency: "EUR" } });
+      }
+      return route.fulfill({ json: {} });
+    },
+  );
   await page.goto("/auth");
   await expect(
     page.getByRole("button", { name: "Continue with Truecaller", exact: true }),

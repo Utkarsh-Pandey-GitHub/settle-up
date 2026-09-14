@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { Image, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -32,6 +32,8 @@ export function BillEditor({
   photo,
   onPhoto,
   onBusy,
+  autoCapture = false,
+  onAutoCaptureHandled,
   autoCamera,
 }: {
   currency: string;
@@ -42,6 +44,8 @@ export function BillEditor({
   photo: BillPhoto | null;
   onPhoto(photo: BillPhoto | null): void;
   onBusy(busy: boolean): void;
+  autoCapture?: boolean;
+  onAutoCaptureHandled?(): void;
   autoCamera?: boolean;
 }) {
   const c = useColors();
@@ -87,6 +91,26 @@ export function BillEditor({
       setAiStatus("");
     }
   };
+  const openCamera = async () => {
+    const access = permission?.granted ? permission : await requestPermission();
+    if (!access.granted)
+      throw new Error(
+        "Camera access is off. Allow it in settings, or choose a photo.",
+      );
+    setReady(false);
+    setCamera(true);
+  };
+  const captureRequested = useRef(false);
+  useEffect(() => {
+    if (!autoCapture) {
+      captureRequested.current = false;
+      return;
+    }
+    if (!permission || busy || captureRequested.current) return;
+    captureRequested.current = true;
+    if (!camera) void task(openCamera);
+    onAutoCaptureHandled?.();
+  }, [autoCapture, permission, busy]);
   const choose = () =>
     task(async () => {
       const picked = await ImagePicker.launchImageLibraryAsync({
@@ -145,19 +169,7 @@ export function BillEditor({
             secondary
             icon="camera"
             disabled={busy}
-            onPress={() =>
-              task(async () => {
-                const access = permission?.granted
-                  ? permission
-                  : await requestPermission();
-                if (!access.granted)
-                  throw new Error(
-                    "Camera access is off. Allow it in settings, or choose a photo.",
-                  );
-                setReady(false);
-                setCamera(true);
-              })
-            }
+            onPress={() => task(openCamera)}
           >
             Take bill photo
           </Button>

@@ -11,6 +11,8 @@ import { Montserrat_700Bold } from "@expo-google-fonts/montserrat/700Bold";
 import { config } from "../src/theme/config";
 import { useSession } from "../src/data/session";
 import { StatusBar } from "expo-status-bar";
+import { AppState } from "react-native";
+import { setWidgetAccount } from "../modules/home-widgets/client";
 const query = new QueryClient({
   defaultOptions: { queries: { retry: 1 }, mutations: { retry: false } },
 });
@@ -24,7 +26,23 @@ export default function Layout() {
   const dark = useSession((s) => s.dark),
     activeId = useSession((s) => s.activeId);
   useEffect(() => {
+    const syncAccount = () => {
+      const state = useSession.getState();
+      if (state.ready) setWidgetAccount(state.activeId);
+    };
+    syncAccount();
+    const unsubscribe = useSession.subscribe(syncAccount);
     useSession.getState().hydrate();
+    const foreground = AppState.addEventListener("change", (state) => {
+      if (state === "active")
+        query.invalidateQueries({
+          queryKey: ["account", useSession.getState().activeId],
+        });
+    });
+    return () => {
+      unsubscribe();
+      foreground.remove();
+    };
   }, []);
   useEffect(() => {
     query.cancelQueries();

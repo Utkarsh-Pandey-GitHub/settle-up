@@ -57,6 +57,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
       title?: string;
       amount?: string;
       pending?: string;
+      capture?: string;
       bill?: string;
     }>(),
     router = useRouter(),
@@ -258,6 +259,10 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
           </XStack>
           {isExpense && (
             <BillEditor
+              autoCapture={params.capture === "bill"}
+              onAutoCaptureHandled={() =>
+                router.setParams({ capture: undefined })
+              }
               currency={d.account.currency}
               amount={amount}
               lines={lines}

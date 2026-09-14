@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Pressable,
@@ -6,7 +6,7 @@ import {
   Image,
   Alert,
 } from "react-native";
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useRouter, useLocalSearchParams } from "expo-router";
 import { XStack, YStack } from "tamagui";
 import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
 import type { Dashboard, TransactionView } from "@settleup/contracts";
@@ -828,7 +828,10 @@ export function ActivityScreen() {
   );
 }
 export function AnalyticsScreen() {
-  const [period, setPeriod] = useState<Period>("MONTH"),
+  const params = useLocalSearchParams<{ period?: string }>();
+  const [period, setPeriod] = useState<Period>(
+      params.period === "WEEK" ? "WEEK" : "MONTH",
+    ),
     [tag, setTag] = useState(""),
     [ledger, setLedger] = useState(""),
     [custom, setCustom] = useState(false),
@@ -838,6 +841,16 @@ export function AnalyticsScreen() {
     "period" | "category" | "group" | null
   >(null);
   const router = useRouter();
+  useEffect(() => {
+    if (params.period === "WEEK" || params.period === "MONTH") {
+      setPeriod(params.period);
+      setCustom(false);
+      setTag("");
+      setLedger("");
+      setOpenFilter(null);
+      router.setParams({ period: undefined });
+    }
+  }, [params.period]);
   return (
     <DataScreen>
       {(d) => {

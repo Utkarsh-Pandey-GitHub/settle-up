@@ -29,6 +29,11 @@ import { request, extra } from "../data/repository";
 import { useAction } from "../data/hooks";
 import { DataScreen, SectionTitle } from "./overview";
 import {
+  pinWidget,
+  widgetsAvailable,
+  type WidgetKind,
+} from "../../modules/home-widgets/client";
+import {
   chooseContact,
   enableNotifications,
   disableLocalNotifications,
@@ -531,7 +536,8 @@ export function AccountsScreen() {
 export function SettingsScreen() {
   const [name, setName] = useState(""),
     [deleteText, setDeleteText] = useState(""),
-    [exported, setExported] = useState("");
+    [exported, setExported] = useState(""),
+    [widgetMessage, setWidgetMessage] = useState("");
   const dark = useSession((s) => s.dark),
     router = useRouter(),
     action = useAction();
@@ -540,6 +546,41 @@ export function SettingsScreen() {
       {(d) => (
         <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
           <Heading>Make yourself at home.</Heading>
+          {widgetsAvailable && (
+            <Card>
+              <YStack gap={12}>
+                <SectionTitle title="Home screen widgets" />
+                <Label muted size={12}>
+                  Four shortcuts to your money. Spending and goals show your
+                  active account’s last synced totals on your home screen.
+                </Label>
+                {(
+                  [
+                    ["qr", "Scan QR"],
+                    ["transaction", "Record transaction"],
+                    ["bill", "Scan bill"],
+                    ["spending", "Spending & goals"],
+                  ] satisfies [WidgetKind, string][]
+                ).map(([kind, label]) => (
+                  <Button
+                    key={kind}
+                    secondary
+                    onPress={async () => {
+                      const requested = await pinWidget(kind).catch(
+                        () => false,
+                      );
+                      setWidgetMessage(
+                        requested
+                          ? "Confirm placement in your launcher. You can move or resize the widget afterward."
+                          : "Long-press your home screen, choose Widgets, then find SettleUp and pick a widget.",
+                      );
+                    }}
+                  >{`Add ${label}`}</Button>
+                ))}
+                {!!widgetMessage && <Notice>{widgetMessage}</Notice>}
+              </YStack>
+            </Card>
+          )}
           <Card>
             <YStack gap={17}>
               <SectionTitle title="Profile" />

@@ -1,1 +1,4 @@
-{"platforms":["android"],"android":{"modules":["expo.modules.homewidgets.HomeWidgetsModule"]}}
+{
+  "platforms": ["android"],
+  "android": { "modules": ["expo.modules.homewidgets.HomeWidgetsModule"] }
+}

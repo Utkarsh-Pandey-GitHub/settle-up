@@ -17,8 +17,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run web -w @settleup/mobile -- --port 8082",
+    command: "npm run web -w @settleup/mobile -- --port 8082 --clear",
     env: {
+      EXPO_NO_DOTENV: "1",
       EXPO_PUBLIC_DEMO: "false",
       EXPO_PUBLIC_API_URL: "http://localhost:4000",
     },
