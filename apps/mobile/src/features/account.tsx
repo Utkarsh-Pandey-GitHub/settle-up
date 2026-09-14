@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Platform, Share, View, Pressable } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { XStack, YStack } from "tamagui";
@@ -166,12 +166,18 @@ export function AuthScreen() {
   const [verifiedId, setVerifiedId] = useState(
     active?.name === "New friend" ? active.id : "",
   );
+  const pendingPayment = useSession(s => s.pendingPayment);
+  const resumePayment = async () => {
+    const token = useSession.getState().pendingPayment;
+    await useSession.getState().setPendingPayment(null);
+    router.replace(token ? `/pay/${token}` : "/");
+  };
   const acceptSession = async (
     session: Session & { suggestedName?: string },
   ) => {
     await useSession.getState().add(session);
     if (session.account.name !== "New friend") {
-      router.replace("/");
+      await resumePayment();
       return;
     }
     setVerifiedId(session.account.id);
@@ -179,6 +185,28 @@ export function AuthScreen() {
     setCurrency(session.account.currency);
     setStage("profile");
   };
+  const [truecallerBusy, setTruecallerBusy] = useState(false);
+  const [truecallerHint, setTruecallerHint] = useState("");
+  const attemptedTruecaller = useRef(false);
+  useEffect(() => {
+    if (stage !== "phone" || !truecallerAvailable || DEMO || attemptedTruecaller.current) return;
+    let mounted = true;
+    // Schedule after mounting so Strict Mode cannot launch two native consent sheets.
+    const timer = setTimeout(async () => {
+      if (!mounted) return;
+      attemptedTruecaller.current = true;
+      setTruecallerBusy(true);
+      try {
+        const proof = await authorizeWithTruecaller();
+        if (!mounted) return;
+        const session = await request<Session & { suggestedName?: string }>("/auth/truecaller", { body: proof });
+        if (mounted) { setTruecallerBusy(false); await acceptSession(session); }
+      } catch {
+        if (mounted) setTruecallerHint("Continue with an SMS code to verify your number.");
+      } finally { if (mounted) setTruecallerBusy(false); }
+    }, 0);
+    return () => { mounted = false; clearTimeout(timer); };
+  }, [stage]);
   const step =
     stage === "phone" || stage === "code" ? 1 : stage === "profile" ? 2 : 3;
   return (
@@ -279,27 +307,8 @@ export function AuthScreen() {
           <YStack gap={16}>
             {stage === "phone" && (
               <>
-                {truecallerAvailable && (
-                  <>
-                    <Button
-                      disabled={action.busy || DEMO}
-                      onPress={() =>
-                        action.run(async () => {
-                          const proof = await authorizeWithTruecaller();
-                          const session = await request<
-                            Session & { suggestedName?: string }
-                          >("/auth/truecaller", { body: proof });
-                          await acceptSession(session);
-                        }, "Phone verified")
-                      }
-                    >
-                      Continue with Truecaller
-                    </Button>
-                    <Label muted size={11} textAlign="center">
-                      Or use a phone verification code
-                    </Label>
-                  </>
-                )}
+                {truecallerBusy && <Label muted>Opening secure phone verification…</Label>}
+                {!!truecallerHint && <Label muted>{truecallerHint}</Label>}
                 <Field
                   label="Phone number"
                   placeholder="+91 98765 43210"
@@ -307,10 +316,10 @@ export function AuthScreen() {
                   textContentType="telephoneNumber"
                   value={phone}
                   onChangeText={setPhone}
-                  editable={!action.busy}
+                  editable={!action.busy && !truecallerBusy}
                 />
                 <Button
-                  disabled={action.busy || DEMO || !phone.trim()}
+                  disabled={action.busy || truecallerBusy || DEMO || !phone.trim()}
                   onPress={() =>
                     action.run(async () => {
                       const normalized = normalizePhone(phone);
@@ -325,7 +334,7 @@ export function AuthScreen() {
                     }, "Code sent")
                   }
                 >
-                  {action.busy ? "Sending code…" : "Continue with phone"}
+                  {truecallerBusy ? "Verifying phone…" : action.busy ? "Sending code…" : "Continue with phone"}
                 </Button>
                 <Label muted size={11}>
                   We use your number to verify your account. Your address book
@@ -441,6 +450,7 @@ export function AuthScreen() {
             )}
             {stage === "ready" && (
               <>
+                {pendingPayment && <Button onPress={() => action.run(resumePayment, "Payment request ready")}>Continue to payment request</Button>}
                 <Label bold size={14}>
                   Start with something from today.
                 </Label>
@@ -526,6 +536,7 @@ export function AccountsScreen() {
           </Card>
         ))}
         {!!action.error && <Notice error>{action.error}</Notice>}
+        {!!activeId && <Button secondary onPress={() => router.push("/settings")}>Settings & permissions</Button>}
         <Button icon="plus" onPress={() => router.push("/auth")}>
           Add another account
         </Button>
@@ -660,8 +671,11 @@ export function SettingsScreen() {
               <Button secondary onPress={() => router.push("/contacts")}>
                 Contacts & peers
               </Button>
+              <Button secondary onPress={() => router.push("/payment-links")}>
+                Payment links
+              </Button>
               <Button secondary onPress={() => router.push("/sms")}>
-                SMS permissions
+                Bank SMS review
               </Button>
             </YStack>
           </Card>

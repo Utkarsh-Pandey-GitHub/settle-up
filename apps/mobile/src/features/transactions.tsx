@@ -1037,6 +1037,7 @@ export function GroupsScreen() {
     [creating, setCreating] = useState(params.new === "1"),
     [name, setName] = useState(""),
     [members, setMembers] = useState<string[]>([]),
+    [contacts, setContacts] = useState<{ name: string; phone: string }[]>([]),
     action = useAction(),
     router = useRouter(),
     c = useColors();
@@ -1076,10 +1077,10 @@ export function GroupsScreen() {
                       const peer = d.peers.find(
                         (p) => p.phone === contact.phone,
                       );
-                      if (!peer)
-                        throw new Error(
-                          `${contact.name} is not a saved peer yet. Open Contacts below to save and invite them, then return to add them.`,
-                        );
+                      if (!peer) {
+                        setContacts(items => items.some(p => p.phone === contact.phone) ? items : [...items, contact]);
+                        return;
+                      }
                       setMembers((ms) =>
                         ms.includes(peer.id) ? ms : [...ms, peer.id],
                       );
@@ -1096,6 +1097,7 @@ export function GroupsScreen() {
                   Manage contacts and invitations
                 </Button>
                 <XStack gap={8} flexWrap="wrap">
+                  {contacts.map(contact => <Chip key={contact.phone} selected onPress={() => setContacts(items => items.filter(p => p.phone !== contact.phone))}>{contact.name}</Chip>)}
                   {d.peers.map((p) => (
                     <Chip
                       selected={members.includes(p.id)}
@@ -1125,11 +1127,14 @@ export function GroupsScreen() {
                           description: "A little better, together.",
                           currency: d.account.currency,
                           memberIds: members,
+                          contacts,
                         });
                       })
                     ) {
                       setCreating(false);
                       setName("");
+                      setContacts([]);
+                      setMembers([]);
                     }
                   }}
                 >

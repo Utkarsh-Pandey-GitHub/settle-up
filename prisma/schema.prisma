@@ -55,6 +55,7 @@ model User {
   tags             Tag[]
   goals            Goal[]
   imports          SmsImportRecord[]
+  paymentLinks     PaymentLink[]
   links            SharedAnalyticsLink[]
   notifications    NotificationPreference?
   events           AuditEvent[]
@@ -77,7 +78,7 @@ model PhoneIdentity {
   userId     String   @id @db.Uuid
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   phone      String   @unique @db.VarChar(16)
-  verifiedAt DateTime @db.Timestamptz
+  verifiedAt DateTime? @db.Timestamptz
 }
 
 model OtpChallenge {
@@ -454,4 +455,14 @@ model TransactionItem {
   amountMinor   BigInt
 
   @@id([transactionId, position])
+}
+
+// An opaque, expiring app link. No bank account details or payment credentials.
+model PaymentLink {
+  tokenDigest String @id @db.Char(64)
+  ownerId String @db.Uuid
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  uri String @db.VarChar(2048)
+  expiresAt DateTime @db.Timestamptz
+  @@index([expiresAt])
 }

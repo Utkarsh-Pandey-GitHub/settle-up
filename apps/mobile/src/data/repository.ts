@@ -398,6 +398,12 @@ export class DemoRepository implements AppRepository {
   ): Promise<any> {
     const d = await demoLoad(id);
     if (path === "/groups") {
+      const selected = new Set<string>(body.memberIds ?? []);
+      for (const contact of body.contacts ?? []) {
+        let peer = d.peers.find(p => p.phone === contact.phone);
+        if (!peer) { peer = { ...contact, id: uuid() }; d.peers.push(peer!); }
+        selected.add(peer!.id);
+      }
       const groupId = uuid();
       d.ledgers.push({
         id: groupId,
@@ -408,7 +414,7 @@ export class DemoRepository implements AppRepository {
         members: [
           { id, name: d.account.name, role: "OWNER" },
           ...d.peers
-            .filter((p) => body.memberIds.includes(p.id))
+            .filter((p) => selected.has(p.id))
             .map((p) => ({ ...p, role: "MEMBER" })),
         ],
         archived: false,

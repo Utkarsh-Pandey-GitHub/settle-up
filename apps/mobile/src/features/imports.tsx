@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { Platform, View, Pressable, StyleSheet } from "react-native";
+import React, { useMemo, useState, useEffect } from "react";
+import { Platform, View, Pressable, StyleSheet, AppState } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { YStack, XStack } from "tamagui";
@@ -12,6 +12,7 @@ import {
 } from "@settleup/domain";
 import {
   AndroidSmsProvider,
+  type SmsDecision,
   paymentLauncher,
   paymentRequest,
 } from "../services/device";
@@ -616,10 +617,30 @@ function SmsContent({ accountId }: { accountId: string }) {
     router = useRouter();
   const [suggestions, setSuggestions] = useState<ImportSuggestion[]>([]),
     [enabled, setEnabled] = useState(false),
+    [custom, setCustom] = useState(false),
+    [from, setFrom] = useState(""),
+    [through, setThrough] = useState(""),
+    [history, setHistory] = useState<Record<string, SmsDecision>>({}),
     [editing, setEditing] = useState<string | null>(null),
     [editAmount, setEditAmount] = useState(""),
     [editTitle, setEditTitle] = useState("");
   const keys = useMemo(() => new Map<string, string>(), []);
+  useEffect(() => {
+    if (!enabled || custom || action.busy || editing) return;
+    let live = true;
+    const refresh = async () => {
+      try {
+        const items = await provider.review();
+        const records = await provider.handled();
+        if (live) { setSuggestions(items); setHistory(records); }
+      } catch (error) { if (live) action.setError((error as Error).message); }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 60000);
+    const listener = AppState.addEventListener("change", state => { if (state === "active") void refresh(); });
+    return () => { live = false; clearInterval(timer); listener.remove(); };
+  }, [enabled, custom, provider, action.busy, editing]);
+
   return (
     <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
       <Heading>A second pair of eyes.</Heading>
@@ -640,24 +661,36 @@ function SmsContent({ accountId }: { accountId: string }) {
           ) : (
             <>
               <Notice>
-                When enabled, SettleUp checks up to 1,000 messages from the last
-                seven days on this device. Raw messages never leave your phone.
-                Suggestions can be wrong—review each one. Handled-message
-                fingerprints expire after seven days.
+                With your permission, SettleUp reads bank expense SMS on this phone.
+                Raw messages stay here. Review amounts before accepting. The weekly
+                inbox covers today and the previous six days; decisions expire when
+                their messages leave that window. You can revoke access in phone settings.
               </Notice>
+              <XStack gap={8} flexWrap="wrap">
+                <Chip selected={!custom} onPress={() => { setCustom(false); setSuggestions([]); setEditing(null); }}>Last 7 days</Chip>
+                <Chip selected={custom} onPress={() => { setCustom(true); setSuggestions([]); setEditing(null); }}>Choose dates</Chip>
+              </XStack>
+              {custom && <YStack gap={12}>
+                <Field label="From · YYYY-MM-DD" value={from} onChangeText={value => { setFrom(value); setSuggestions([]); }} placeholder="2026-09-01" />
+                <Field label="Through · YYYY-MM-DD" value={through} onChangeText={value => { setThrough(value); setSuggestions([]); }} placeholder="2026-09-07" />
+                <Label muted>No accept/reject history is saved for this search. Previously reviewed messages may appear.</Label>
+              </YStack>}
               <Button
+                disabled={action.busy}
                 onPress={() =>
                   action.run(async () => {
+                    if (custom && (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(through))) throw new Error("Enter both dates as YYYY-MM-DD.");
                     if (!(await provider.requestPermission()))
                       throw new Error(
                         "SMS permission was declined. Manual entry is always available.",
                       );
-                    setSuggestions(await provider.review());
+                    setSuggestions(await provider.review(custom ? { from, through } : undefined));
+                    setHistory(await provider.handled());
                     setEnabled(true);
                   }, "Review ready")
                 }
               >
-                Enable SMS transaction review
+                {custom ? "Search bank SMS" : enabled ? "Refresh inbox" : "Enable SMS transaction review"}
               </Button>
             </>
           )}
@@ -665,7 +698,7 @@ function SmsContent({ accountId }: { accountId: string }) {
           {enabled && !suggestions.length && (
             <Empty
               title="Your inbox is all caught up"
-              detail="No new financial suggestions from the last seven days."
+              detail={custom ? "Choose dates and search for bank expenses." : "No new bank expenses in your seven-day inbox."}
             />
           )}
         </YStack>
@@ -732,7 +765,10 @@ function SmsContent({ accountId }: { accountId: string }) {
                       participants: [],
                       splitMethod: "EQUAL",
                     });
-                    await provider.markHandled(s.fingerprint);
+                    if (!custom) {
+                      await provider.markHandled(s.fingerprint, "ACCEPTED", s.occurredAt, { title: editing === s.fingerprint ? editTitle : s.title, amountMinor: editing === s.fingerprint ? parseMoney(editAmount) : s.amountMinor });
+                      setHistory(await provider.handled());
+                    }
                     setSuggestions((items) =>
                       items.filter((i) => i.fingerprint !== s.fingerprint),
                     );
@@ -753,9 +789,13 @@ function SmsContent({ accountId }: { accountId: string }) {
               </Button>
               <Button
                 secondary
+                disabled={action.busy}
                 onPress={() =>
                   action.run(async () => {
-                    await provider.markHandled(s.fingerprint);
+                    if (!custom) {
+                      await provider.markHandled(s.fingerprint, "REJECTED", s.occurredAt, { title: s.title, amountMinor: s.amountMinor });
+                      setHistory(await provider.handled());
+                    }
                     setSuggestions((items) =>
                       items.filter((i) => i.fingerprint !== s.fingerprint),
                     );
@@ -768,6 +808,16 @@ function SmsContent({ accountId }: { accountId: string }) {
           </YStack>
         </Card>
       ))}
+      {!custom && Object.keys(history).length > 0 && <Card>
+        <YStack gap={12}>
+          <Heading size={18}>Reviewed this week</Heading>
+          {Object.entries(history).sort((a, b) => b[1].occurredAt.localeCompare(a[1].occurredAt)).map(([key, record]) =>
+            <XStack key={key} justifyContent="space-between" gap={12}>
+              <YStack flex={1} gap={4}><Label>{record.title ?? "Bank expense"}{record.amountMinor ? ` · ${money(record.amountMinor)}` : ""}</Label><Label muted size={11}>{new Date(record.occurredAt).toLocaleString()}</Label></YStack>
+              <Label>{record.decision === "ACCEPTED" ? "Accepted" : "Rejected"}</Label>
+            </XStack>)}
+        </YStack>
+      </Card>}
       <Button secondary onPress={() => router.push("/add")}>
         Add a transaction manually
       </Button>

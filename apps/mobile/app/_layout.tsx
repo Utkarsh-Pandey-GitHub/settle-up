@@ -11,7 +11,8 @@ import { Montserrat_700Bold } from "@expo-google-fonts/montserrat/700Bold";
 import { config } from "../src/theme/config";
 import { useSession } from "../src/data/session";
 import { StatusBar } from "expo-status-bar";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
+import { AndroidSmsProvider } from "../src/services/device";
 import { setWidgetAccount } from "../modules/home-widgets/client";
 const query = new QueryClient({
   defaultOptions: { queries: { retry: 1 }, mutations: { retry: false } },
@@ -33,7 +34,14 @@ export default function Layout() {
     syncAccount();
     const unsubscribe = useSession.subscribe(syncAccount);
     useSession.getState().hydrate();
+    const expireSms = () => {
+      if (Platform.OS === "android") for (const account of useSession.getState().accounts)
+        void new AndroidSmsProvider(account.id).handled().catch(() => {});
+    };
+    expireSms();
+    const expiryTimer = setInterval(expireSms, 60000);
     const foreground = AppState.addEventListener("change", (state) => {
+      if (state === "active") expireSms();
       if (state === "active")
         query.invalidateQueries({
           queryKey: ["account", useSession.getState().activeId],
@@ -42,6 +50,7 @@ export default function Layout() {
     return () => {
       unsubscribe();
       foreground.remove();
+      clearInterval(expiryTimer);
     };
   }, []);
   useEffect(() => {

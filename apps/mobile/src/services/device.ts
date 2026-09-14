@@ -6,17 +6,19 @@ import * as Contacts from "expo-contacts";
 import {
   type TransactionImportProvider,
   type ImportSuggestion,
-  parseSms,
-  SMS_TTL_MS,
+  parseExpenseSms,
+  smsRange,
+  smsDecisionExpiry,
   normalizePhone,
   parseUpi,
 } from "@settleup/domain";
+export type SmsDecision = { decision: "ACCEPTED" | "REJECTED"; occurredAt: string; expiresAt: number; title?: string; amountMinor?: number };
 export class AndroidSmsProvider implements TransactionImportProvider {
   constructor(private accountId: string) {}
   private native =
     Platform.OS === "android"
       ? requireOptionalNativeModule<{
-          readRecent(): Promise<
+          readRange(start: number, end: number): Promise<
             { id: string; body: string; timestamp: number }[]
           >;
         }>("TransactionSms")
@@ -32,17 +34,26 @@ export class AndroidSmsProvider implements TransactionImportProvider {
       )) === PermissionsAndroid.RESULTS.GRANTED
     );
   }
-  private async handled() {
-    const key = `settleup.sms.${this.accountId}`;
-    const raw = await SecureStore.getItemAsync(key);
-    const records: Record<string, number> = raw ? JSON.parse(raw) : {};
-    const active = Object.fromEntries(
-      Object.entries(records).filter(([, expiry]) => expiry > Date.now()),
-    );
-    await SecureStore.setItemAsync(key, JSON.stringify(active));
-    return active;
+  private static changes: Promise<unknown> = Promise.resolve();
+  private records(change?: (records: Record<string, SmsDecision>) => void): Promise<Record<string, SmsDecision>> {
+    const run = async () => {
+      const key = `settleup.sms.${this.accountId}`;
+      const raw = await SecureStore.getItemAsync(key);
+      const records: Record<string, SmsDecision> = raw ? JSON.parse(raw) : {};
+      const active = Object.fromEntries(Object.entries(records).filter(([, r]) =>
+        r && typeof r === "object" && r.expiresAt > Date.now()));
+      change?.(active);
+      const next = JSON.stringify(active);
+      if (raw !== next) await SecureStore.setItemAsync(key, next);
+      return active;
+    };
+    // Foreground expiry and review decisions must not overwrite each other.
+    const result = AndroidSmsProvider.changes.then(run, run);
+    AndroidSmsProvider.changes = result.catch(() => {});
+    return result;
   }
-  async review() {
+  handled() { return this.records(); }
+  async review(range?: { from: string; through: string }) {
     if (!this.native)
       throw new Error("SMS review requires an Android development build.");
     const key = `settleup.sms.salt.${this.accountId}`;
@@ -52,26 +63,25 @@ export class AndroidSmsProvider implements TransactionImportProvider {
       await SecureStore.setItemAsync(key, salt);
     }
     const handled = await this.handled();
-    const messages = await this.native.readRecent();
+    const bounds = smsRange(range?.from, range?.through);
+    const messages = await this.native.readRange(bounds.start, bounds.end);
     const suggestions: ImportSuggestion[] = [];
     for (const message of messages) {
-      const parsed = parseSms(message.body, message.timestamp);
+      const parsed = parseExpenseSms(message.body, message.timestamp);
       if (!parsed) continue;
       const fingerprint = await Crypto.digestStringAsync(
         Crypto.CryptoDigestAlgorithm.SHA256,
         `${salt}:${message.id}:${message.timestamp}:${message.body}`,
       );
-      if (!handled[fingerprint]) suggestions.push({ ...parsed, fingerprint });
+      if (range || !handled[fingerprint]) suggestions.push({ ...parsed, fingerprint });
     }
     return suggestions;
   }
-  async markHandled(fingerprint: string) {
-    const records = await this.handled();
-    records[fingerprint] = Date.now() + SMS_TTL_MS;
-    await SecureStore.setItemAsync(
-      `settleup.sms.${this.accountId}`,
-      JSON.stringify(records),
-    );
+  async markHandled(fingerprint: string, decision: "ACCEPTED" | "REJECTED" = "REJECTED", occurredAt = new Date().toISOString(), details?: { title: string; amountMinor: number }) {
+    const expiresAt = smsDecisionExpiry(occurredAt);
+    await this.records(records => {
+      if (expiresAt > Date.now()) records[fingerprint] = { decision, occurredAt, expiresAt, ...details };
+    });
   }
 }
 export async function chooseContact() {

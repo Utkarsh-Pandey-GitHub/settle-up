@@ -37,7 +37,13 @@ class TruecallerAuthActivity : FragmentActivity() {
         override fun onFailure(error: TcOAuthError) { fail("Truecaller was cancelled or unavailable. Use phone verification.") }
         override fun onVerificationRequired(error: TcOAuthError?) { fail("Use phone verification to continue.") }
       }
-      TcSdk.init(TcSdkOptions.Builder(this, callback).sdkOptions(TcSdkOptions.OPTION_VERIFY_ONLY_TC_USERS).build())
+      TcSdk.init(TcSdkOptions.Builder(this, callback)
+        .sdkOptions(TcSdkOptions.OPTION_VERIFY_ONLY_TC_USERS)
+        .consentMode(TcSdkOptions.CONSENT_MODE_BOTTOMSHEET)
+        .footerType(TcSdkOptions.FOOTER_TYPE_ANOTHER_MOBILE_NO)
+        .dismissOptions(TcSdkOptions.DISMISS_OPTION_CROSS_BUTTON)
+        .buttonShapeOptions(TcSdkOptions.BUTTON_SHAPE_ROUNDED)
+        .build())
       initialized = true
       if (!TcSdk.getInstance().isOAuthFlowUsable) { fail("Truecaller is not available. Use phone verification."); return }
       TcSdk.getInstance().setOAuthState(state)

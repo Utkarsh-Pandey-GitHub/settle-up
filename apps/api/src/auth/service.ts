@@ -6,6 +6,8 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { SignJWT, jwtVerify } from "jose";
+import { SupabaseOtpProvider } from "./supabase";
+import { StytchOtpProvider } from "./stytch";
 import { DomainError, normalizePhone } from "@settleup/domain";
 import type { Account, Session } from "@settleup/contracts";
 import { db, atomic, digest, audit, type Db } from "../infra/database";
@@ -52,6 +54,20 @@ const otpHash = (id: string, code: string) =>
     .update(`${id}:${code}`)
     .digest("hex");
 export function validateConfig() {
+  const production = process.env.NODE_ENV === "production";
+  if (production) {
+    for (const key of ["JWT_SECRET", "OTP_PEPPER"])
+      if (!process.env[key] || /production_key_min_32|replace-with/.test(process.env[key]!))
+        throw new Error(`Configure a unique ${key} before starting production.`);
+    if (!process.env.OTP_PROVIDER || process.env.OTP_PROVIDER === "development")
+      throw new Error("Production requires OTP_PROVIDER=supabase, stytch, gateway, or disabled.");
+  }
+  if (process.env.OTP_PROVIDER && !["development", "gateway", "supabase", "stytch", "disabled"].includes(process.env.OTP_PROVIDER))
+    throw new Error("Choose a supported OTP_PROVIDER.");
+  if (process.env.OTP_PROVIDER === "supabase" && (!process.env.SUPABASE_URL || !(process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY)))
+    throw new Error("Configure the Supabase project URL and publishable key for phone OTP.");
+  if (process.env.OTP_PROVIDER === "stytch" && (!process.env.STYTCH_PROJECT_ID || !process.env.STYTCH_SECRET))
+    throw new Error("Configure STYTCH_PROJECT_ID and STYTCH_SECRET for phone OTP.");
   if (!process.env.JWT_SECRET)
     process.env.JWT_SECRET =
       "settleup_jwt_secret_production_key_min_32_characters_long_123";
@@ -69,6 +85,9 @@ export function validateConfig() {
 export class AuthService {
   async requestOtp(rawPhone: string) {
     const phone = normalizePhone(rawPhone);
+    if (process.env.OTP_PROVIDER === "disabled") throw new DomainError("OTP_DISABLED", "SMS sign-in is not enabled. Continue with Truecaller.", 503);
+    const supabase = process.env.OTP_PROVIDER === "supabase";
+    const stytch = process.env.OTP_PROVIDER === "stytch";
     const dev = process.env.OTP_PROVIDER === "development";
     if (
       dev &&
@@ -80,6 +99,16 @@ export class AuthService {
       );
     const code = randomInt(100000, 1000000).toString();
     const id = randomUUID();
+    // For Stytch, we need to call the provider first to get the phone_id,
+    // then store it in the challenge so we can pass it during verification.
+    let stytchPhoneId: string | undefined;
+    if (stytch) {
+      try {
+        stytchPhoneId = await new StytchOtpProvider().send(phone);
+      } catch (e) {
+        throw e;
+      }
+    }
     await atomic(async (tx) => {
       const recent = await tx.otpChallenge.count({
         where: { phone, createdAt: { gt: new Date(Date.now() - 15 * 60000) } },
@@ -94,15 +123,19 @@ export class AuthService {
         data: {
           id,
           phone,
-          digest: otpHash(id, code),
+          digest: supabase
+            ? "supabase"
+            : stytch
+              ? `stytch:${stytchPhoneId}`
+              : otpHash(id, code),
           expiresAt: new Date(Date.now() + 300000),
         },
       });
     });
     try {
-      await (
-        dev ? new DevelopmentOtpProvider() : new GatewayOtpProvider()
-      ).send(phone, code);
+      if (supabase) await new SupabaseOtpProvider().send(phone);
+      else if (!stytch) await (dev ? new DevelopmentOtpProvider() : new GatewayOtpProvider()).send(phone, code);
+      // Stytch already sent the SMS above before creating the challenge.
     } catch (e) {
       await db.otpChallenge.update({
         where: { id },
@@ -117,9 +150,12 @@ export class AuthService {
     };
   }
   async verifyOtp(id: string, code: string): Promise<Session> {
+    if (process.env.OTP_PROVIDER === "supabase") return this.verifySupabaseOtp(id, code);
+    if (process.env.OTP_PROVIDER === "stytch") return this.verifyStytchOtp(id, code);
+    if (process.env.OTP_PROVIDER === "disabled") throw new DomainError("OTP_DISABLED", "SMS sign-in is not enabled. Continue with Truecaller.", 503);
     const result = await atomic(async (tx) => {
       const c = await tx.otpChallenge.findUnique({ where: { id } });
-      if (!c || c.consumedAt || c.expiresAt <= new Date() || c.attempts >= 5)
+      if (!c || c.digest === "supabase" || c.consumedAt || c.expiresAt <= new Date() || c.attempts >= 5)
         return null;
       await tx.otpChallenge.update({
         where: { id },
@@ -145,6 +181,52 @@ export class AuthService {
         401,
       );
     return result;
+  }
+  private async verifySupabaseOtp(id: string, code: string): Promise<Session> {
+    const invalid = () => new DomainError("OTP_INVALID", "The code is invalid or expired.", 401);
+    const challenge = await atomic(async tx => {
+      const c = await tx.otpChallenge.findUnique({ where: { id } });
+      if (!c || c.digest !== "supabase" || c.consumedAt || c.expiresAt <= new Date() || c.attempts >= 5) return null;
+      await tx.otpChallenge.update({ where: { id }, data: { attempts: { increment: 1 } } });
+      return c;
+    });
+    if (!challenge) throw invalid();
+    // Do not hold a database transaction open while contacting the provider.
+    const phone = await new SupabaseOtpProvider().verify(challenge.phone, code);
+    const session = await atomic(async tx => {
+      const claimed = await tx.otpChallenge.updateMany({
+        where: { id, digest: "supabase", consumedAt: null, expiresAt: { gt: new Date() } },
+        data: { consumedAt: new Date() },
+      });
+      if (claimed.count !== 1) return null;
+      return this.verifiedPhoneSession(tx, phone);
+    });
+    if (!session) throw invalid();
+    return session;
+  }
+  private async verifyStytchOtp(id: string, code: string): Promise<Session> {
+    const invalid = () => new DomainError("OTP_INVALID", "The code is invalid or expired.", 401);
+    const challenge = await atomic(async tx => {
+      const c = await tx.otpChallenge.findUnique({ where: { id } });
+      if (!c || !c.digest.startsWith("stytch:") || c.consumedAt || c.expiresAt <= new Date() || c.attempts >= 5) return null;
+      await tx.otpChallenge.update({ where: { id }, data: { attempts: { increment: 1 } } });
+      return c;
+    });
+    if (!challenge) throw invalid();
+    // Extract the Stytch phone_id stored during requestOtp.
+    const methodId = challenge.digest.slice("stytch:".length);
+    // Do not hold a database transaction open while contacting the provider.
+    const phone = await new StytchOtpProvider().verify(methodId, code);
+    const session = await atomic(async tx => {
+      const claimed = await tx.otpChallenge.updateMany({
+        where: { id, consumedAt: null, expiresAt: { gt: new Date() } },
+        data: { consumedAt: new Date() },
+      });
+      if (claimed.count !== 1) return null;
+      return this.verifiedPhoneSession(tx, phone);
+    });
+    if (!session) throw invalid();
+    return session;
   }
   // Only call after OTP consumption or server-side provider verification.
   async verifiedPhoneSession(
@@ -179,6 +261,12 @@ export class AuthService {
         where: { userId: user.id },
         include: { user: true },
       });
+    }
+    if (!identity.verifiedAt) {
+      // Reached only after OTP or Truecaller proof has been verified.
+      await tx.phoneIdentity.update({ where: { userId: identity.userId }, data: { verifiedAt: new Date() } });
+      await tx.notificationPreference.upsert({ where: { userId: identity.userId }, create: { userId: identity.userId }, update: {} });
+      await tx.tag.createMany({ data: ["Food", "Transport", "Shopping", "Travel", "Utilities", "Rent"].map(name => ({ ownerId: identity!.userId, name, color: "#8576AA" })) });
     }
     return this.newSession(tx, identity.userId, randomUUID());
   }

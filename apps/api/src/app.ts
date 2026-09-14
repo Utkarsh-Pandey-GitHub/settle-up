@@ -16,7 +16,7 @@ import {
   shareSchema,
   goalSchema,
 } from "@settleup/contracts";
-import { DomainError, normalizePhone, SMS_TTL_MS } from "@settleup/domain";
+import { DomainError, normalizePhone, SMS_TTL_MS, parseUpi } from "@settleup/domain";
 import { analytics } from "@settleup/domain/src/analytics";
 import { AuthService, validateConfig } from "./auth/service";
 import { FinanceService, PrismaDashboardRepository } from "./finance/service";
@@ -233,26 +233,42 @@ export async function createApp() {
         description: z.string().max(500).default(""),
         currency: z.string().regex(/^[A-Z]{3}$/),
         memberIds: z.array(idSchema).max(99).default([]),
+        contacts: z.array(z.object({ name: z.string().trim().min(1).max(100), phone: z.string().max(30) })).max(99).default([]),
       })
       .parse(req.body);
     return atomic(async (tx) => {
-      const members = [...new Set([userId, ...b.memberIds])];
-      for (const id of members.filter((id) => id !== userId)) {
-        if (
-          !(await tx.contactPeer.findFirst({
-            where: { ownerId: userId, linkedUserId: id },
-          })) ||
-          (await tx.userBlock.findFirst({
-            where: {
-              OR: [
-                { blockerId: userId, blockedId: id },
-                { blockerId: id, blockedId: userId },
-              ],
-            },
-          }))
-        )
-          throw new DomainError("PEER", "Choose a verified, linked peer.", 403);
+      const members = [userId];
+      const contacts = [...b.contacts];
+      for (const id of b.memberIds) {
+        if (id === userId) continue;
+        const peer = await tx.contactPeer.findFirst({ where: { ownerId: userId, OR: [{ id }, { linkedUserId: id }] } });
+        if (!peer) throw new DomainError("PEER", "Choose one of your contacts.", 403);
+        contacts.push({ name: peer.name, phone: peer.phone });
       }
+      for (const contact of contacts) {
+        const phone = normalizePhone(contact.phone);
+        let identity = await tx.phoneIdentity.findUnique({ where: { phone }, include: { user: true } });
+        if (identity?.user.deletedAt) throw new DomainError("PEER", "This contact is unavailable.", 403);
+        if (!identity) {
+          // Reserve a member identity, never a session or a verified phone number.
+          const user = await tx.user.create({ data: {
+            profile: { create: { name: "New friend" } },
+            phone: { create: { phone, verifiedAt: null } },
+          }, include: { phone: true } });
+          identity = { ...user.phone!, user };
+        }
+        const id = identity.userId;
+        if (id === userId) continue;
+        if (await tx.userBlock.findFirst({ where: { OR: [
+          { blockerId: userId, blockedId: id }, { blockerId: id, blockedId: userId },
+        ] } })) throw new DomainError("PEER", "This contact cannot be added.", 403);
+        await tx.contactPeer.upsert({ where: { ownerId_phone: { ownerId: userId, phone } },
+          create: { ownerId: userId, phone, name: contact.name, linkedUserId: id },
+          update: { linkedUserId: id },
+        });
+        if (!members.includes(id)) members.push(id);
+      }
+      if (members.length > 100) throw new DomainError("GROUP", "A group supports up to 100 people.");
       const group = await tx.group.create({
         data: {
           name: b.name,
@@ -470,6 +486,35 @@ export async function createApp() {
       select: { fingerprint: true, expiresAt: true },
     }),
   );
+  app.post("/payment-links", async (req) => {
+    const { userId } = await actor(req);
+    const b = z.object({ upiId: z.string().trim().max(193), amountMinor: z.number().int().positive().max(100000000), payeeName: z.string().trim().min(1).max(100) }).parse(req.body);
+    const params = new URLSearchParams({ pa: b.upiId, pn: b.payeeName, am: (b.amountMinor / 100).toFixed(2), cu: "INR" });
+    const payment = parseUpi(`upi://pay?${params}`);
+    const token = randomBytes(18).toString("base64url");
+    const expiresAt = new Date(Date.now() + 7 * 86400000);
+    await db.paymentLink.create({ data: { tokenDigest: digest(token), ownerId: userId, uri: payment.uri, expiresAt } });
+    return { token, expiresAt, appUrl: `settleup:///pay/${token}` };
+  });
+  app.get("/payment-links/:token", async (req, reply) => {
+    await actor(req);
+    const token = z.string().regex(/^[A-Za-z0-9_-]{24}$/).parse((req.params as { token: string }).token);
+    const link = await db.paymentLink.findUnique({ where: { tokenDigest: digest(token) } });
+    if (!link || link.expiresAt <= new Date()) throw new DomainError("NOT_FOUND", "This payment link has expired or is unavailable.", 404);
+    reply.header("Cache-Control", "no-store");
+    return { ...parseUpi(link.uri), expiresAt: link.expiresAt };
+  });
+  app.get("/p/:token", async (req, reply) => {
+    const token = z.string().regex(/^[A-Za-z0-9_-]{24}$/).parse((req.params as { token: string }).token);
+    const link = await db.paymentLink.findUnique({ where: { tokenDigest: digest(token) } });
+    if (!link || link.expiresAt <= new Date()) return reply.code(404).type("text/plain").send("This payment link has expired or is unavailable.");
+    reply.header("Cache-Control", "no-store");
+    const installUrl = process.env.APP_INSTALL_URL;
+    const install = installUrl?.startsWith("https://")
+      ? `<p><a class="secondary" href="${installUrl.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")}">Install SettleUp</a></p>`
+      : "<p class=hint>Need the app? Ask the sender for the SettleUp installation link, then return here.</p>";
+    return reply.type("text/html").send(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SettleUp payment request</title><style>body{margin:0;background:#f7f7f2;color:#303a38;font:16px/1.6 system-ui;display:grid;place-items:center;min-height:100dvh}main{box-sizing:border-box;background:#fff;border:1px solid #e2e6df;border-radius:28px;padding:32px;width:min(92%,480px);box-shadow:0 18px 60px #303a380a}h1{line-height:1.2;font-size:30px}a{display:block;text-align:center;border-radius:14px;padding:14px;background:#3b5e55;color:white;text-decoration:none;font-weight:600}.secondary{background:#edf2ee;color:#3b5e55}.hint{font-size:14px;color:#66716b}</style><body><main><h1>A payment request for you</h1><p>Install SettleUp, then open this link on your phone to review the payee and amount.</p><p><a href="settleup:///pay/${token}">Open in SettleUp</a></p>${install}<p class="hint">Already installed? If the button does not open the app, copy this link and use “Open a payment link” in SettleUp.</p></main></body></html>`);
+  });
   app.post("/shares", async (req) =>
     sharing.create((await actor(req)).userId, shareSchema.parse(req.body)),
   );
@@ -606,6 +651,7 @@ export async function createApp() {
         data: { linkedUserId: null },
       });
       await tx.smsImportRecord.deleteMany({ where: { ownerId: userId } });
+      await tx.paymentLink.deleteMany({ where: { ownerId: userId } });
       await tx.notificationPreference.deleteMany({ where: { userId } });
       await audit(tx, userId, userId, "ACCOUNT_DELETED");
       return { ok: true };

@@ -98,7 +98,7 @@ Android requires Android Studio/SDK and a device/emulator; iOS requires macOS, X
 
 The SMS module is under `apps/mobile/modules/transaction-sms`. Expo autolinks local modules under `modules`. A native development build is necessary; Expo Go cannot contain this custom module. Do not request SMS permission at startup. Google Play SMS permission eligibility must be evaluated before distributing a build with `READ_SMS`; otherwise remove that permission/module from the production flavor.
 
-The Android SMS module was authored but not compiled or tested on a device in this environment. Do not infer native build success from the successful web export.
+The Android SMS module compiles in the ARM64 debug APK. Reading actual bank SMS still needs verification on a physical Android device.
 
 ## Verification
 
@@ -130,3 +130,14 @@ Web OCR uses Tesseract.js locally and downloads the engine and English language 
 Demo photos persist in account-scoped local storage (subject to device/browser quota); clearing demo account data removes them. API photos use the existing private storage adapter. If the expense saves but uploading the photo fails, retry attachment or open the saved expense without creating a duplicate. Drafts keep items but do not retain photo files. OCR is tuned for English/Latin printed bills and can misread complex layouts, blurry images or handwriting; review is required.
 
 The second shared Figma finance kit is the primary visual inspiration: airy surfaces, pastel action tiles, and original outlined wallet illustrations. Pip's interaction feedback draws on the first reference. The finance reference's coin, wallet and privacy illustrations are bundled locally; see `apps/mobile/assets/finance/README.md` for source credits.
+
+
+### Bank SMS review, contact groups, and payment links
+
+- Open **Account switcher → Settings & permissions → Bank SMS review**. Access is requested only after the explanation and the user taps Enable. Today and the previous six device-local calendar days form the weekly inbox. Expense parsing is heuristic; OTPs, credits, failures, reversals and obvious reminders are ignored. Review/correct each suggestion before accepting. Raw SMS never goes to the server.
+- Accepted/rejected records (fingerprint, parsed title/amount, message date and expiry) are encrypted in device storage, separately per account. Expiry is message-day midnight plus seven days, not seven days after review. Expired records are hidden and purged during app use/start/resume; no background reader runs while the app is closed. The weekly screen refreshes each minute and on resume. Saved transactions remain in the ledger.
+- **Choose dates** searches the SMS inbox inclusively through the chosen day. It does not persist review decisions or apply weekly dismissals. Existing transaction idempotency still prevents importing the same message twice. Very large searches ask for a shorter range instead of silently truncating results. SMS access is Android-only and requires the rebuilt APK, not Expo Go. Play distribution requires the SMS money-management permissions declaration.
+- Selecting phone contacts during group creation now atomically saves peers and adds members. Unknown numbers receive a pending user identity with `verifiedAt = null`, no session and no access. Actual OTP/Truecaller verification claims that same identity, preserving group history. Existing users, duplicate selections and blocked contacts are handled in the same transaction. No invitations or messages are sent automatically.
+- **Settings → Payment links** creates an opaque seven-day request with a UPI ID, payee name and INR amount. Share the API-hosted `/p/:token` URL. Its landing page opens `settleup:///pay/:token`; the app requires sign-in and explicit confirmation before opening a UPI app. It never marks the request paid automatically. The payee name is user-entered; the payer verifies it in their UPI app.
+- Payment links use the existing API/database and require no paid API or keys. Set optional server `APP_INSTALL_URL` to an HTTPS Play Store/APK URL to show an install button; without it the page asks the recipient to get the app from the sender. After installation, reopen the original link. The token obscures payment details in shared URLs, but a custom scheme is not cryptographic proof that a caller is SettleUp. Verified Android App Links would require a domain and assetlinks configuration.
+- Deployment: apply `npm run db:migrate` and restart/redeploy the API before using the new mobile screens. The new schema change makes phone verification nullable for pending members and adds one four-column `PaymentLink` table. `npm run apk:android` rebuilds the ARM64 development APK (Metro is still required).

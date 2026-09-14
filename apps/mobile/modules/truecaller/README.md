@@ -4,7 +4,7 @@ Self-contained Expo Android bridge and framework-independent Node verification a
 
 ## What is implemented
 
-- Android OAuth SDK 3.2.1, a real provider-owned consent popup, random state validation and SHA-256 PKCE.
+- Android OAuth SDK 3.2.1, a real provider-owned consent bottom sheet, random state validation and SHA-256 PKCE.
 - A non-exported host activity, single pending request, two-minute timeout and cleanup on cancellation/destruction.
 - Only `openid`, `phone` and `profile` scopes. No address-book, SMS or call permissions added by this module.
 - Server-side authorization-code exchange against fixed Truecaller URLs, a verified-phone check, and minimal returned profile fields.
@@ -30,7 +30,8 @@ import {
   authorizeWithTruecaller,
   truecallerAvailable,
 } from "./modules/truecaller/client";
-// Only show the button when available. Invoke after an explicit button press.
+// SettleUp opens this once when the sign-in screen mounts on supported Android builds.
+// The provider-owned sheet still requires the user to consent; cancellation reveals SMS OTP.
 const proof = await authorizeWithTruecaller();
 // Send proof to your own HTTPS backend. Do not log or persist it.
 ```
@@ -61,3 +62,5 @@ No paid account or service was purchased. Confirm Truecaller's current commercia
 - [State, scopes and PKCE](https://docs.truecaller.com/truecaller-sdk/android/oauth-sdk-3.2.0/integration-steps/setting-up-oauth-parameters)
 - [Token exchange](https://docs.truecaller.com/truecaller-sdk/android/oauth-sdk-3.2.0/integration-steps/integrating-with-your-backend/fetching-user-token)
 - [Verified profile](https://docs.truecaller.com/truecaller-sdk/android/oauth-sdk-3.2.0/integration-steps/integrating-with-your-backend/fetching-user-profile)
+
+SettleUp no longer asks users to choose a Truecaller button first. The sign-in screen automatically opens the real consent bottom sheet once, and never reopens it while the user fills the SMS fallback form. Supabase SMS fallback is supported with `OTP_PROVIDER=supabase`; see `docs/PROVIDERS.md`.
