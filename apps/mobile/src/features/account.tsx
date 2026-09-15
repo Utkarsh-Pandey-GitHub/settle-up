@@ -331,7 +331,7 @@ export function AuthScreen() {
           <YStack gap={16}>
             {stage === "phone" && (
               <>
-                {truecallerBusy && <Label muted>Opening secure phone verification…</Label>}
+                {truecallerBusy && <Label muted>Verifying your phone securely…</Label>}
                 {!!truecallerHint && <Label muted>{truecallerHint}</Label>}
                 <Field
                   label="Phone number"

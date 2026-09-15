@@ -50,7 +50,7 @@ it("aborts stalled login requests and gives a readable timeout", async () => {
   const pending = expect(
     request("/auth/truecaller", { body: { code: "test" } }),
   ).rejects.toThrow("The server took too long to respond");
-  await vi.advanceTimersByTimeAsync(30000);
+  await vi.advanceTimersByTimeAsync(90000);
   await pending;
   expect(vi.getTimerCount()).toBe(0);
 });

@@ -41,8 +41,8 @@ export async function request<T>(
     ? getTokenSession(options.accountId)
     : undefined;
   const controller = new AbortController();
-  // Truecaller makes two sequential 10-second provider calls on the API.
-  const timeoutMs = path === "/auth/truecaller" ? 30000 : path.startsWith("/auth/") ? 60000 : 15000;
+  // A sleeping hosted API can need a minute to start, before provider verification.
+  const timeoutMs = path.startsWith("/auth/") ? 90000 : 15000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   let result: any;
