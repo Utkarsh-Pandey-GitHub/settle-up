@@ -21,8 +21,8 @@ services:
       - key: OTP_PROVIDER
         value: stytch
       - key: STYTCH_PROJECT_ID
-        sync: false
+        value: project-live-11cee23f-4763-43a7-9e11-0a8a1e488b0d
       - key: STYTCH_SECRET
-        sync: false
+        value: secret-live-SgYSSXa711TTSLA4G59_82Ce0Wq27cObA68=
       - key: TRUECALLER_CLIENT_ID
         value: reu4dkuzbwcc9bcwz2yjepj1cewqd4tpf7_xl11cd1s
