@@ -21,6 +21,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   if (timeoutDescriptor)
     Object.defineProperty(AbortSignal, "timeout", timeoutDescriptor);
 });
@@ -48,8 +49,8 @@ it("aborts stalled login requests and gives a readable timeout", async () => {
   );
   const pending = expect(
     request("/auth/truecaller", { body: { code: "test" } }),
-  ).rejects.toThrow("The request timed out");
-  await vi.advanceTimersByTimeAsync(15000);
+  ).rejects.toThrow("The server took too long to respond");
+  await vi.advanceTimersByTimeAsync(30000);
   await pending;
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -58,6 +59,26 @@ it("cleans up when the network fails immediately", async () => {
     "fetch",
     vi.fn().mockRejectedValue(new Error("Network request failed")),
   );
-  await expect(request("/auth/otp")).rejects.toThrow("Network request failed");
+  await expect(request("/auth/otp")).rejects.toMatchObject({ code: "NETWORK_ERROR" });
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("does not display HTML from an incorrect API deployment", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>Cannot POST /auth/otp</html>", { status: 404 })));
+  await expect(request("/auth/otp")).rejects.toThrow("unexpected response (404)");
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(["http://127.0.0.1:4000", "http://localhost:4000", "http://10.0.2.2:4000"])(
+  "preserves the configured Android API host %s", async (url) => {
+    vi.resetModules();
+    vi.doMock("react-native", () => ({ Platform: { OS: "android" } }));
+    vi.stubEnv("EXPO_PUBLIC_API_URL", `${url}/`);
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ status: "ok" }));
+    vi.stubGlobal("fetch", fetcher);
+    const client = await import("../apps/mobile/src/data/repository");
+    await client.request("/health");
+    expect(fetcher.mock.calls[0][0]).toBe(`${url}/health`);
+    expect(client.API_URL).toBe(url);
+  },
+);

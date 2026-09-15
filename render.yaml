@@ -7,9 +7,7 @@ services:
     startCommand: npx prisma migrate deploy && npx tsx apps/api/src/server.ts
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: settleup-db
-          property: connectionString
+        sync: false
       - key: NODE_ENV
         value: production
       - key: HOST
@@ -17,16 +15,14 @@ services:
       - key: PORT
         value: 10000
       - key: JWT_SECRET
-        value: settleup_jwt_secret_production_key_min_32_characters_long_123
+        generateValue: true
       - key: OTP_PEPPER
-        value: settleup_otp_pepper_production_key_min_32_characters_long_456
+        generateValue: true
       - key: OTP_PROVIDER
-        value: development
+        value: stytch
+      - key: STYTCH_PROJECT_ID
+        sync: false
+      - key: STYTCH_SECRET
+        sync: false
       - key: TRUECALLER_CLIENT_ID
         value: reu4dkuzbwcc9bcwz2yjepj1cewqd4tpf7_xl11cd1s
-
-databases:
-  - name: settleup-db
-    plan: free
-    databaseName: settleup
-    user: settleup

@@ -99,16 +99,6 @@ export class AuthService {
       );
     const code = randomInt(100000, 1000000).toString();
     const id = randomUUID();
-    // For Stytch, we need to call the provider first to get the phone_id,
-    // then store it in the challenge so we can pass it during verification.
-    let stytchPhoneId: string | undefined;
-    if (stytch) {
-      try {
-        stytchPhoneId = await new StytchOtpProvider().send(phone);
-      } catch (e) {
-        throw e;
-      }
-    }
     await atomic(async (tx) => {
       const recent = await tx.otpChallenge.count({
         where: { phone, createdAt: { gt: new Date(Date.now() - 15 * 60000) } },
@@ -126,7 +116,7 @@ export class AuthService {
           digest: supabase
             ? "supabase"
             : stytch
-              ? `stytch:${stytchPhoneId}`
+              ? "stytch-pending"
               : otpHash(id, code),
           expiresAt: new Date(Date.now() + 300000),
         },
@@ -134,8 +124,10 @@ export class AuthService {
     });
     try {
       if (supabase) await new SupabaseOtpProvider().send(phone);
-      else if (!stytch) await (dev ? new DevelopmentOtpProvider() : new GatewayOtpProvider()).send(phone, code);
-      // Stytch already sent the SMS above before creating the challenge.
+      else if (stytch) {
+        const methodId = await new StytchOtpProvider().send(phone);
+        await db.otpChallenge.update({ where: { id }, data: { digest: `stytch:${methodId}` } });
+      } else await (dev ? new DevelopmentOtpProvider() : new GatewayOtpProvider()).send(phone, code);
     } catch (e) {
       await db.otpChallenge.update({
         where: { id },
@@ -155,7 +147,7 @@ export class AuthService {
     if (process.env.OTP_PROVIDER === "disabled") throw new DomainError("OTP_DISABLED", "SMS sign-in is not enabled. Continue with Truecaller.", 503);
     const result = await atomic(async (tx) => {
       const c = await tx.otpChallenge.findUnique({ where: { id } });
-      if (!c || c.digest === "supabase" || c.consumedAt || c.expiresAt <= new Date() || c.attempts >= 5)
+      if (!c || !/^[a-f0-9]{64}$/.test(c.digest) || c.consumedAt || c.expiresAt <= new Date() || c.attempts >= 5)
         return null;
       await tx.otpChallenge.update({
         where: { id },
@@ -217,6 +209,7 @@ export class AuthService {
     const methodId = challenge.digest.slice("stytch:".length);
     // Do not hold a database transaction open while contacting the provider.
     const phone = await new StytchOtpProvider().verify(methodId, code);
+    if (phone !== challenge.phone) throw invalid();
     const session = await atomic(async tx => {
       const claimed = await tx.otpChallenge.updateMany({
         where: { id, consumedAt: null, expiresAt: { gt: new Date() } },

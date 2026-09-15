@@ -74,4 +74,13 @@ describe("Truecaller server verification", () => {
     ).rejects.toThrow("not configured");
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it.each([[429, "TRUECALLER_RATE_LIMIT"], [503, "TRUECALLER_UNAVAILABLE"]])("classifies provider HTTP %s", async (status, code) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response("", { status: Number(status) }));
+    await expect(verifyTruecallerAuthorization(proof, "client", fetcher)).rejects.toMatchObject({ code });
+  });
+  it("reports connection failures as service failures", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("fetch failed"));
+    await expect(verifyTruecallerAuthorization(proof, "client", fetcher)).rejects.toMatchObject({ code: "TRUECALLER_UNAVAILABLE", status: 503 });
+  });
+
 });

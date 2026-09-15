@@ -24,8 +24,13 @@ import { analytics } from "@settleup/domain/src/analytics";
 import { demoDashboard } from "@settleup/domain/src/fixtures";
 import { DEMO, getTokenSession, replaceTokenSession } from "./session";
 export const uuid = () => Crypto.randomUUID();
-export const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000";
+
+// Keep explicit device routing: USB uses localhost with adb reverse;
+// emulator users can configure 10.0.2.2 in their environment.
+export const API_URL = (
+  process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000"
+).replace(/\/+$/, "");
+
 const refreshing = new Map<string, Promise<Session>>();
 export async function request<T>(
   path: string,
@@ -36,7 +41,9 @@ export async function request<T>(
     ? getTokenSession(options.accountId)
     : undefined;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  // Truecaller makes two sequential 10-second provider calls on the API.
+  const timeoutMs = path === "/auth/truecaller" ? 30000 : path.startsWith("/auth/") ? 60000 : 15000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   let result: any;
   try {
@@ -57,7 +64,7 @@ export async function request<T>(
     } catch {
       result = {
         code: "SERVER_ERROR",
-        message: text.trim() || `Server error (${response.status})`,
+        message: `The sign-in server returned an unexpected response (${response.status}). Please try again shortly.`,
       };
     }
 
@@ -65,10 +72,10 @@ export async function request<T>(
     if (controller.signal.aborted)
       throw new DomainError(
         "TIMEOUT",
-        "The request timed out. Check your connection and try again.",
+        "The server took too long to respond. Please try again shortly.",
         408,
       );
-    throw error;
+    throw new DomainError("NETWORK_ERROR", "Cannot reach the SettleUp server. Check your connection and try again.", 503);
   } finally {
     clearTimeout(timer);
   }

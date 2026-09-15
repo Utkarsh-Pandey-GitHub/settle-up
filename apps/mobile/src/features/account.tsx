@@ -176,6 +176,28 @@ export function AuthScreen() {
     session: Session & { suggestedName?: string },
   ) => {
     await useSession.getState().add(session);
+    if (session.suggestedName?.trim() && session.account.name === "New friend") {
+      const cleanName = session.suggestedName.trim();
+      try {
+        await request("/profile", {
+          accountId: session.account.id,
+          method: "PATCH",
+          body: { name: cleanName, currency: session.account.currency },
+        });
+        await useSession.getState().add({
+          ...session,
+          account: {
+            ...session.account,
+            name: cleanName,
+            avatar: cleanName.slice(0, 2).toUpperCase(),
+          },
+        });
+        await resumePayment();
+        return;
+      } catch {
+        // Keep the verified session and let the user finish their profile below.
+      }
+    }
     if (session.account.name !== "New friend") {
       await resumePayment();
       return;
@@ -201,8 +223,10 @@ export function AuthScreen() {
         if (!mounted) return;
         const session = await request<Session & { suggestedName?: string }>("/auth/truecaller", { body: proof });
         if (mounted) { setTruecallerBusy(false); await acceptSession(session); }
-      } catch {
-        if (mounted) setTruecallerHint("Continue with an SMS code to verify your number.");
+      } catch (err: any) {
+        if (mounted) {
+          setTruecallerHint(err?.message || "Continue with an SMS code to verify your number.");
+        }
       } finally { if (mounted) setTruecallerBusy(false); }
     }, 0);
     return () => { mounted = false; clearTimeout(timer); };

@@ -17,6 +17,16 @@ OTP_PEPPER=<different unique 32+ character secret>
 
 The gateway receives an authenticated HTTPS JSON POST `{phone,code,expiresInSeconds:300}` and must return 2xx only when delivery is accepted. Implement this endpoint using your regional SMS provider's SDK and registered sender/template. The gateway should redact bodies, enforce timeouts, deduplicate delivery retries, and surface failure status. Store provider credentials in a secret manager, never `EXPO_PUBLIC_*` variables. The gateway does not verify codes: SettleUp verifies its own HMAC-protected challenge and attempt limit.
 
+## Stytch and hosted login
+
+The current SMS adapter uses `OTP_PROVIDER=stytch`, with server-only `STYTCH_PROJECT_ID` and `STYTCH_SECRET`. A `project-test-` ID selects the test environment; live credentials select production. Stytch generates and verifies the code; SettleUp reserves a five-minute challenge before sending and enforces its attempt and request limits. Do not configure Supabase Auth when using this adapter.
+
+Stytch enables only US and Canada SMS by default. For Indian numbers, check the project's Country Code Allowlist for +91 and its messaging billing settings. Authentication pricing does not mean SMS delivery is free. See [messaging policy](https://stytch.com/docs/resources/policies/messaging/overview).
+
+For Render, deploy this repository's API, then check `<service-url>/health` returns HTTP 200 with `{"status":"ok"}`. An HTML `Cannot GET /health` response is not the health route from this application. Set `EXPO_PUBLIC_API_URL` to the actual service URL, restart Metro (or rebuild the bundled app), and keep the mobile/server Truecaller client IDs identical. Running the local API has no effect while the app points at Render.
+
+The blueprint uses generated signing secrets, Stytch credentials supplied through Render's secret environment settings, and an explicitly supplied `DATABASE_URL`. Existing services need their environment settings updated too; editing the blueprint alone does not change a live service. Keep the database password in environment settings and use the intended database/schema; this configuration does not copy local data. Redeploy after setting the variables. Never use development OTP or the sample signing secrets in production.
+
 ## Storage and malware scanning
 
 `AttachmentProvider` supports `upload`, `download`, and `inspect`. Production uses:

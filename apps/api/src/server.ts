@@ -11,4 +11,4 @@ for (const signal of ["SIGINT", "SIGTERM"])
     await app.close();
     await db.$disconnect();
     process.exit(0);
-  });
+  });// API Server initialized

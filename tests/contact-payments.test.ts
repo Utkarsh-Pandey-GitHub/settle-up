@@ -52,6 +52,36 @@ describe.runIf(process.env.RUN_FEATURE_DB_TESTS === "1")("contact groups and app
     expect(await db.contactPeer.count({ where: { linkedUserId: identity.userId } })).toBe(2);
     expect(identity.verifiedAt).toBeNull();
   });
+  it("reserves Stytch challenges before delivery and enforces rate limits before sending", async () => {
+    vi.stubEnv("OTP_PROVIDER", "stytch"); vi.stubEnv("STYTCH_PROJECT_ID", "project-test-example"); vi.stubEnv("STYTCH_SECRET", "test");
+    const phone = "+919876540009";
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => {
+      expect(await db.otpChallenge.count({ where: { phone, digest: "stytch-pending" } })).toBe(1);
+      return Response.json({ phone_id: "phone-test" });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      const auth = new AuthService();
+      for (let i = 0; i < 4; i++) await auth.requestOtp(phone);
+      await expect(auth.requestOtp(phone)).rejects.toMatchObject({ code: "RATE_LIMIT" });
+      expect(fetcher).toHaveBeenCalledTimes(4);
+      expect(await db.otpChallenge.count({ where: { phone, digest: "stytch:phone-test" } })).toBe(4);
+    } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
+  });
+  it("does not accept a Stytch proof for a different phone or reuse its marker as a local hash", async () => {
+    vi.stubEnv("OTP_PROVIDER", "stytch"); vi.stubEnv("STYTCH_PROJECT_ID", "project-test-example"); vi.stubEnv("STYTCH_SECRET", "test");
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ phone_id: "phone-test" }))
+      .mockResolvedValueOnce(Response.json({ user: { phone_numbers: [{ phone_id: "phone-test", phone_number: "+919876540011", verified: true }] } }));
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      const auth = new AuthService(), challenge = await auth.requestOtp("+919876540010");
+      await expect(auth.verifyOtp(challenge.challengeId, "123456")).rejects.toMatchObject({ code: "OTP_INVALID" });
+      vi.stubEnv("OTP_PROVIDER", "development");
+      await expect(auth.verifyOtp(challenge.challengeId, "123456")).rejects.toMatchObject({ code: "OTP_INVALID" });
+      expect(await db.phoneIdentity.findUnique({ where: { phone: "+919876540011" } })).toBeNull();
+    } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
+  });
   it("Supabase OTP claims a local challenge once even under simultaneous verification", async () => {
     vi.stubEnv("OTP_PROVIDER", "supabase");
     vi.stubEnv("SUPABASE_URL", "https://test.supabase.co");

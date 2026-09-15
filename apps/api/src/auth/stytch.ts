@@ -6,7 +6,7 @@ import { DomainError, normalizePhone } from "@settleup/domain";
  * API docs: https://stytch.com/docs/api-reference/consumer/api/otp/via-sms/login-or-create-user
  */
 export class StytchOtpProvider {
-  constructor(private fetcher: typeof fetch = fetch) {}
+  constructor(private fetcher: (url: string, options: RequestInit) => Promise<Response> = fetch) {}
 
   private config() {
     const projectId = process.env.STYTCH_PROJECT_ID;
@@ -52,19 +52,23 @@ export class StytchOtpProvider {
         );
       if (!response.ok) {
         const errJson = await response.json().catch(() => null);
-        const errMsg = errJson?.error_message || errJson?.error_type;
+        const errorType = typeof errJson?.error_type === "string" ? errJson.error_type : "";
+        if ([401, 403].includes(response.status))
+          throw new DomainError("OTP_CONFIG", "SMS sign-in is unavailable because the server's SMS credentials or permissions need updating. Use Truecaller for now.", 503);
+        if (/country|international|allowlist/i.test(errorType))
+          throw new DomainError("OTP_COUNTRY_DISABLED", "SMS delivery is not enabled for this country. Enable it in the SMS provider's country allowlist or use Truecaller.", 503);
         if (
           path.includes("authenticate") &&
-          [400, 401, 403, 422].includes(response.status)
+          [400, 422].includes(response.status)
         )
           throw new DomainError(
             "OTP_INVALID",
-            errMsg || "The code is invalid or expired.",
+            "The code is invalid or expired.",
             401,
           );
         throw new DomainError(
           "OTP_DELIVERY",
-          errMsg || "Phone verification is unavailable. Check your SMS provider configuration or use Truecaller.",
+          "SMS could not be delivered. Check the phone number, provider country allowlist and messaging balance, or use Truecaller.",
           503,
         );
       }
@@ -94,8 +98,9 @@ export class StytchOtpProvider {
       status_code: number;
     }>("/v1/otps/sms/login_or_create", {
       phone_number: normalizePhone(phone),
+      expiration_minutes: 5,
     });
-    if (!result.phone_id)
+    if (typeof result.phone_id !== "string" || !result.phone_id)
       throw new DomainError(
         "OTP_DELIVERY",
         "Unable to deliver a code. Please try again later.",
@@ -129,7 +134,7 @@ export class StytchOtpProvider {
     const matched = result.user?.phone_numbers?.find(
       (p) => p.phone_id === methodId,
     );
-    if (!matched?.phone_number || !matched.verified)
+    if (!matched?.phone_number || matched.verified !== true)
       throw new DomainError(
         "OTP_INVALID",
         "Phone verification was not confirmed.",

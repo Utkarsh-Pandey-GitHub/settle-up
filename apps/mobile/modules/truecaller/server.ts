@@ -1,4 +1,9 @@
 import { z } from "zod";
+export class TruecallerVerificationError extends Error {
+  constructor(public code: string, message: string, public status: number) {
+    super(message);
+  }
+}
 export const truecallerProofSchema = z
   .object({
     code: z.string().min(1).max(4096),
@@ -14,7 +19,20 @@ export async function verifyTruecallerAuthorization(
   if (!clientId.trim())
     throw new Error("Truecaller is not configured. Use phone verification.");
   const proof = truecallerProofSchema.parse(input);
-  const tokenResponse = await fetcher(
+  const providerRequest = async (url: string, options: RequestInit) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetcher(url, { ...options, signal: controller.signal });
+      if (response.status === 429) throw new TruecallerVerificationError("TRUECALLER_RATE_LIMIT", "Truecaller is receiving too many attempts. Please wait or use an SMS code.", 429);
+      if (response.status >= 500) throw new TruecallerVerificationError("TRUECALLER_UNAVAILABLE", "Truecaller is temporarily unavailable. Try again or use an SMS code.", 503);
+      return response;
+    } catch (error) {
+      if (error instanceof TruecallerVerificationError) throw error;
+      throw new TruecallerVerificationError("TRUECALLER_UNAVAILABLE", "Could not connect to Truecaller. Try again or use an SMS code.", 503);
+    } finally { clearTimeout(timer); }
+  };
+  const tokenResponse = await providerRequest(
     "https://oauth-account-noneu.truecaller.com/v1/token",
     {
       method: "POST",
@@ -26,7 +44,6 @@ export async function verifyTruecallerAuthorization(
         code: proof.code,
         code_verifier: proof.codeVerifier,
       }),
-      signal: AbortSignal.timeout(10000),
     },
   );
   if (!tokenResponse.ok)
@@ -39,12 +56,11 @@ export async function verifyTruecallerAuthorization(
       token_type: z.literal("Bearer"),
     })
     .parse(await tokenResponse.json());
-  const profileResponse = await fetcher(
+  const profileResponse = await providerRequest(
     "https://oauth-account-noneu.truecaller.com/v1/userinfo",
     {
       headers: { authorization: `Bearer ${token.access_token}` },
       redirect: "error",
-      signal: AbortSignal.timeout(10000),
     },
   );
   if (!profileResponse.ok)

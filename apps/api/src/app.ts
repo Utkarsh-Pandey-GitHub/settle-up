@@ -1,4 +1,5 @@
 import {
+  TruecallerVerificationError,
   truecallerProofSchema,
   verifyTruecallerAuthorization,
 } from "../../mobile/modules/truecaller/server";
@@ -61,11 +62,12 @@ export async function createApp() {
       return reply
         .code(error.status)
         .send({ code: error.code, message: error.message });
-    if (error instanceof ZodError)
+    const err = error as any;
+    if (error instanceof ZodError || err?.name === "ZodError")
       return reply.code(400).send({
         code: "VALIDATION",
-        message: error.issues.map((i) => i.message).join(" "),
-        issues: error.flatten(),
+        message: err.issues?.map((i: any) => i.message).join(" ") || "Invalid request body.",
+        issues: typeof err.flatten === "function" ? err.flatten() : err,
       });
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -143,7 +145,9 @@ export async function createApp() {
       let verified;
       try {
         verified = await verifyTruecallerAuthorization(proof, clientId);
-      } catch {
+      } catch (error) {
+        if (error instanceof TruecallerVerificationError)
+          throw new DomainError(error.code, error.message, error.status);
         throw new DomainError(
           "TRUECALLER_FAILED",
           "Truecaller verification failed. Please try again or use a phone code.",
