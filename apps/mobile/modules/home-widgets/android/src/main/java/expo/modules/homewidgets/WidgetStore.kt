@@ -26,7 +26,6 @@ object WidgetSeries {
 
 object WidgetStore {
   val providers = mapOf(
-    "quick-wide" to QuickActionsWideWidget::class.java,
     "quick-compact" to QuickActionsCompactWidget::class.java,
     "spending" to SpendingWidget::class.java
   )

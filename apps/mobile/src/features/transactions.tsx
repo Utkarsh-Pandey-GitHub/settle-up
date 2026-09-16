@@ -409,7 +409,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                 name="date"
                 render={({ field }) => (
                   <Field
-                    label="Date and time · India (YYYY-MM-DD HH:mm)"
+                    label="Date and time"
                     value={field.value}
                     onChangeText={field.onChange}
                     error={errors.date?.message}
@@ -762,6 +762,8 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
           <SearchPicker
             visible={picker === "tags"}
             title="Tags"
+            placeholder="Search and select multiple tags"
+            selectionIcon="more"
             options={d.tags
               .filter((tag) => !tag.archived)
               .map((tag) => ({ id: tag.id, label: tag.name }))}
@@ -774,6 +776,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   : [...current, id],
               )
             }
+            onClear={() => setTagIds([])}
             onClose={() => setPicker(null)}
           />
         </YStack>
@@ -1269,58 +1272,65 @@ export function GroupsScreen() {
             </Card>
           )}
           {d.ledgers.map((l, index) => (
-            <Card
+            <Pressable
               key={l.id}
-              style={{
-                borderTopWidth: 5,
-                borderTopColor: ["#B6A2E2", "#90BDB2", "#E4B297"][index % 3],
-                backgroundColor: c.card,
-              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ledger ${l.name}`}
+              onPress={() => router.push(`/group/${l.id}` as any)}
             >
-              <View
+              <Card
                 style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 16,
-                  backgroundColor: ["#EDE7F9", "#E5F2ED", "#FAEDE4"][index % 3],
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginBottom: 12,
+                  padding: 18,
+                  borderTopWidth: 5,
+                  borderTopColor: ["#B6A2E2", "#90BDB2", "#E4B297"][index % 3],
+                  backgroundColor: c.card,
                 }}
               >
-                <Icon
-                  name={(["plane", "home", "coffee"] as const)[index % 3]}
-                  color="#555269"
-                  size={25}
-                />
-              </View>
-              <YStack gap={14}>
-                <XStack justifyContent="space-between" alignItems="center">
-                  <Heading size={21}>{l.name}</Heading>
-                  <Label muted size={12}>
-                    {l.archived ? "Archived" : l.currency}
-                  </Label>
-                </XStack>
-                <Label muted>{l.description}</Label>
-                <XStack gap={-5}>
-                  {l.members.map((m) => (
-                    <Avatar key={m.id} name={m.name} />
-                  ))}
-                </XStack>
-                <XStack justifyContent="space-between" alignItems="center">
-                  <Label muted size={12}>
-                    {l.members.length} people, one shared ledger
-                  </Label>
-                  <Button
-                    secondary
-                    compact
-                    onPress={() => router.push(`/group/${l.id}` as any)}
-                  >
-                    Open ledger
-                  </Button>
-                </XStack>
-              </YStack>
-            </Card>
+                <View
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 16,
+                    backgroundColor: ["#EDE7F9", "#E5F2ED", "#FAEDE4"][
+                      index % 3
+                    ],
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: 12,
+                  }}
+                >
+                  <Icon
+                    name={(["plane", "home", "coffee"] as const)[index % 3]}
+                    color="#555269"
+                    size={25}
+                  />
+                </View>
+                <YStack gap={14}>
+                  <XStack justifyContent="space-between" alignItems="center">
+                    <Heading size={21}>{l.name}</Heading>
+                    <Label muted size={12}>
+                      {l.archived ? "Archived" : l.currency}
+                    </Label>
+                  </XStack>
+                  <Label muted>{l.description}</Label>
+                  <XStack gap={-5}>
+                    {l.members.slice(0, 5).map((m) => (
+                      <Avatar key={m.id} name={m.name} />
+                    ))}
+                    {l.members.length > 5 && (
+                      <Label muted size={12} marginLeft={8}>
+                        +{l.members.length - 5} more
+                      </Label>
+                    )}
+                  </XStack>
+                  <XStack justifyContent="space-between" alignItems="center">
+                    <Label muted size={12}>
+                      {l.members.length} people, one shared ledger
+                    </Label>
+                  </XStack>
+                </YStack>
+              </Card>
+            </Pressable>
           ))}
           {!d.ledgers.length && (
             <Empty

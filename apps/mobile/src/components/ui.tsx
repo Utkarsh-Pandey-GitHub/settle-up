@@ -81,7 +81,7 @@ const paths: Record<string, string> = {
   camera: "M3 6h5l2-3h4l2 3h5v15H3Z M16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
   image: "M3 3h18v18H3Z M3 17l6-6 4 4 3-3 5 5 M8 7h.01",
   home: "M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z",
-  activity: "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5",
+  activity: "M3 12h4l2-7 4 14 2-7h6",
   plus: "M12 5v14 M5 12h14",
   chart: "M4 20V11 M10 20V4 M16 20v-7 M22 20V8",
   groups:
@@ -854,6 +854,9 @@ export function SearchPicker({
   multiple = false,
   onSelect,
   onClose,
+  placeholder,
+  onClear,
+  selectionIcon = "chevron",
 }: {
   visible: boolean;
   title: string;
@@ -862,6 +865,9 @@ export function SearchPicker({
   multiple?: boolean;
   onSelect(id: string): void;
   onClose(): void;
+  placeholder?: string;
+  onClear?(): void;
+  selectionIcon?: IconName;
 }) {
   const c = useColors();
   const [search, setSearch] = useState("");
@@ -909,7 +915,7 @@ export function SearchPicker({
           <SearchBar
             value={search}
             onChangeText={setSearch}
-            placeholder={`Search ${title.toLocaleLowerCase()}…`}
+            placeholder={placeholder ?? `Search ${title.toLocaleLowerCase()}…`}
           />
           <ScrollView
             keyboardShouldPersistTaps="handled"
@@ -953,7 +959,7 @@ export function SearchPicker({
                     )}
                   </YStack>
                   <Icon
-                    name={active ? "check" : "chevron"}
+                    name={active ? "check" : selectionIcon}
                     size={18}
                     color={active ? "#5552B4" : c.muted}
                   />
@@ -966,7 +972,17 @@ export function SearchPicker({
               </Label>
             )}
           </ScrollView>
-          {multiple && <Button onPress={onClose}>Done</Button>}
+          {multiple && (
+            <XStack gap={8}>
+              {!!selected.length && !!onClear && (
+                <Button secondary compact onPress={onClear}>
+                  Deselect all
+                </Button>
+              )}
+              <View style={{ flex: 1 }} />
+              <Button onPress={onClose}>Done</Button>
+            </XStack>
+          )}
         </View>
       </View>
     </Modal>

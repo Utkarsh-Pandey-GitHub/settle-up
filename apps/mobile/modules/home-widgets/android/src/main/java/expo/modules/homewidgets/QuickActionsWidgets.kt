@@ -14,12 +14,6 @@ private fun quickActions(context: Context): RemoteViews {
   return views
 }
 
-class QuickActionsWideWidget : AppWidgetProvider() {
-  override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-    ids.forEach { manager.updateAppWidget(it, quickActions(context)) }
-  }
-}
-
 class QuickActionsCompactWidget : AppWidgetProvider() {
   override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
     ids.forEach { manager.updateAppWidget(it, quickActions(context)) }

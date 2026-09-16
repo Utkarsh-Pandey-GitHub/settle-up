@@ -1,6 +1,6 @@
 # Android home-screen widgets
 
-Four separate widgets: **Scan QR**, **Record transaction**, **Scan bill**, and **Spending & goals**. Add them from Settings → Home screen widgets, or long-press the launcher → Widgets → SettleUp. Android native build required; these are not available in Expo Go, on web, or on iOS.
+Two Android widgets are available: a **4×2 Quick actions** widget for Scan QR, Scan bill, Expense, and Payment link, plus **Spending & goals**. Add them with the launcher’s Widgets picker. Android native build required; these are not available in Expo Go, on web, or on iOS.
 
 Uses Android AppWidgetProvider/RemoteViews, with no extra runtime library, API key, permissions, database table, or background network requests. The native module is auto-linked by Expo. Run `npm run apk:android` after native changes and install the resulting APK. The debug APK still needs Metro.
 

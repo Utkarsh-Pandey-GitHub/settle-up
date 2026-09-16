@@ -32,11 +32,6 @@ import { request, extra } from "../data/repository";
 import { useAction } from "../data/hooks";
 import { DataScreen, SectionTitle } from "./overview";
 import {
-  pinWidget,
-  widgetsAvailable,
-  type WidgetKind,
-} from "../../modules/home-widgets/client";
-import {
   chooseContact,
   enableNotifications,
   disableLocalNotifications,
@@ -319,14 +314,6 @@ export function AuthScreen() {
       void continueWithTruecaller();
     }
   }, [stage]);
-  const step =
-    stage === "phone" || stage === "code"
-      ? 1
-      : stage === "profile"
-        ? 2
-        : stage === "permissions"
-          ? 3
-          : 4;
   return (
     <Shell>
       <YStack
@@ -340,22 +327,6 @@ export function AuthScreen() {
           <Label bold size={11} letterSpacing={1.5}>
             YOUR FRESH START
           </Label>
-          <Label muted size={11}>
-            Step {step} of 4
-          </Label>
-        </XStack>
-        <XStack gap={6}>
-          {[1, 2, 3, 4].map((i) => (
-            <View
-              key={i}
-              style={{
-                flex: 1,
-                height: 4,
-                borderRadius: 2,
-                backgroundColor: i <= step ? "#6F6CD9" : c.line,
-              }}
-            />
-          ))}
         </XStack>
         <YStack alignItems="center" gap={10} paddingVertical={8}>
           <ReferenceArt
@@ -809,7 +780,9 @@ export function SettingsScreen() {
   const [name, setName] = useState(""),
     [deleteText, setDeleteText] = useState(""),
     [exported, setExported] = useState(""),
-    [widgetMessage, setWidgetMessage] = useState("");
+    [blockSearch, setBlockSearch] = useState(""),
+    [blockPage, setBlockPage] = useState(0),
+    [blockOpen, setBlockOpen] = useState(false);
   const dark = useSession((s) => s.dark),
     router = useRouter(),
     action = useAction();
@@ -817,42 +790,7 @@ export function SettingsScreen() {
     <DataScreen>
       {(d) => (
         <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
-          <Heading>Make yourself at home.</Heading>
-          {widgetsAvailable && (
-            <Card>
-              <YStack gap={12}>
-                <SectionTitle title="Home screen widgets" />
-                <Label muted size={12}>
-                  The action widget groups QR scan, bill scan, expense entry,
-                  and payment links. Spending and goals show your active
-                  account’s last synced totals.
-                </Label>
-                {(
-                  [
-                    ["quick-wide", "Quick actions · 5×2"],
-                    ["quick-compact", "Quick actions · 4×2"],
-                    ["spending", "Spending & goals"],
-                  ] satisfies [WidgetKind, string][]
-                ).map(([kind, label]) => (
-                  <Button
-                    key={kind}
-                    secondary
-                    onPress={async () => {
-                      const requested = await pinWidget(kind).catch(
-                        () => false,
-                      );
-                      setWidgetMessage(
-                        requested
-                          ? "Confirm placement in your launcher. You can move or resize the widget afterward."
-                          : "Long-press your home screen, choose Widgets, then find SettleUp and pick a widget.",
-                      );
-                    }}
-                  >{`Add ${label}`}</Button>
-                ))}
-                {!!widgetMessage && <Notice>{widgetMessage}</Notice>}
-              </YStack>
-            </Card>
-          )}
+          <Heading>Settings</Heading>
           <Card>
             <YStack gap={17}>
               <SectionTitle title="Profile" />
@@ -935,9 +873,85 @@ export function SettingsScreen() {
               <Button secondary onPress={() => router.push("/payment-links")}>
                 Payment links
               </Button>
-              <Button secondary onPress={() => router.push("/sms")}>
-                Bank SMS review
+              <Button secondary onPress={() => setBlockOpen((open) => !open)}>
+                {blockOpen ? "Hide blocked peers" : "Block a peer"}
               </Button>
+              {blockOpen && (
+                <YStack gap={10}>
+                  <Field
+                    label="Search peers"
+                    placeholder="Search by name or phone"
+                    value={blockSearch}
+                    onChangeText={(value) => {
+                      setBlockSearch(value);
+                      setBlockPage(0);
+                    }}
+                  />
+                  {d.peers
+                    .filter((peer) =>
+                      `${peer.name} ${peer.phone ?? ""}`
+                        .toLowerCase()
+                        .includes(blockSearch.toLowerCase()),
+                    )
+                    .slice(blockPage * 4, blockPage * 4 + 4)
+                    .map((peer) => (
+                      <XStack
+                        key={peer.id}
+                        alignItems="center"
+                        justifyContent="space-between"
+                        paddingVertical={6}
+                      >
+                        <YStack flex={1}>
+                          <Label bold>{peer.name}</Label>
+                          {!!peer.phone && (
+                            <Label muted size={11}>
+                              {peer.phone}
+                            </Label>
+                          )}
+                        </YStack>
+                        <Button
+                          secondary
+                          compact
+                          onPress={() =>
+                            action.run(
+                              () =>
+                                extra(d.account.id, "/blocks", {
+                                  userId: peer.id,
+                                }),
+                              `${peer.name} blocked`,
+                            )
+                          }
+                        >
+                          Block
+                        </Button>
+                      </XStack>
+                    ))}
+                  <XStack justifyContent="space-between" alignItems="center">
+                    <Button
+                      secondary
+                      compact
+                      disabled={blockPage === 0}
+                      onPress={() =>
+                        setBlockPage((page) => Math.max(0, page - 1))
+                      }
+                    >
+                      Previous
+                    </Button>
+                    <Label muted size={11}>
+                      Showing {blockPage * 4 + 1}–
+                      {Math.min((blockPage + 1) * 4, d.peers.length)}
+                    </Label>
+                    <Button
+                      secondary
+                      compact
+                      disabled={(blockPage + 1) * 4 >= d.peers.length}
+                      onPress={() => setBlockPage((page) => page + 1)}
+                    >
+                      Next
+                    </Button>
+                  </XStack>
+                </YStack>
+              )}
             </YStack>
           </Card>
           <Card>

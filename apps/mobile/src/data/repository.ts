@@ -43,7 +43,12 @@ export async function request<T>(
     : undefined;
   const controller = new AbortController();
   // A sleeping hosted API can need a minute to start, before provider verification.
-  const timeoutMs = path.startsWith("/auth/") ? 90000 : 15000;
+  const timeoutMs =
+    path === "/auth/truecaller"
+      ? 30000
+      : path.startsWith("/auth/")
+        ? 90000
+        : 15000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   let result: any;
@@ -469,6 +474,7 @@ export class DemoRepository implements AppRepository {
       const l = d.ledgers.find((l) => l.id === path.split("/")[2]);
       if (l) Object.assign(l, body);
     } else if (path === "/peers") d.peers.push({ id: uuid(), ...body });
+    else if (path === "/blocks") return { ok: true };
     else if (path === "/profile") Object.assign(d.account, body);
     else if (path === "/notifications") {
       if (!body) return d.activity;

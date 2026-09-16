@@ -302,7 +302,7 @@ export function SpendingChart({
                 width={barWidth}
                 height={h}
                 rx={6}
-                fill={i === days.length - 1 ? "#68785F" : "#D7DDCF"}
+                fill={i === days.length - 1 ? "#6C8F83" : "#D0E6DF"}
               />
               <SvgText
                 x={x + barWidth / 2}
@@ -479,12 +479,12 @@ function HomeContent({ data: d }: { data: Dashboard }) {
             >
               <View
                 style={{
-                  padding: 9,
+                  padding: 11,
                   borderRadius: 30,
                   backgroundColor: "#FFFFFF",
                 }}
               >
-                <Icon name={tile.icon} color="#191D21" size={23} />
+                <Icon name={tile.icon} color="#191D21" size={27} />
               </View>
               <Label
                 color="#191D21"
@@ -535,12 +535,15 @@ function HomeContent({ data: d }: { data: Dashboard }) {
 export function ActivityScreen() {
   const [search, setSearch] = useState(""),
     [tag, setTag] = useState(""),
-    [status, setStatus] = useState("");
+    [status, setStatus] = useState(""),
+    [ledgerFilter, setLedgerFilter] = useState(""),
+    [showAll, setShowAll] = useState(false),
+    [sinceDate, setSinceDate] = useState("");
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [openDropdown, setOpenDropdown] = useState<"tag" | "status" | null>(
-    null,
-  );
+  const [openDropdown, setOpenDropdown] = useState<
+    "tag" | "status" | "ledger" | null
+  >(null);
   const action = useAction();
   const c = useColors();
 
@@ -564,8 +567,18 @@ export function ActivityScreen() {
           (t) =>
             t.title.toLowerCase().includes(search.toLowerCase()) &&
             (!tag || t.tagIds.includes(tag)) &&
-            (!status || t.status === status),
+            (!status || t.status === status) &&
+            (!ledgerFilter || t.ledgerId === ledgerFilter) &&
+            (!sinceDate || t.occurredAt.slice(0, 10) >= sinceDate),
         );
+        const displayed =
+          showAll || ledgerFilter
+            ? filtered
+            : d.ledgers
+                .flatMap((ledger) =>
+                  filtered.filter((t) => t.ledgerId === ledger.id).slice(0, 3),
+                )
+                .concat(filtered.filter((t) => !t.ledgerId).slice(0, 3));
 
         const allFilteredSelected =
           filtered.length > 0 &&
@@ -695,6 +708,25 @@ export function ActivityScreen() {
                   setOpenDropdown(openDropdown === "tag" ? null : "tag")
                 }
               />
+              <FilterDropdownTrigger
+                label={
+                  ledgerFilter
+                    ? (d.ledgers.find((ledger) => ledger.id === ledgerFilter)
+                        ?.name ?? "Ledger")
+                    : "All ledgers"
+                }
+                active={!!ledgerFilter}
+                onPress={() =>
+                  setOpenDropdown(openDropdown === "ledger" ? null : "ledger")
+                }
+              />
+
+              <Chip
+                selected={showAll}
+                onPress={() => setShowAll((value) => !value)}
+              >
+                {showAll ? "All entries" : "Last 3 per ledger"}
+              </Chip>
 
               <FilterDropdownTrigger
                 label={
@@ -708,11 +740,13 @@ export function ActivityScreen() {
                 }
               />
 
-              {(!!tag || !!status) && (
+              {(!!tag || !!status || !!ledgerFilter || !!sinceDate) && (
                 <Pressable
                   onPress={() => {
                     setTag("");
                     setStatus("");
+                    setLedgerFilter("");
+                    setSinceDate("");
                     setOpenDropdown(null);
                   }}
                   style={{
@@ -778,6 +812,37 @@ export function ActivityScreen() {
                 )}
               </FilterDropdownPanel>
             )}
+            {openDropdown === "ledger" && (
+              <FilterDropdownPanel title="FILTER BY LEDGER">
+                <Chip
+                  selected={!ledgerFilter}
+                  onPress={() => {
+                    setLedgerFilter("");
+                    setOpenDropdown(null);
+                  }}
+                >
+                  All ledgers
+                </Chip>
+                {d.ledgers.map((ledger) => (
+                  <Chip
+                    key={ledger.id}
+                    selected={ledgerFilter === ledger.id}
+                    onPress={() => {
+                      setLedgerFilter(ledger.id);
+                      setOpenDropdown(null);
+                    }}
+                  >
+                    {ledger.name}
+                  </Chip>
+                ))}
+                <Field
+                  label="Since date (optional)"
+                  placeholder="YYYY-MM-DD"
+                  value={sinceDate}
+                  onChangeText={setSinceDate}
+                />
+              </FilterDropdownPanel>
+            )}
 
             {/* Multi-Select Floating Action Bar */}
             {isSelecting && selectedIds.length > 0 && (
@@ -815,7 +880,7 @@ export function ActivityScreen() {
 
             {/* Transaction List */}
             <Card>
-              {filtered.map((t, index) => (
+              {displayed.map((t, index) => (
                 <TransactionRow
                   key={t.id}
                   transaction={t}

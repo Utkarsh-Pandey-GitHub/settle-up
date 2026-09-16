@@ -426,8 +426,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
           >
             {[
               { label: "Home", path: "/", icon: "home" },
-              { label: "Activity", path: "/activity", icon: "activity" },
-              { label: "Scan & pay", path: "/scan", icon: "scan" },
+              { label: "Ledger activity", path: "/activity", icon: "activity" },
+              { label: "Scan QR", path: "/scan", icon: "scan" },
               { label: "Analytics", path: "/analytics", icon: "chart" },
               { label: "Groups", path: "/groups", icon: "groups" },
             ].map((n) => (
@@ -449,7 +449,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                       ? {
                           backgroundColor: "#6F6CD9",
                           borderRadius: 20,
-                          padding: 14,
+                          padding: 17,
                           marginTop: -20,
                           borderBottomWidth: 4,
                           borderColor: "#5552B4",
@@ -459,7 +459,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 >
                   <Icon
                     name={n.icon as IconName}
-                    size={22}
+                    size={n.path === "/scan" ? 29 : 22}
                     color={
                       n.path === "/scan"
                         ? "#FFF"
