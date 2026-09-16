@@ -1,7 +1,14 @@
 import { chooseContact } from "../services/device";
 import { DateTime } from "luxon";
 import React, { useEffect, useRef, useState } from "react";
-import { View, Linking, Image, Pressable } from "react-native";
+import {
+  View,
+  Linking,
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+} from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useQuery } from "@tanstack/react-query";
 import { XStack, YStack } from "tamagui";
@@ -20,7 +27,7 @@ import {
 import { BillEditor, type BillPhoto, type BillLine } from "./bill";
 import { saveBillPhoto, getDemoBillPhoto } from "../data/repository";
 import { repository, uuid, extra } from "../data/repository";
-import { DEMO, draftStore } from "../data/session";
+import { DEMO } from "../data/session";
 import { useAction } from "../data/hooks";
 import { DataScreen, SectionTitle, TransactionRow } from "./overview";
 import {
@@ -37,6 +44,8 @@ import {
   ReferenceArt,
   Icon,
   useColors,
+  SearchPicker,
+  type IconName,
 } from "../components/ui";
 const expenseForm = z.object({
   title: z.string().trim().min(1, "Give this transaction a name.").max(120),
@@ -70,9 +79,18 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     [method, setMethod] = useState<SplitMethod>("EQUAL"),
     [weights, setWeights] = useState<Record<string, string>>({}),
     [tagIds, setTagIds] = useState<string[]>([]),
+    [transactionIcon, setTransactionIcon] = useState<IconName>("bag"),
     [borrower, setBorrower] = useState(""),
     [contactPayee, setContactPayee] = useState(""),
     [contactName, setContactName] = useState(""),
+    [billOpen, setBillOpen] = useState(
+      params.capture === "bill" ||
+        params.bill === "1" ||
+        params.bill === "camera",
+    ),
+    [picker, setPicker] = useState<
+      "ledger" | "participants" | "borrower" | "payee" | "tags" | null
+    >(null),
     [key, setKey] = useState(uuid());
   const [photo, setPhoto] = useState<BillPhoto | null>(null);
   const [lines, setLines] = useState<BillLine[]>([]);
@@ -85,7 +103,6 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     control,
     handleSubmit,
     getValues,
-    reset,
     watch,
     formState: { errors },
   } = useForm({
@@ -102,6 +119,31 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   useEffect(() => {
     if (ledger) setSelected(ledger.members.map((m) => m.id));
   }, [ledgerId]);
+  const choosePayee = (peerId: string) => {
+    if (peerId === "__none") {
+      setContactPayee("");
+      setContactName("");
+      return;
+    }
+    const peer = d.peers.find((candidate) => candidate.id === peerId);
+    if (!peer) return;
+    const rawPhone = (peer.phone || "").replace(/[^0-9]/g, "");
+    const phone10 = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
+    const handle = phone10 ? `${phone10}@paytm` : peer.name;
+    setContactPayee(handle);
+    setContactName(peer.name);
+    const currentNotes = getValues("notes") || "";
+    const baseNotes = currentNotes.replace(/\n?Paid to: .*/, "");
+    setValue(
+      "notes",
+      baseNotes
+        ? `${baseNotes}\nPaid to: ${peer.name} (UPI: ${handle})`
+        : `Paid to: ${peer.name} (UPI: ${handle})`,
+      { shouldValidate: true },
+    );
+    if (!getValues("title"))
+      setValue("title", `Payment to ${peer.name}`, { shouldValidate: true });
+  };
   const allocations = () =>
     splitExpense(
       parseMoney(amount, d.account.currency),
@@ -151,6 +193,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
               : "SETTLED",
         occurredAt,
         notes: values.notes,
+        icon: transactionIcon,
         ledgerId: type === "ADJUSTMENT" ? undefined : ledgerId || undefined,
         tagIds,
         items: isExpense
@@ -197,7 +240,6 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
           );
         }
       }
-      await draftStore.clear(d.account.id);
     }, "Expense saved. One less thing to keep in your head.");
     saving.current = false;
     if (ok) {
@@ -206,7 +248,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     }
   });
   return (
-    <YStack gap={22} maxWidth={800} width="100%" alignSelf="center">
+    <YStack gap={14} maxWidth={800} width="100%" alignSelf="center">
       <Heading>A little entry. A clearer picture.</Heading>
       {savedId ? (
         <Card>
@@ -241,8 +283,22 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
         pointerEvents={savedId || action.busy ? "none" : "auto"}
         style={{ opacity: savedId ? 0.5 : 1 }}
       >
-        <YStack gap={22}>
-          <Label muted>Record it once. Keep the maths fair.</Label>
+        <YStack gap={14}>
+          <XStack alignItems="center" justifyContent="space-between" gap={12}>
+            <Label muted flex={1}>
+              Record it once. Keep the maths fair.
+            </Label>
+            {isExpense && (
+              <Button
+                secondary
+                compact
+                icon={photo ? "check" : "image"}
+                onPress={() => setBillOpen(true)}
+              >
+                {photo ? `Bill · ${lines.length} items` : "Add bill"}
+              </Button>
+            )}
+          </XStack>
           <XStack gap={8} flexWrap="wrap">
             {(
               [
@@ -261,27 +317,64 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
               </Chip>
             ))}
           </XStack>
-          {isExpense && (
-            <BillEditor
-              autoCapture={params.capture === "bill"}
-              onAutoCaptureHandled={() =>
-                router.setParams({ capture: undefined })
-              }
-              currency={d.account.currency}
-              amount={amount}
-              lines={lines}
-              onLines={setLines}
-              onAmount={(value) =>
-                setValue("amount", value, { shouldValidate: true })
-              }
-              photo={photo}
-              onPhoto={setPhoto}
-              onBusy={setScanning}
-              autoCamera={params.bill === "1" || params.bill === "camera"}
-            />
-          )}
-          <Card>
-            <YStack gap={21}>
+          <Modal
+            visible={isExpense && billOpen}
+            transparent
+            animationType="slide"
+            onRequestClose={() => !scanning && setBillOpen(false)}
+          >
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: "rgba(22,24,28,0.52)",
+                padding: 16,
+              }}
+            >
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{
+                  flexGrow: 1,
+                  justifyContent: "center",
+                  width: "100%",
+                  maxWidth: 760,
+                  alignSelf: "center",
+                  paddingVertical: 20,
+                }}
+              >
+                <YStack gap={12}>
+                  <XStack justifyContent="flex-end">
+                    <Button
+                      secondary
+                      compact
+                      disabled={scanning}
+                      onPress={() => setBillOpen(false)}
+                    >
+                      Done
+                    </Button>
+                  </XStack>
+                  <BillEditor
+                    autoCapture={params.capture === "bill"}
+                    onAutoCaptureHandled={() =>
+                      router.setParams({ capture: undefined })
+                    }
+                    currency={d.account.currency}
+                    amount={amount}
+                    lines={lines}
+                    onLines={setLines}
+                    onAmount={(value) =>
+                      setValue("amount", value, { shouldValidate: true })
+                    }
+                    photo={photo}
+                    onPhoto={setPhoto}
+                    onBusy={setScanning}
+                    autoCamera={params.bill === "1" || params.bill === "camera"}
+                  />
+                </YStack>
+              </ScrollView>
+            </View>
+          </Modal>
+          <Card style={{ padding: 16 }}>
+            <YStack gap={14}>
               <Controller
                 control={control}
                 name="amount"
@@ -293,7 +386,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                     value={field.value}
                     onChangeText={field.onChange}
                     error={errors.amount?.message}
-                    style={{ fontSize: 32, minHeight: 75 }}
+                    style={{ fontSize: 30, minHeight: 64, padding: 10 }}
                   />
                 )}
               />
@@ -307,6 +400,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                     value={field.value}
                     onChangeText={field.onChange}
                     error={errors.title?.message}
+                    style={{ minHeight: 44, padding: 10 }}
                   />
                 )}
               />
@@ -319,53 +413,71 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                     value={field.value}
                     onChangeText={field.onChange}
                     error={errors.date?.message}
+                    style={{ minHeight: 44, padding: 10 }}
                   />
                 )}
               />
+              <YStack gap={8}>
+                <Label size={13} bold>
+                  Transaction icon
+                </Label>
+                <XStack gap={7} flexWrap="wrap">
+                  {(
+                    ["bag", "coffee", "car", "plane", "bolt", "wallet"] as IconName[]
+                  ).map((name) => (
+                    <Pressable
+                      key={name}
+                      accessibilityRole="radio"
+                      accessibilityLabel={`${name} icon`}
+                      accessibilityState={{ selected: transactionIcon === name }}
+                      onPress={() => setTransactionIcon(name)}
+                      style={({ pressed }) => ({
+                        width: 42,
+                        height: 42,
+                        borderRadius: 12,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor:
+                          transactionIcon === name ? "#E8E3F6" : "transparent",
+                        opacity: pressed ? 0.72 : 1,
+                      })}
+                    >
+                      <Icon
+                        name={name}
+                        size={20}
+                        color={transactionIcon === name ? "#5552B4" : undefined}
+                      />
+                    </Pressable>
+                  ))}
+                </XStack>
+              </YStack>
               <Label size={13} bold>
                 Group or ledger{" "}
                 {type === "PERSONAL_EXPENSE" ? "(optional)" : "(required)"}
               </Label>
-              <XStack gap={8} flexWrap="wrap">
-                {type === "PERSONAL_EXPENSE" && (
-                  <Chip selected={!ledgerId} onPress={() => setLedgerId("")}>
-                    Personal
-                  </Chip>
-                )}
-                {d.ledgers
-                  .filter((l) => !l.archived)
-                  .map((l) => (
-                    <Chip
-                      key={l.id}
-                      selected={ledgerId === l.id}
-                      onPress={() => setLedgerId(l.id)}
-                    >
-                      {l.name}
-                    </Chip>
-                  ))}
-              </XStack>
+              <Button
+                secondary
+                icon="groups"
+                onPress={() => setPicker("ledger")}
+              >
+                {ledger?.name ??
+                  (type === "PERSONAL_EXPENSE" ? "Personal" : "Choose a group")}
+              </Button>
               {type === "SHARED_EXPENSE" && (
                 <YStack gap={14}>
                   <Label bold>
                     Paid by {d.account.name.split(" ")[0]} · split between
                   </Label>
-                  <XStack gap={8} flexWrap="wrap">
-                    {ledger?.members.map((m) => (
-                      <Chip
-                        selected={selected.includes(m.id)}
-                        key={m.id}
-                        onPress={() =>
-                          setSelected((s) =>
-                            s.includes(m.id)
-                              ? s.filter((id) => id !== m.id)
-                              : [...s, m.id],
-                          )
-                        }
-                      >
-                        {m.name.split(" ")[0]}
-                      </Chip>
-                    ))}
-                  </XStack>
+                  <Button
+                    secondary
+                    icon="groups"
+                    disabled={!ledger}
+                    onPress={() => setPicker("participants")}
+                  >
+                    {selected.length
+                      ? `${selected.length} ${selected.length === 1 ? "person" : "people"} selected`
+                      : "Choose people"}
+                  </Button>
                   <XStack gap={8} flexWrap="wrap">
                     {(["EQUAL", "EXACT", "PERCENTAGE", "SHARES"] as const).map(
                       (m) => (
@@ -412,43 +524,25 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
               {type === "LOAN" && (
                 <YStack gap={10}>
                   <Label bold>Who is borrowing?</Label>
-                  <XStack gap={8} flexWrap="wrap">
-                    {ledger?.members
-                      .filter((m) => m.id !== d.account.id)
-                      .map((m) => (
-                        <Chip
-                          key={m.id}
-                          selected={borrower === m.id}
-                          onPress={() => setBorrower(m.id)}
-                        >
-                          {m.name}
-                        </Chip>
-                      ))}
-                  </XStack>
+                  <Button
+                    secondary
+                    icon="groups"
+                    disabled={!ledger}
+                    onPress={() => setPicker("borrower")}
+                  >
+                    {ledger?.members.find((member) => member.id === borrower)
+                      ?.name ?? "Choose borrower"}
+                  </Button>
                 </YStack>
               )}
               <Label size={13} bold>
                 Tags
               </Label>
-              <XStack gap={8} flexWrap="wrap">
-                {d.tags
-                  .filter((t) => !t.archived)
-                  .map((t) => (
-                    <Chip
-                      key={t.id}
-                      selected={tagIds.includes(t.id)}
-                      onPress={() =>
-                        setTagIds((tags) =>
-                          tags.includes(t.id)
-                            ? tags.filter((id) => id !== t.id)
-                            : [...tags, t.id],
-                        )
-                      }
-                    >
-                      {t.name}
-                    </Chip>
-                  ))}
-              </XStack>
+              <Button secondary onPress={() => setPicker("tags")}>
+                {tagIds.length
+                  ? `${tagIds.length} ${tagIds.length === 1 ? "tag" : "tags"}`
+                  : "Choose tags"}
+              </Button>
               <YStack gap={10}>
                 <Label size={13} bold>
                   Paid to contact / UPI (optional)
@@ -488,49 +582,9 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   >
                     Phone Book
                   </Button>
-                  {d.peers.map((p) => {
-                    const isSelected = contactName === p.name;
-                    return (
-                      <Chip
-                        key={p.id}
-                        selected={isSelected}
-                        onPress={() => {
-                          if (isSelected) {
-                            setContactPayee("");
-                            setContactName("");
-                          } else {
-                            const rawPhone = (p.phone || "").replace(
-                              /[^0-9]/g,
-                              "",
-                            );
-                            const phone10 =
-                              rawPhone.length >= 10
-                                ? rawPhone.slice(-10)
-                                : rawPhone;
-                            const handle = phone10
-                              ? `${phone10}@paytm`
-                              : p.name;
-                            setContactPayee(handle);
-                            setContactName(p.name);
-                            const currentNotes = getValues("notes") || "";
-                            const newNotes = currentNotes
-                              ? `${currentNotes}\nPaid to: ${p.name} (UPI: ${handle})`
-                              : `Paid to: ${p.name} (UPI: ${handle})`;
-                            setValue("notes", newNotes, {
-                              shouldValidate: true,
-                            });
-                            if (!getValues("title")) {
-                              setValue("title", `Payment to ${p.name}`, {
-                                shouldValidate: true,
-                              });
-                            }
-                          }
-                        }}
-                      >
-                        {p.name}
-                      </Chip>
-                    );
-                  })}
+                  <Button secondary compact onPress={() => setPicker("payee")}>
+                    {contactName || "Choose saved peer"}
+                  </Button>
                 </XStack>
                 {!!contactPayee && (
                   <YStack gap={6} marginTop={4}>
@@ -627,60 +681,92 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                       ? "Record loan"
                       : "Save transaction"}
               </Button>
-              <Label muted size={11}>
-                Drafts keep your entries and items. Reattach the bill photo
-                after restoring.
-              </Label>
-              <XStack gap={10} flexWrap="wrap">
-                <Button
-                  secondary
-                  onPress={() =>
-                    action.run(
-                      () =>
-                        draftStore.save(d.account.id, {
-                          values: getValues(),
-                          type,
-                          ledgerId,
-                          selected,
-                          weights,
-                          tagIds,
-                          method,
-                          borrower,
-                          key,
-                          lines,
-                        }),
-                      "Draft saved for this account. Browser drafts last for this page session.",
-                    )
-                  }
-                >
-                  Save draft
-                </Button>
-                <Button
-                  secondary
-                  onPress={() =>
-                    action.run(async () => {
-                      const draft = await draftStore.get(d.account.id);
-                      if (!draft)
-                        throw new Error("No draft is saved for this account.");
-                      reset(draft.values);
-                      setType(draft.type);
-                      setLedgerId(draft.ledgerId);
-                      setSelected(draft.selected);
-                      setWeights(draft.weights);
-                      setTagIds(draft.tagIds);
-                      setMethod(draft.method);
-                      setBorrower(draft.borrower);
-                      setKey(draft.key);
-                      setLines(draft.lines ?? []);
-                      setPhoto(null);
-                    }, "Draft restored.")
-                  }
-                >
-                  Restore draft
-                </Button>
-              </XStack>
             </YStack>
           </Card>
+          <SearchPicker
+            visible={picker === "ledger"}
+            title="Groups and ledgers"
+            options={[
+              ...(type === "PERSONAL_EXPENSE"
+                ? [{ id: "__personal", label: "Personal" }]
+                : []),
+              ...d.ledgers
+                .filter((entry) => !entry.archived)
+                .map((entry) => ({
+                  id: entry.id,
+                  label: entry.name,
+                  detail: `${entry.members.length} members · ${entry.currency}`,
+                })),
+            ]}
+            selected={[ledgerId || "__personal"]}
+            onSelect={(id) => setLedgerId(id === "__personal" ? "" : id)}
+            onClose={() => setPicker(null)}
+          />
+          <SearchPicker
+            visible={picker === "participants"}
+            title="People in this split"
+            options={(ledger?.members ?? []).map((member) => ({
+              id: member.id,
+              label: member.name,
+              detail: member.id === d.account.id ? "Your share" : undefined,
+            }))}
+            selected={selected}
+            multiple
+            onSelect={(id) =>
+              setSelected((current) =>
+                current.includes(id)
+                  ? current.filter((memberId) => memberId !== id)
+                  : [...current, id],
+              )
+            }
+            onClose={() => setPicker(null)}
+          />
+          <SearchPicker
+            visible={picker === "borrower"}
+            title="Choose borrower"
+            options={(ledger?.members ?? [])
+              .filter((member) => member.id !== d.account.id)
+              .map((member) => ({ id: member.id, label: member.name }))}
+            selected={borrower ? [borrower] : []}
+            onSelect={setBorrower}
+            onClose={() => setPicker(null)}
+          />
+          <SearchPicker
+            visible={picker === "payee"}
+            title="Saved peers"
+            options={[
+              ...(contactName
+                ? [{ id: "__none", label: "Clear selection" }]
+                : []),
+              ...d.peers.map((peer) => ({
+                id: peer.id,
+                label: peer.name,
+                detail: peer.phone,
+              })),
+            ]}
+            selected={d.peers
+              .filter((peer) => peer.name === contactName)
+              .map((peer) => peer.id)}
+            onSelect={choosePayee}
+            onClose={() => setPicker(null)}
+          />
+          <SearchPicker
+            visible={picker === "tags"}
+            title="Tags"
+            options={d.tags
+              .filter((tag) => !tag.archived)
+              .map((tag) => ({ id: tag.id, label: tag.name }))}
+            selected={tagIds}
+            multiple
+            onSelect={(id) =>
+              setTagIds((current) =>
+                current.includes(id)
+                  ? current.filter((tagId) => tagId !== id)
+                  : [...current, id],
+              )
+            }
+            onClose={() => setPicker(null)}
+          />
         </YStack>
       </View>
     </YStack>
@@ -926,6 +1012,11 @@ export function SettlementScreen() {
               Record a payment you have actually made. SettleUp does not move
               money.
             </Label>
+            <Notice>
+              Settle up clears what you owe after you pay someone outside the app.
+              Choose the person, confirm the amount you paid, and SettleUp will
+              reduce that balance and record the repayment in Activity.
+            </Notice>
             <Card>
               <YStack gap={18}>
                 {!owed.length ? (

@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import type { CreateShare } from "@settleup/contracts";
+import type { CreateShare, Dashboard } from "@settleup/contracts";
 import {
   assertShareAccess,
   normalizePhone,
   DomainError,
+  periodRange,
 } from "@settleup/domain";
 import {
   analytics,
@@ -12,6 +13,74 @@ import {
 } from "@settleup/domain/src/analytics";
 import { PrismaDashboardRepository } from "../finance/service";
 import { atomic, digest, audit, requireMember } from "../infra/database";
+
+type ShareScope = Pick<
+  CreateShare,
+  | "start"
+  | "end"
+  | "period"
+  | "currency"
+  | "ledgerIds"
+  | "tagIds"
+  | "includeTransactions"
+  | "showDescriptions"
+>;
+
+const currentScope = (scope: ShareScope) => ({
+  ...(scope.period
+    ? periodRange(scope.period, "Asia/Kolkata")
+    : { start: scope.start, end: scope.end }),
+  currency: scope.currency,
+  ledgerIds: scope.ledgerIds,
+  tagIds: scope.tagIds,
+});
+
+function livePayload(data: Dashboard, scope: ShareScope, expiresAt: string) {
+  const filter = currentScope(scope);
+  const summary = analytics(data, filter);
+  const weekly = analytics(data, {
+    ...periodRange("WEEK", "Asia/Kolkata"),
+    currency: scope.currency,
+    ledgerIds: scope.ledgerIds,
+    tagIds: scope.tagIds,
+  });
+  const monthly = analytics(data, {
+    ...periodRange("MONTH", "Asia/Kolkata"),
+    currency: scope.currency,
+    ledgerIds: scope.ledgerIds,
+    tagIds: scope.tagIds,
+  });
+  return {
+    owner: data.account.name,
+    coverage: { start: filter.start, end: filter.end },
+    period: scope.period,
+    updatedAt: new Date().toISOString(),
+    expiresAt,
+    currency: scope.currency,
+    spendingMinor: summary.spendingMinor,
+    outgoingMinor: summary.outgoingMinor,
+    incomingMinor: summary.incomingMinor,
+    weeklySpendingMinor: weekly.spendingMinor,
+    monthlySpendingMinor: monthly.spendingMinor,
+    byDay: summary.byDay,
+    categories: summary.byTag.map((entry) => ({
+      name:
+        data.tags.find((tag) => tag.id === entry.id)?.name ?? "Uncategorized",
+      amountMinor: entry.amountMinor,
+    })),
+    transactions: scope.includeTransactions
+      ? filterTransactions(data, filter).map((transaction) => ({
+          date: transaction.occurredAt,
+          amountMinor: personalSpend(transaction, data.account.id),
+          status: transaction.status,
+          ...(scope.showDescriptions
+            ? { description: transaction.title }
+            : {}),
+        }))
+      : undefined,
+  };
+}
+
 export class SharingService {
   async create(userId: string, input: CreateShare) {
     const data = await new PrismaDashboardRepository().get(userId);
@@ -24,30 +93,17 @@ export class SharingService {
         "Only your own accessible records can be shared.",
         403,
       );
-    const summary = analytics(data, input);
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(Date.now() + input.expiresInHours * 3600000);
-    // Deliberately project every public field; never serialize a database record.
-    const payload = {
-      owner: data.account.name,
-      coverage: { start: input.start, end: input.end },
-      expiresAt: expiresAt.toISOString(),
+    const scope: ShareScope = {
+      start: input.start,
+      end: input.end,
+      period: input.period,
       currency: input.currency,
-      spendingMinor: summary.spendingMinor,
-      outgoingMinor: summary.outgoingMinor,
-      incomingMinor: summary.incomingMinor,
-      categories: summary.byTag.map((t) => ({
-        name: data.tags.find((tag) => tag.id === t.id)?.name ?? "Uncategorized",
-        amountMinor: t.amountMinor,
-      })),
-      transactions: input.includeTransactions
-        ? filterTransactions(data, input).map((t) => ({
-            date: t.occurredAt,
-            amountMinor: personalSpend(t, userId),
-            status: t.status,
-            ...(input.showDescriptions ? { description: t.title } : {}),
-          }))
-        : undefined,
+      ledgerIds: input.ledgerIds,
+      tagIds: input.tagIds,
+      includeTransactions: input.includeTransactions,
+      showDescriptions: input.showDescriptions,
     };
     const record = await atomic(async (tx) => {
       for (const id of input.ledgerIds) await requireMember(tx, id, userId);
@@ -60,7 +116,11 @@ export class SharingService {
             : null,
           expiresAt,
           snapshot: {
-            create: { payload: JSON.parse(JSON.stringify(payload)) },
+            create: {
+              payload: JSON.parse(
+                JSON.stringify({ version: 2, scope, owner: data.account.name }),
+              ),
+            },
           },
         },
       });
@@ -76,6 +136,7 @@ export class SharingService {
       expiresAt: expiresAt.toISOString(),
     };
   }
+
   async read(token: string, userId?: string) {
     if (!/^[A-Za-z0-9_-]{43}$/.test(token))
       throw new DomainError(
@@ -113,7 +174,13 @@ export class SharingService {
       await tx.sharedLinkAccessEvent.create({
         data: { linkId: link.id, allowed },
       });
-      return allowed ? (link.snapshot?.payload ?? null) : null;
+      return allowed
+        ? {
+            ownerId: link.ownerId,
+            expiresAt: link.expiresAt.toISOString(),
+            payload: link.snapshot?.payload as any,
+          }
+        : null;
     });
     if (!result)
       throw new DomainError(
@@ -121,14 +188,20 @@ export class SharingService {
         "This link is unavailable or requires an authorized account.",
         404,
       );
-    return result;
+    if (result.payload?.version === 2 && result.payload.scope) {
+      const data = await new PrismaDashboardRepository().get(result.ownerId);
+      return livePayload(data, result.payload.scope, result.expiresAt);
+    }
+    return result.payload;
   }
+
   async revoke(userId: string, id: string) {
     return atomic(async (tx) => {
       const link = await tx.sharedAnalyticsLink.findFirst({
-        where: { id, ownerId: userId },
+        where: { id, ownerId: userId, revokedAt: null },
       });
-      if (!link) throw new DomainError("NOT_FOUND", "Link unavailable.", 404);
+      if (!link)
+        throw new DomainError("NOT_FOUND", "Link is already unavailable.", 404);
       await tx.sharedAnalyticsLink.update({
         where: { id },
         data: { revokedAt: new Date() },

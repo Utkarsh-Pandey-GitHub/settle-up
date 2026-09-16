@@ -20,11 +20,14 @@ import {
   Notice,
   Progress,
   Skeleton,
+  SearchPicker,
+  Icon,
 } from "../components/ui";
 import { repository, extra, sharedSnapshot } from "../data/repository";
 import { useAction } from "../data/hooks";
 import { DEMO, useSession } from "../data/session";
 import { Shell } from "../components/Shell";
+import { copyText } from "../../modules/home-widgets/client";
 export function GoalsScreen() {
   const [editing, setEditing] = useState(false),
     [name, setName] = useState(""),
@@ -303,6 +306,7 @@ export function ShareScreen() {
     [period, setPeriod] = useState<Period>("MONTH"),
     [ledgerIds, setLedgers] = useState<string[]>([]),
     [tagIds, setTags] = useState<string[]>([]),
+    [picker, setPicker] = useState<"period" | "groups" | "tags" | null>(null),
     [result, setResult] = useState<{
       id: string;
       url: string;
@@ -322,68 +326,29 @@ export function ShareScreen() {
     <DataScreen>
       {(d) => (
         <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
-          <Heading>Share a picture. Keep control.</Heading>
+          <Heading>Share a trusted monitoring view.</Heading>
           <Label muted>
-            A frozen, read-only snapshot. Only what you choose, only for as long
-            as you choose.
+            Give a parent, partner, or guardian a read-only view that refreshes
+            when they open it. You choose the period, records, and expiry.
           </Label>
           <Card>
             <YStack gap={17}>
               <Label bold>Coverage period</Label>
-              <XStack gap={8} flexWrap="wrap">
-                {(
-                  [
-                    ["WEEK", "This week"],
-                    ["MONTH", "This month"],
-                    ["LAST_30", "Last 30 days"],
-                    ["YEAR", "This year"],
-                  ] as [Period, string][]
-                ).map(([p, label]) => (
-                  <Chip
-                    selected={period === p}
-                    key={p}
-                    onPress={() => setPeriod(p)}
-                  >
-                    {label}
-                  </Chip>
-                ))}
-              </XStack>
-              <Label bold>Groups (empty means all accessible records)</Label>
-              <XStack flexWrap="wrap" gap={8}>
-                {d.ledgers.map((l) => (
-                  <Chip
-                    selected={ledgerIds.includes(l.id)}
-                    key={l.id}
-                    onPress={() =>
-                      setLedgers((ids) =>
-                        ids.includes(l.id)
-                          ? ids.filter((id) => id !== l.id)
-                          : [...ids, l.id],
-                      )
-                    }
-                  >
-                    {l.name}
-                  </Chip>
-                ))}
-              </XStack>
-              <Label bold>Tags (empty means all)</Label>
-              <XStack gap={8} flexWrap="wrap">
-                {d.tags.map((t) => (
-                  <Chip
-                    key={t.id}
-                    selected={tagIds.includes(t.id)}
-                    onPress={() =>
-                      setTags((ids) =>
-                        ids.includes(t.id)
-                          ? ids.filter((id) => id !== t.id)
-                          : [...ids, t.id],
-                      )
-                    }
-                  >
-                    {t.name}
-                  </Chip>
-                ))}
-              </XStack>
+              <Button secondary icon="calendar" onPress={() => setPicker("period")}>
+                {{ WEEK: "This week", MONTH: "This month", LAST_30: "Last 30 days", YEAR: "This year" }[period] ?? "Choose period"}
+              </Button>
+              <Label bold>Groups</Label>
+              <Button secondary icon="groups" onPress={() => setPicker("groups")}>
+                {ledgerIds.length
+                  ? `${ledgerIds.length} ${ledgerIds.length === 1 ? "group" : "groups"}`
+                  : "All accessible groups"}
+              </Button>
+              <Label bold>Tags</Label>
+              <Button secondary icon="bag" onPress={() => setPicker("tags")}>
+                {tagIds.length
+                  ? `${tagIds.length} ${tagIds.length === 1 ? "tag" : "tags"}`
+                  : "All tags"}
+              </Button>
               <XStack gap={8}>
                 <Chip selected={!privateLink} onPress={() => setPrivate(false)}>
                   Anyone with the link
@@ -424,8 +389,8 @@ export function ShareScreen() {
               />
               <Notice>
                 {privateLink
-                  ? "The recipient must sign in with the exact verified number. Unauthorized visitors cannot see the intended phone number."
-                  : "Anyone who receives this link can view the selected snapshot until it expires or you revoke it."}
+                  ? "Recommended for family monitoring: the recipient must sign in with the exact verified number."
+                  : "Anyone with the link can monitor the selected totals and transactions until it expires or you revoke it."}
               </Notice>
               {DEMO && (
                 <Notice>
@@ -441,6 +406,12 @@ export function ShareScreen() {
                     setResult(
                       await repository.share(d.account.id, {
                         ...periodRange(period, "Asia/Kolkata"),
+                        period: period as
+                          | "DAY"
+                          | "WEEK"
+                          | "MONTH"
+                          | "LAST_30"
+                          | "YEAR",
                         currency: d.account.currency,
                         ledgerIds,
                         tagIds,
@@ -450,14 +421,23 @@ export function ShareScreen() {
                         expiresInHours: Number(hours),
                       }),
                     );
-                  }, "Snapshot created")
+                  }, "Monitoring link created")
                 }
               >
                 Create read-only link
               </Button>
               {!!action.error && <Notice error>{action.error}</Notice>}
               {result && (
-                <YStack gap={13}>
+                <YStack
+                  gap={13}
+                  padding={14}
+                  borderRadius={16}
+                  backgroundColor="#F0F4F1"
+                >
+                  <XStack alignItems="center" gap={9}>
+                    <Icon name="check" size={19} color="#3B6B5D" />
+                    <Label bold>Monitoring link ready</Label>
+                  </XStack>
                   <Field
                     label="Your link"
                     value={result.url}
@@ -467,6 +447,13 @@ export function ShareScreen() {
                     Expires {new Date(result.expiresAt).toLocaleString("en-IN")}
                   </Label>
                   <Button
+                    onPress={() =>
+                      action.run(() => copyText(result.url), "Link copied")
+                    }
+                  >
+                    Copy monitoring link
+                  </Button>
+                  <Button
                     secondary
                     onPress={() =>
                       router.push(
@@ -474,7 +461,7 @@ export function ShareScreen() {
                       )
                     }
                   >
-                    Preview snapshot
+                    Preview monitoring view
                   </Button>
                   <Button
                     secondary
@@ -487,7 +474,8 @@ export function ShareScreen() {
                           "DELETE",
                         );
                         setResult(null);
-                      }, "Link revoked")
+                        await links.refetch();
+                      }, "Monitoring link revoked")
                     }
                   >
                     Revoke this link
@@ -512,7 +500,7 @@ export function ShareScreen() {
                       ? "Revoked"
                       : Date.parse(link.expiresAt) <= Date.now()
                         ? "Expired"
-                        : "Active snapshot"}
+                        : "Active monitoring link"}
                   </Label>
                   <Label muted size={11}>
                     Expires {new Date(link.expiresAt).toLocaleString("en-IN")}
@@ -524,14 +512,16 @@ export function ShareScreen() {
                     compact
                     onPress={() =>
                       action.run(
-                        () =>
-                          extra(
+                        async () => {
+                          await extra(
                             d.account.id,
                             `/shares/${link.id}`,
                             undefined,
                             "DELETE",
-                          ),
-                        "Link revoked",
+                          );
+                          await links.refetch();
+                        },
+                        "Monitoring link revoked",
                       )
                     }
                   >
@@ -541,9 +531,74 @@ export function ShareScreen() {
               </XStack>
             ))}
             {!links.data?.length && (
-              <Label muted>No snapshots shared yet.</Label>
+              <Label muted>No monitoring links shared yet.</Label>
             )}
           </Card>
+          <SearchPicker
+            visible={picker === "period"}
+            title="Coverage period"
+            options={[
+              {
+                id: "WEEK",
+                label: "This week",
+                detail: "Rolling Monday to Sunday",
+              },
+              {
+                id: "MONTH",
+                label: "This month",
+                detail: "Updates through the current month",
+              },
+              {
+                id: "LAST_30",
+                label: "Last 30 days",
+                detail: "Rolling thirty-day view",
+              },
+              {
+                id: "YEAR",
+                label: "This year",
+                detail: "Current calendar year",
+              },
+            ]}
+            selected={[period]}
+            onSelect={(value) => setPeriod(value as Period)}
+            onClose={() => setPicker(null)}
+          />
+          <SearchPicker
+            visible={picker === "groups"}
+            title="Groups to monitor"
+            options={d.ledgers.map((ledger) => ({
+              id: ledger.id,
+              label: ledger.name,
+              detail: `${ledger.members.length} members`,
+            }))}
+            selected={ledgerIds}
+            multiple
+            onSelect={(value) =>
+              setLedgers((current) =>
+                current.includes(value)
+                  ? current.filter((entry) => entry !== value)
+                  : [...current, value],
+              )
+            }
+            onClose={() => setPicker(null)}
+          />
+          <SearchPicker
+            visible={picker === "tags"}
+            title="Tags to monitor"
+            options={d.tags
+              .filter((tag) => !tag.archived)
+              .map((tag) => ({ id: tag.id, label: tag.name }))}
+            selected={tagIds}
+            multiple
+            onSelect={(value) =>
+              setTags((current) =>
+                current.includes(value)
+                  ? current.filter((entry) => entry !== value)
+                  : [...current, value],
+              )
+            }
+            onClose={() => setPicker(null)}
+          />
         </YStack>
       )}
     </DataScreen>

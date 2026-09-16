@@ -44,11 +44,16 @@ export async function requireMember(
 export const visibleTransaction = (
   userId: string,
 ): Prisma.TransactionWhereInput => ({
-  OR: [
-    { sourceId: userId },
-    { destinationId: userId },
-    { participants: { some: { userId } } },
-    { ledger: { members: { some: { userId, leftAt: null } } } },
+  AND: [
+    { deletedAt: null },
+    {
+      OR: [
+        { sourceId: userId },
+        { destinationId: userId },
+        { participants: { some: { userId } } },
+        { ledger: { members: { some: { userId, leftAt: null } } } },
+      ],
+    },
   ],
 });
 export async function audit(

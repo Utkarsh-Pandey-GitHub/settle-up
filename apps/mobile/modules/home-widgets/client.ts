@@ -12,6 +12,7 @@ const bridge =
         setAccount(id: string | null): void;
         updateSnapshot(id: string, snapshot: string): Promise<void>;
         pin(kind: WidgetKind): Promise<boolean>;
+        copyText(text: string): boolean;
       }>("HomeWidgets")
     : null;
 export const widgetsAvailable = !!bridge;
@@ -74,4 +75,15 @@ export async function syncWidgets(data: Dashboard) {
 }
 export async function pinWidget(kind: WidgetKind) {
   return bridge ? bridge.pin(kind) : false;
+}
+export async function copyText(text: string) {
+  if (Platform.OS === "web") {
+    if (!globalThis.navigator?.clipboard)
+      throw new Error("Copy is unavailable in this browser.");
+    await globalThis.navigator.clipboard.writeText(text);
+    return true;
+  }
+  if (!bridge?.copyText(text))
+    throw new Error("Copy is unavailable on this device.");
+  return true;
 }

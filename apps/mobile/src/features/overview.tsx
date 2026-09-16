@@ -133,6 +133,11 @@ export function TransactionRow({
   const tag = data.tags.find((tag) => tag.id === t.tagIds[0]),
     ledger = data.ledgers.find((l) => l.id === t.ledgerId);
   const incoming = t.destinationId === data.account.id;
+  const storedIcon = ["bag", "coffee", "car", "plane", "bolt", "wallet"].includes(
+    t.icon ?? "",
+  )
+    ? (t.icon as IconName)
+    : null;
   return (
     <Pressable
       onPress={() => {
@@ -157,8 +162,8 @@ export function TransactionRow({
           : pressed
             ? c.bg
             : "transparent",
-        borderRadius: selected ? 10 : 0,
-        paddingHorizontal: selected ? 8 : 0,
+        borderRadius: 10,
+        paddingHorizontal: 8,
       })}
     >
       {selectable && (
@@ -187,7 +192,9 @@ export function TransactionRow({
           alignItems: "center",
         }}
       >
-        {t.icon || (!tag && t.type !== "SETTLEMENT") ? (
+        {storedIcon ? (
+          <Icon name={storedIcon} color={tag?.color ?? "#7760A5"} size={21} />
+        ) : t.icon || (!tag && t.type !== "SETTLEMENT") ? (
           <Label bold size={19} color="#7760A5">
             {t.icon || t.title.slice(0, 1).toUpperCase()}
           </Label>
@@ -292,6 +299,16 @@ export function SpendingChart({
                 rx={6}
                 fill={i === days.length - 1 ? "#68785F" : "#D7DDCF"}
               />
+              <SvgText
+                x={x + barWidth / 2}
+                y={Math.max(12, 118 - h)}
+                textAnchor="middle"
+                fill={c.text}
+                fontSize={8}
+                fontWeight="600"
+              >
+                {money(d.amountMinor, filter.currency).replace(".00", "")}
+              </SvgText>
               <SvgText
                 x={x + barWidth / 2}
                 y={153}
@@ -426,7 +443,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
             },
             {
               label: "Settle up",
-              short: "Settle up",
+              short: "Record payment",
               icon: "arrow",
               path: "/settle",
               color: "#D3E1FF",
@@ -435,7 +452,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
               label: "Scan a bill",
               short: "Scan bill",
               icon: "camera",
-              path: "/add",
+              path: "/add?bill=camera",
               color: "#FDC9D2",
             },
           ] as const
@@ -447,6 +464,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
               onPress={() => go(tile.path)}
               style={{
                 width: "100%",
+                minHeight: 106,
                 paddingVertical: 10,
                 alignItems: "center",
                 gap: 7,
@@ -463,7 +481,15 @@ function HomeContent({ data: d }: { data: Dashboard }) {
               >
                 <Icon name={tile.icon} color="#191D21" size={23} />
               </View>
-              <Label color="#191D21" size={12} bold>
+              <Label
+                color="#191D21"
+                size={width < 390 ? 10 : 12}
+                bold
+                textAlign="center"
+                numberOfLines={2}
+                width="100%"
+                minHeight={32}
+              >
                 {tile.short}
               </Label>
             </Pressable>

@@ -2,6 +2,9 @@ package expo.modules.homewidgets
 
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Build
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
@@ -16,6 +19,12 @@ class HomeWidgetsModule : Module() {
     AsyncFunction("updateSnapshot") { id: String, snapshot: String ->
       appContext.reactContext?.let { WidgetStore.save(it, id, snapshot) }
     }
+    Function("copyText") { text: String ->
+      val context = appContext.reactContext ?: return@Function false
+      val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+      clipboard.setPrimaryClip(ClipData.newPlainText("SettleUp link", text))
+      true
+    }
     AsyncFunction("pin") { kind: String, promise: Promise ->
       val activity = appContext.currentActivity
       val provider = WidgetStore.providers[kind]
@@ -29,4 +38,3 @@ class HomeWidgetsModule : Module() {
     }
   }
 }
-

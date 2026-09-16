@@ -15,7 +15,16 @@ import { AppState, Platform } from "react-native";
 import { AndroidSmsProvider } from "../src/services/device";
 import { setWidgetAccount } from "../modules/home-widgets/client";
 const query = new QueryClient({
-  defaultOptions: { queries: { retry: 1 }, mutations: { retry: false } },
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 2 * 60 * 1000,
+      gcTime: 24 * 60 * 60 * 1000,
+      refetchOnMount: false,
+      refetchOnReconnect: true,
+    },
+    mutations: { retry: false },
+  },
 });
 export default function Layout() {
   const [fonts] = useFonts({
@@ -24,8 +33,7 @@ export default function Layout() {
     MontserratSemiBold: Montserrat_600SemiBold,
     MontserratBold: Montserrat_700Bold,
   });
-  const dark = useSession((s) => s.dark),
-    activeId = useSession((s) => s.activeId);
+  const dark = useSession((s) => s.dark);
   useEffect(() => {
     const syncAccount = () => {
       const state = useSession.getState();
@@ -35,16 +43,19 @@ export default function Layout() {
     const unsubscribe = useSession.subscribe(syncAccount);
     useSession.getState().hydrate();
     const expireSms = () => {
-      if (Platform.OS === "android") for (const account of useSession.getState().accounts)
-        void new AndroidSmsProvider(account.id).handled().catch(() => {});
+      if (Platform.OS === "android")
+        for (const account of useSession.getState().accounts)
+          void new AndroidSmsProvider(account.id).handled().catch(() => {});
     };
     expireSms();
     const expiryTimer = setInterval(expireSms, 60000);
     const foreground = AppState.addEventListener("change", (state) => {
       if (state === "active") expireSms();
       if (state === "active")
-        query.invalidateQueries({
+        query.refetchQueries({
           queryKey: ["account", useSession.getState().activeId],
+          type: "active",
+          stale: true,
         });
     });
     return () => {
@@ -53,10 +64,6 @@ export default function Layout() {
       clearInterval(expiryTimer);
     };
   }, []);
-  useEffect(() => {
-    query.cancelQueries();
-    query.clear();
-  }, [activeId]);
   if (!fonts) return null;
   return (
     <SafeAreaProvider>

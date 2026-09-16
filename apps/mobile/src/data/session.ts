@@ -4,7 +4,6 @@ import * as SecureStore from "expo-secure-store";
 import type { Account, Session } from "@settleup/contracts";
 import { ids, demoDashboard } from "@settleup/domain/src/fixtures";
 export const DEMO = process.env.EXPO_PUBLIC_DEMO !== "false";
-const webDrafts = new Map<string, unknown>();
 const tokenMemory = new Map<string, Session>();
 const storage = {
   async get(key: string) {
@@ -84,7 +83,6 @@ export const useSession = create<State>((set, get) => ({
   },
   async remove(id) {
     tokenMemory.delete(id);
-    webDrafts.delete(id);
     for (const key of [
       `settleup.sms.${id}`,
       `settleup.sms.salt.${id}`,
@@ -108,21 +106,3 @@ export async function replaceTokenSession(id: string, session: Session) {
   tokenMemory.set(id, session);
   await storage.set(`settleup.session.${id}`, JSON.stringify(session));
 }
-export const draftStore = {
-  async get(id: string) {
-    if (Platform.OS === "web") return webDrafts.get(id) ?? null;
-    const data = await storage.get(`settleup.draft.${id}`);
-    return data ? JSON.parse(data) : null;
-  },
-  async save(id: string, draft: unknown) {
-    if (Platform.OS === "web") {
-      webDrafts.set(id, draft);
-      return;
-    }
-    await storage.set(`settleup.draft.${id}`, JSON.stringify(draft));
-  },
-  async clear(id: string) {
-    webDrafts.delete(id);
-    await storage.remove(`settleup.draft.${id}`);
-  },
-};

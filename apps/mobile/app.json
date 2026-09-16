@@ -52,7 +52,8 @@
           "microphonePermission": false
         }
       ],
-      "./modules/truecaller/app.plugin.js"
+      "./modules/truecaller/app.plugin.js",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

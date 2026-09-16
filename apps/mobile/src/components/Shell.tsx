@@ -75,7 +75,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {path === "/onboarding" || path?.endsWith("/onboarding") ? (
               <Pressable
                 accessibilityRole="button"
-                onPress={() => router.push("/auth")}
+                onPress={() => router.replace("/auth")}
                 style={{
                   minHeight: 44,
                   justifyContent: "center",
@@ -334,6 +334,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <IconButton
                 name="plus"
                 label="New expense"
+                borderless
                 onPress={() => go("/add")}
               />
             )}
@@ -341,12 +342,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <IconButton
                 name="sms"
                 label="Bank SMS inbox"
+                borderless
                 onPress={() => go("/sms")}
               />
             )}
             <IconButton
               name="bell"
               label="Notifications"
+              borderless
               onPress={() => go("/notifications")}
             />
             <Pressable

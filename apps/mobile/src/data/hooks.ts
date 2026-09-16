@@ -4,13 +4,31 @@ import { useSession } from "./session";
 import { syncGoalNotifications } from "../services/device";
 import { repository } from "./repository";
 import { syncWidgets } from "../../modules/home-widgets/client";
+const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function queueAccountRefresh(
+  query: ReturnType<typeof useQueryClient>,
+  accountId: string,
+) {
+  const pending = refreshTimers.get(accountId);
+  if (pending) clearTimeout(pending);
+  refreshTimers.set(
+    accountId,
+    setTimeout(() => {
+      refreshTimers.delete(accountId);
+      void query.refetchQueries({
+        queryKey: ["account", accountId],
+        type: "active",
+      });
+    }, 350),
+  );
+}
 export function useDashboard() {
   const id = useSession((s) => s.activeId);
   const result = useQuery({
     queryKey: ["account", id, "dashboard"],
     queryFn: () => repository.dashboard(id!),
     enabled: !!id,
-    staleTime: 15000,
   });
   useEffect(() => {
     if (result.data) {
@@ -38,7 +56,13 @@ export function useAction() {
       setSuccess("");
       try {
         await action();
-        await query.invalidateQueries({ queryKey: ["account", id] });
+        if (id) {
+          await query.invalidateQueries({
+            queryKey: ["account", id],
+            refetchType: "none",
+          });
+          queueAccountRefresh(query, id);
+        }
         setSuccess(message);
         if (id && useSession.getState().activeId === id)
           useSession.setState({

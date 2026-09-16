@@ -172,6 +172,46 @@ export class FinanceService {
       return json(record);
     });
   }
+  async remove(userId: string, ids: string[]) {
+    return atomic(async (tx) => {
+      const uniqueIds = [...new Set(ids)];
+      const records = await tx.transaction.findMany({
+        where: { id: { in: uniqueIds }, sourceId: userId, deletedAt: null },
+        select: { id: true, title: true, ledgerId: true, type: true },
+      });
+      if (records.length !== uniqueIds.length)
+        throw new DomainError(
+          "NOT_FOUND",
+          "You can only delete active transactions that you created.",
+          404,
+        );
+      if (
+        records.some((record) =>
+          ["SETTLEMENT", "LOAN_REPAYMENT", "REVERSAL"].includes(record.type),
+        )
+      )
+        throw new DomainError(
+          "DELETE_REQUIRES_REVERSAL",
+          "Repayments and reversals must be corrected from their transaction details.",
+          409,
+        );
+      await tx.transaction.updateMany({
+        where: { id: { in: uniqueIds }, sourceId: userId, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
+      for (const record of records)
+        await audit(
+          tx,
+          userId,
+          record.id,
+          "TRANSACTION_DELETED",
+          {},
+          record.ledgerId,
+          `${record.title} deleted`,
+        );
+      return { ok: true, deleted: records.length };
+    });
+  }
   async settle(userId: string, input: CreateSettlement) {
     return atomic(async (tx) => {
       if (userId !== input.debtorId)
@@ -192,7 +232,10 @@ export class FinanceService {
           creditorId: input.creditorId,
           currency: input.currency,
           remainingMinor: { gt: 0 },
-          transaction: { status: { in: ["SETTLED", "PENDING_LOAN"] } },
+          transaction: {
+            status: { in: ["SETTLED", "PENDING_LOAN"] },
+            deletedAt: null,
+          },
         },
         orderBy: [{ transaction: { createdAt: "asc" } }, { id: "asc" }],
       });
@@ -466,6 +509,7 @@ export class PrismaDashboardRepository implements DashboardRepository {
             tx.obligation.findMany({
               where: {
                 ledger: { members: { some: { userId, leftAt: null } } },
+                transaction: { deletedAt: null },
               },
             }),
             tx.tag.findMany({ where: { ownerId: userId } }),

@@ -10,6 +10,8 @@ import {
   Animated,
   ActivityIndicator,
   Platform,
+  Modal,
+  ScrollView,
 } from "react-native";
 import { Text, YStack, XStack } from "tamagui";
 import Svg, { Path, Circle, Rect, Ellipse, G } from "react-native-svg";
@@ -323,10 +325,12 @@ export function IconButton({
   name,
   onPress,
   label,
+  borderless = false,
 }: {
   name: IconName;
   onPress(): void;
   label: string;
+  borderless?: boolean;
 }) {
   const c = useColors();
   return (
@@ -339,10 +343,10 @@ export function IconButton({
         height: 44,
         alignItems: "center",
         justifyContent: "center",
-        borderWidth: 1,
-        borderColor: c.line,
+        borderWidth: borderless ? 0 : 1,
+        borderColor: borderless ? "transparent" : c.line,
         borderRadius: 13,
-        backgroundColor: pressed ? c.soft : c.card,
+        backgroundColor: pressed ? c.soft : "transparent",
       })}
     >
       <Icon name={name} />
@@ -839,6 +843,133 @@ export function SearchBar({
         </Pressable>
       )}
     </View>
+  );
+}
+
+export function SearchPicker({
+  visible,
+  title,
+  options,
+  selected,
+  multiple = false,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  options: { id: string; label: string; detail?: string }[];
+  selected: string[];
+  multiple?: boolean;
+  onSelect(id: string): void;
+  onClose(): void;
+}) {
+  const c = useColors();
+  const [search, setSearch] = useState("");
+  useEffect(() => {
+    if (!visible) setSearch("");
+  }, [visible]);
+  const filtered = options.filter((option) =>
+    `${option.label} ${option.detail ?? ""}`
+      .toLocaleLowerCase()
+      .includes(search.trim().toLocaleLowerCase()),
+  );
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          padding: 20,
+          backgroundColor: "rgba(22, 24, 28, 0.48)",
+        }}
+      >
+        <View
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            maxHeight: 560,
+            padding: 20,
+            gap: 14,
+            borderRadius: 24,
+            backgroundColor: c.card,
+            borderWidth: 1,
+            borderColor: c.line,
+          }}
+        >
+          <XStack alignItems="center" justifyContent="space-between" gap={12}>
+            <Heading size={20}>{title}</Heading>
+            <IconButton name="close" label="Close" onPress={onClose} />
+          </XStack>
+          <SearchBar
+            value={search}
+            onChangeText={setSearch}
+            placeholder={`Search ${title.toLocaleLowerCase()}…`}
+          />
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ gap: 8 }}
+          >
+            {filtered.map((option) => {
+              const active = selected.includes(option.id);
+              return (
+                <Pressable
+                  key={option.id}
+                  accessibilityRole={multiple ? "checkbox" : "radio"}
+                  accessibilityState={{
+                    checked: active,
+                    selected: active,
+                  }}
+                  onPress={() => {
+                    onSelect(option.id);
+                    if (!multiple) onClose();
+                  }}
+                  style={{
+                    minHeight: 54,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: active ? "#8B88DE" : c.line,
+                    backgroundColor: active ? c.soft : c.card,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                  }}
+                >
+                  <YStack flex={1} gap={2}>
+                    <Label bold size={13}>
+                      {option.label}
+                    </Label>
+                    {!!option.detail && (
+                      <Label muted size={11}>
+                        {option.detail}
+                      </Label>
+                    )}
+                  </YStack>
+                  <Icon
+                    name={active ? "check" : "chevron"}
+                    size={18}
+                    color={active ? "#5552B4" : c.muted}
+                  />
+                </Pressable>
+              );
+            })}
+            {!filtered.length && (
+              <Label muted size={12} style={{ paddingVertical: 22 }}>
+                No matches found.
+              </Label>
+            )}
+          </ScrollView>
+          {multiple && <Button onPress={onClose}>Done</Button>}
+        </View>
+      </View>
+    </Modal>
   );
 }
 

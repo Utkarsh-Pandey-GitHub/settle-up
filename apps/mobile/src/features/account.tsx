@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Platform, Share, View, Pressable } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
+import * as Google from "expo-auth-session/providers/google";
+import { Redirect, useRouter, useLocalSearchParams } from "expo-router";
 import { XStack, YStack } from "tamagui";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@settleup/contracts";
@@ -40,10 +42,79 @@ import {
   disableLocalNotifications,
   requestOnboardingPermissions,
 } from "../services/device";
+WebBrowser.maybeCompleteAuthSession();
+
+function GoogleSignInButton({
+  disabled,
+  onSession,
+}: {
+  disabled: boolean;
+  onSession(session: Session & { suggestedName?: string }): Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [googleRequest, , promptGoogle] = Google.useIdTokenAuthRequest(
+    {
+      androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      selectAccount: true,
+    },
+    { scheme: "settleup", path: "auth" },
+  );
+  return (
+    <YStack gap={8}>
+      <Button
+        secondary
+        loading={busy}
+        disabled={disabled || busy || !googleRequest}
+        onPress={async () => {
+          if (busy) return;
+          setBusy(true);
+          setError("");
+          try {
+            const response = await promptGoogle();
+            if (response.type === "cancel" || response.type === "dismiss")
+              return;
+            if (response.type !== "success")
+              throw new Error("Google sign-in could not be completed.");
+            const idToken =
+              response.params.id_token ?? response.authentication?.idToken;
+            if (!idToken)
+              throw new Error("Google did not return a verifiable identity.");
+            await onSession(
+              await request<Session & { suggestedName?: string }>(
+                "/auth/google",
+                { body: { idToken } },
+              ),
+            );
+          } catch (cause) {
+            setError(
+              cause instanceof Error
+                ? cause.message
+                : "Google sign-in could not be completed.",
+            );
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        Continue with Google
+      </Button>
+      {!!error && <Notice error>{error}</Notice>}
+    </YStack>
+  );
+}
+
 export function OnboardingScreen() {
   const router = useRouter(),
     c = useColors(),
     [step, setStep] = useState(0);
+  const ready = useSession((s) => s.ready);
+  const registered = useSession((s) =>
+    s.accounts.some((account) => account.name !== "New friend"),
+  );
+  if (ready && registered) return <Redirect href="/" />;
   const slides = [
     {
       mood: "wave" as const,
@@ -133,7 +204,7 @@ export function OnboardingScreen() {
         <YStack gap={12} width="100%" maxWidth={540} alignSelf="center">
           <Button
             onPress={() =>
-              step === 2 ? router.push("/auth") : setStep(step + 1)
+              step === 2 ? router.replace("/auth") : setStep(step + 1)
             }
           >
             {step === 2 ? "Let’s get started" : "Continue"}
@@ -217,6 +288,7 @@ export function AuthScreen() {
   };
   const [truecallerBusy, setTruecallerBusy] = useState(false);
   const [truecallerHint, setTruecallerHint] = useState("");
+  const truecallerAttempted = useRef(false);
   const continueWithTruecaller = async () => {
     setTruecallerBusy(true);
     setTruecallerHint("");
@@ -236,6 +308,17 @@ export function AuthScreen() {
       setTruecallerBusy(false);
     }
   };
+  useEffect(() => {
+    if (
+      stage === "phone" &&
+      truecallerAvailable &&
+      !DEMO &&
+      !truecallerAttempted.current
+    ) {
+      truecallerAttempted.current = true;
+      void continueWithTruecaller();
+    }
+  }, [stage]);
   const step =
     stage === "phone" || stage === "code"
       ? 1
@@ -402,6 +485,17 @@ export function AuthScreen() {
                     </Button>
                   </>
                 )}
+                {!DEMO &&
+                  !!(Platform.OS === "android"
+                    ? process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+                    : Platform.OS === "ios"
+                      ? process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+                      : process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID) && (
+                    <GoogleSignInButton
+                      disabled={action.busy || truecallerBusy}
+                      onSession={acceptSession}
+                    />
+                  )}
                 {!!truecallerHint && <Notice>{truecallerHint}</Notice>}
                 <Label muted size={11}>
                   We use your number to verify your account. Your address book

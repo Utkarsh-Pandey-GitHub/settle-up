@@ -44,7 +44,10 @@ test("shared expense, account isolation, and accessible responsive home", async 
     .getByRole("button", { name: "Split with friends", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "Goa, here we come", exact: true })
+    .getByRole("button", { name: "Choose a group", exact: true })
+    .click();
+  await page
+    .getByRole("radio", { name: /Goa, here we come/ })
     .click();
   await expect(page.getByText("₹25.00", { exact: true })).toHaveCount(4);
   await page
@@ -136,9 +139,6 @@ test("bill photo and itemisation persist, with scan centred in the phone tray", 
   page,
 }, info) => {
   await page.goto("/add");
-  await expect(
-    page.getByRole("heading", { name: "Start with the bill" }),
-  ).toBeVisible();
   if (info.project.name === "phone") {
     const scan = page.getByRole("button", { name: "Scan & pay", exact: true });
     const box = await scan.boundingBox();
@@ -149,6 +149,10 @@ test("bill photo and itemisation persist, with scan centred in the phone tray", 
       page.getByRole("button", { name: "Add", exact: true }),
     ).toHaveCount(0);
   }
+  await page.getByRole("button", { name: "Add bill", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Start with the bill" }),
+  ).toBeVisible();
   const png = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 800;
@@ -192,6 +196,7 @@ test("bill photo and itemisation persist, with scan centred in the phone tray", 
   await page.getByRole("button", { name: "Add item", exact: true }).click();
   await page.getByLabel("Item 2", { exact: true }).fill("Sandwich");
   await page.getByLabel("Line total 2 · INR", { exact: true }).fill("120");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByLabel("Amount · INR", { exact: true }).fill("280");
   await page
     .getByLabel("What was it for?", { exact: true })
@@ -231,6 +236,7 @@ test("reads an actual bill image locally and keeps OCR behind review", async ({
   );
   test.setTimeout(120000);
   await page.goto("/add");
+  await page.getByRole("button", { name: "Add bill", exact: true }).click();
   const png = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 1000;
@@ -271,6 +277,7 @@ test("reads an actual bill image locally and keeps OCR behind review", async ({
   await page
     .getByRole("button", { name: "Use scanned details", exact: true })
     .click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.getByLabel("Amount · INR", { exact: true })).toHaveValue(
     "280",
   );
@@ -288,6 +295,7 @@ test.describe("camera capture", () => {
       "Browser camera plumbing is shared.",
     );
     await page.goto("/add");
+    await page.getByRole("button", { name: "Add bill", exact: true }).click();
     await page
       .getByRole("button", { name: "Take bill photo", exact: true })
       .click();
@@ -313,20 +321,9 @@ test("wallet summaries, illustrated onboarding, and repayment confirmation work"
   await expect(page.getByText("Owed to you", { exact: true })).toBeVisible();
   await expect(page.getByText("You owe", { exact: true })).toBeVisible();
   await page.goto("/onboarding");
+  await expect(page).toHaveURL(/\/$/);
   await expect(
-    page.getByRole("heading", { name: "Make space for what matters." }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Every shared moment. A fair share." }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Your money. Your own space." }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Back", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Every shared moment. A fair share." }),
+    page.getByText("Your spending this month", { exact: true }),
   ).toBeVisible();
   await page.goto("/settle");
   await page

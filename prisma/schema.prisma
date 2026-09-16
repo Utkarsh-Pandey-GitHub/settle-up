@@ -41,6 +41,7 @@ model User {
   deletedAt        DateTime?                @db.Timestamptz
   profile          UserProfile?
   phone            PhoneIdentity?
+  google           GoogleIdentity?
   sessions         DeviceSession[]
   peers            ContactPeer[]            @relation("PeerOwner")
   linkedPeers      ContactPeer[]            @relation("LinkedUser")
@@ -75,10 +76,16 @@ model UserProfile {
 }
 
 model PhoneIdentity {
-  userId     String   @id @db.Uuid
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  phone      String   @unique @db.VarChar(16)
+  userId     String    @id @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone      String    @unique @db.VarChar(16)
   verifiedAt DateTime? @db.Timestamptz
+}
+
+model GoogleIdentity {
+  userId  String @id @db.Uuid
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject String @unique @db.VarChar(255)
 }
 
 model OtpChallenge {
@@ -204,6 +211,7 @@ model Transaction {
   idempotencyKey   String                   @db.Uuid
   requestDigest    String
   version          Int                      @default(1)
+  deletedAt        DateTime?                @db.Timestamptz
   correctsId       String?                  @db.Uuid
   corrects         Transaction?             @relation("Correction", fields: [correctsId], references: [id], onDelete: Restrict)
   corrections      Transaction[]            @relation("Correction")
@@ -219,6 +227,7 @@ model Transaction {
 
   @@unique([sourceId, idempotencyKey])
   @@index([sourceId, occurredAt])
+  @@index([sourceId, deletedAt])
   @@index([destinationId, occurredAt])
   @@index([ledgerId, occurredAt])
   @@index([currency, status, occurredAt])
@@ -459,10 +468,11 @@ model TransactionItem {
 
 // An opaque, expiring app link. No bank account details or payment credentials.
 model PaymentLink {
-  tokenDigest String @id @db.Char(64)
-  ownerId String @db.Uuid
-  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  uri String @db.VarChar(2048)
-  expiresAt DateTime @db.Timestamptz
+  tokenDigest String   @id @db.Char(64)
+  ownerId     String   @db.Uuid
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  uri         String   @db.VarChar(2048)
+  expiresAt   DateTime @db.Timestamptz
+
   @@index([expiresAt])
 }

@@ -5,7 +5,7 @@ import {
   createHmac,
   timingSafeEqual,
 } from "node:crypto";
-import { SignJWT, jwtVerify } from "jose";
+import { SignJWT, createRemoteJWKSet, jwtVerify } from "jose";
 import { SupabaseOtpProvider } from "./supabase";
 import { StytchOtpProvider } from "./stytch";
 import { DomainError, normalizePhone } from "@settleup/domain";
@@ -45,6 +45,9 @@ const secret = () =>
     process.env.JWT_SECRET ||
       "settleup_jwt_secret_production_key_min_32_characters_long_123",
   );
+const googleKeys = createRemoteJWKSet(
+  new URL("https://www.googleapis.com/oauth2/v3/certs"),
+);
 const otpHash = (id: string, code: string) =>
   createHmac(
     "sha256",
@@ -57,17 +60,40 @@ export function validateConfig() {
   const production = process.env.NODE_ENV === "production";
   if (production) {
     for (const key of ["JWT_SECRET", "OTP_PEPPER"])
-      if (!process.env[key] || /production_key_min_32|replace-with/.test(process.env[key]!))
-        throw new Error(`Configure a unique ${key} before starting production.`);
+      if (
+        !process.env[key] ||
+        /production_key_min_32|replace-with/.test(process.env[key]!)
+      )
+        throw new Error(
+          `Configure a unique ${key} before starting production.`,
+        );
     if (!process.env.OTP_PROVIDER || process.env.OTP_PROVIDER === "development")
-      throw new Error("Production requires OTP_PROVIDER=supabase, stytch, gateway, or disabled.");
+      throw new Error(
+        "Production requires OTP_PROVIDER=supabase, stytch, gateway, or disabled.",
+      );
   }
-  if (process.env.OTP_PROVIDER && !["development", "gateway", "supabase", "stytch", "disabled"].includes(process.env.OTP_PROVIDER))
+  if (
+    process.env.OTP_PROVIDER &&
+    !["development", "gateway", "supabase", "stytch", "disabled"].includes(
+      process.env.OTP_PROVIDER,
+    )
+  )
     throw new Error("Choose a supported OTP_PROVIDER.");
-  if (process.env.OTP_PROVIDER === "supabase" && (!process.env.SUPABASE_URL || !(process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY)))
-    throw new Error("Configure the Supabase project URL and publishable key for phone OTP.");
-  if (process.env.OTP_PROVIDER === "stytch" && (!process.env.STYTCH_PROJECT_ID || !process.env.STYTCH_SECRET))
-    throw new Error("Configure STYTCH_PROJECT_ID and STYTCH_SECRET for phone OTP.");
+  if (
+    process.env.OTP_PROVIDER === "supabase" &&
+    (!process.env.SUPABASE_URL ||
+      !(process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY))
+  )
+    throw new Error(
+      "Configure the Supabase project URL and publishable key for phone OTP.",
+    );
+  if (
+    process.env.OTP_PROVIDER === "stytch" &&
+    (!process.env.STYTCH_PROJECT_ID || !process.env.STYTCH_SECRET)
+  )
+    throw new Error(
+      "Configure STYTCH_PROJECT_ID and STYTCH_SECRET for phone OTP.",
+    );
   if (!process.env.JWT_SECRET)
     process.env.JWT_SECRET =
       "settleup_jwt_secret_production_key_min_32_characters_long_123";
@@ -83,9 +109,93 @@ export function validateConfig() {
     throw new Error("Use separate signing and OTP secrets.");
 }
 export class AuthService {
+  async signInWithGoogle(idToken: string) {
+    const audiences = (process.env.GOOGLE_CLIENT_IDS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (!audiences.length)
+      throw new DomainError(
+        "GOOGLE_DISABLED",
+        "Google sign-in is not configured yet. Use phone verification.",
+        503,
+      );
+    let claims;
+    try {
+      ({ payload: claims } = await jwtVerify(idToken, googleKeys, {
+        audience: audiences,
+        issuer: ["accounts.google.com", "https://accounts.google.com"],
+        algorithms: ["RS256"],
+      }));
+    } catch {
+      throw new DomainError(
+        "GOOGLE_INVALID",
+        "Google could not verify this sign-in. Please try again.",
+        401,
+      );
+    }
+    if (!claims.sub || claims.email_verified !== true)
+      throw new DomainError(
+        "GOOGLE_INVALID",
+        "Use a verified Google account to continue.",
+        401,
+      );
+    const suggestedName =
+      typeof claims.name === "string" ? claims.name.trim().slice(0, 100) : "";
+    const email =
+      typeof claims.email === "string" ? claims.email.slice(0, 254) : null;
+    const avatar =
+      typeof claims.picture === "string" ? claims.picture.slice(0, 500) : null;
+    const session = await atomic(async (tx) => {
+      let identity = await tx.googleIdentity.findUnique({
+        where: { subject: claims.sub! },
+        include: { user: true },
+      });
+      if (identity?.user.deletedAt) return null;
+      if (!identity) {
+        const user = await tx.user.create({
+          data: {
+            profile: {
+              create: { name: "New friend", email, avatar },
+            },
+            google: { create: { subject: claims.sub! } },
+            notifications: { create: {} },
+            tags: {
+              create: [
+                { name: "Food", color: "#8576AA" },
+                { name: "Transport", color: "#8576AA" },
+                { name: "Shopping", color: "#8576AA" },
+                { name: "Travel", color: "#8576AA" },
+                { name: "Utilities", color: "#8576AA" },
+                { name: "Rent", color: "#8576AA" },
+              ],
+            },
+          },
+        });
+        identity = await tx.googleIdentity.findUniqueOrThrow({
+          where: { userId: user.id },
+          include: { user: true },
+        });
+      }
+      return this.newSession(tx, identity.userId, randomUUID());
+    });
+    if (!session)
+      throw new DomainError(
+        "UNAUTHORIZED",
+        "This account is unavailable.",
+        401,
+      );
+    return { ...session, suggestedName };
+  }
+
   async requestOtp(rawPhone: string) {
     const phone = normalizePhone(rawPhone);
-    if (process.env.OTP_PROVIDER === "disabled") throw new DomainError("OTP_DISABLED", "SMS sign-in is not enabled. Continue with Truecaller.", 503);
+    if (process.env.OTP_PROVIDER === "disabled")
+      throw new DomainError(
+        "OTP_DISABLED",
+        "SMS sign-in is not enabled. Continue with Truecaller.",
+        503,
+      );
     const supabase = process.env.OTP_PROVIDER === "supabase";
     const stytch = process.env.OTP_PROVIDER === "stytch";
     const dev = process.env.OTP_PROVIDER === "development";
@@ -126,8 +236,14 @@ export class AuthService {
       if (supabase) await new SupabaseOtpProvider().send(phone);
       else if (stytch) {
         const methodId = await new StytchOtpProvider().send(phone);
-        await db.otpChallenge.update({ where: { id }, data: { digest: `stytch:${methodId}` } });
-      } else await (dev ? new DevelopmentOtpProvider() : new GatewayOtpProvider()).send(phone, code);
+        await db.otpChallenge.update({
+          where: { id },
+          data: { digest: `stytch:${methodId}` },
+        });
+      } else
+        await (
+          dev ? new DevelopmentOtpProvider() : new GatewayOtpProvider()
+        ).send(phone, code);
     } catch (e) {
       await db.otpChallenge.update({
         where: { id },
@@ -142,12 +258,25 @@ export class AuthService {
     };
   }
   async verifyOtp(id: string, code: string): Promise<Session> {
-    if (process.env.OTP_PROVIDER === "supabase") return this.verifySupabaseOtp(id, code);
-    if (process.env.OTP_PROVIDER === "stytch") return this.verifyStytchOtp(id, code);
-    if (process.env.OTP_PROVIDER === "disabled") throw new DomainError("OTP_DISABLED", "SMS sign-in is not enabled. Continue with Truecaller.", 503);
+    if (process.env.OTP_PROVIDER === "supabase")
+      return this.verifySupabaseOtp(id, code);
+    if (process.env.OTP_PROVIDER === "stytch")
+      return this.verifyStytchOtp(id, code);
+    if (process.env.OTP_PROVIDER === "disabled")
+      throw new DomainError(
+        "OTP_DISABLED",
+        "SMS sign-in is not enabled. Continue with Truecaller.",
+        503,
+      );
     const result = await atomic(async (tx) => {
       const c = await tx.otpChallenge.findUnique({ where: { id } });
-      if (!c || !/^[a-f0-9]{64}$/.test(c.digest) || c.consumedAt || c.expiresAt <= new Date() || c.attempts >= 5)
+      if (
+        !c ||
+        !/^[a-f0-9]{64}$/.test(c.digest) ||
+        c.consumedAt ||
+        c.expiresAt <= new Date() ||
+        c.attempts >= 5
+      )
         return null;
       await tx.otpChallenge.update({
         where: { id },
@@ -175,19 +304,35 @@ export class AuthService {
     return result;
   }
   private async verifySupabaseOtp(id: string, code: string): Promise<Session> {
-    const invalid = () => new DomainError("OTP_INVALID", "The code is invalid or expired.", 401);
-    const challenge = await atomic(async tx => {
+    const invalid = () =>
+      new DomainError("OTP_INVALID", "The code is invalid or expired.", 401);
+    const challenge = await atomic(async (tx) => {
       const c = await tx.otpChallenge.findUnique({ where: { id } });
-      if (!c || c.digest !== "supabase" || c.consumedAt || c.expiresAt <= new Date() || c.attempts >= 5) return null;
-      await tx.otpChallenge.update({ where: { id }, data: { attempts: { increment: 1 } } });
+      if (
+        !c ||
+        c.digest !== "supabase" ||
+        c.consumedAt ||
+        c.expiresAt <= new Date() ||
+        c.attempts >= 5
+      )
+        return null;
+      await tx.otpChallenge.update({
+        where: { id },
+        data: { attempts: { increment: 1 } },
+      });
       return c;
     });
     if (!challenge) throw invalid();
     // Do not hold a database transaction open while contacting the provider.
     const phone = await new SupabaseOtpProvider().verify(challenge.phone, code);
-    const session = await atomic(async tx => {
+    const session = await atomic(async (tx) => {
       const claimed = await tx.otpChallenge.updateMany({
-        where: { id, digest: "supabase", consumedAt: null, expiresAt: { gt: new Date() } },
+        where: {
+          id,
+          digest: "supabase",
+          consumedAt: null,
+          expiresAt: { gt: new Date() },
+        },
         data: { consumedAt: new Date() },
       });
       if (claimed.count !== 1) return null;
@@ -197,11 +342,22 @@ export class AuthService {
     return session;
   }
   private async verifyStytchOtp(id: string, code: string): Promise<Session> {
-    const invalid = () => new DomainError("OTP_INVALID", "The code is invalid or expired.", 401);
-    const challenge = await atomic(async tx => {
+    const invalid = () =>
+      new DomainError("OTP_INVALID", "The code is invalid or expired.", 401);
+    const challenge = await atomic(async (tx) => {
       const c = await tx.otpChallenge.findUnique({ where: { id } });
-      if (!c || !c.digest.startsWith("stytch:") || c.consumedAt || c.expiresAt <= new Date() || c.attempts >= 5) return null;
-      await tx.otpChallenge.update({ where: { id }, data: { attempts: { increment: 1 } } });
+      if (
+        !c ||
+        !c.digest.startsWith("stytch:") ||
+        c.consumedAt ||
+        c.expiresAt <= new Date() ||
+        c.attempts >= 5
+      )
+        return null;
+      await tx.otpChallenge.update({
+        where: { id },
+        data: { attempts: { increment: 1 } },
+      });
       return c;
     });
     if (!challenge) throw invalid();
@@ -210,7 +366,7 @@ export class AuthService {
     // Do not hold a database transaction open while contacting the provider.
     const phone = await new StytchOtpProvider().verify(methodId, code);
     if (phone !== challenge.phone) throw invalid();
-    const session = await atomic(async tx => {
+    const session = await atomic(async (tx) => {
       const claimed = await tx.otpChallenge.updateMany({
         where: { id, consumedAt: null, expiresAt: { gt: new Date() } },
         data: { consumedAt: new Date() },
@@ -257,9 +413,29 @@ export class AuthService {
     }
     if (!identity.verifiedAt) {
       // Reached only after OTP or Truecaller proof has been verified.
-      await tx.phoneIdentity.update({ where: { userId: identity.userId }, data: { verifiedAt: new Date() } });
-      await tx.notificationPreference.upsert({ where: { userId: identity.userId }, create: { userId: identity.userId }, update: {} });
-      await tx.tag.createMany({ data: ["Food", "Transport", "Shopping", "Travel", "Utilities", "Rent"].map(name => ({ ownerId: identity!.userId, name, color: "#8576AA" })) });
+      await tx.phoneIdentity.update({
+        where: { userId: identity.userId },
+        data: { verifiedAt: new Date() },
+      });
+      await tx.notificationPreference.upsert({
+        where: { userId: identity.userId },
+        create: { userId: identity.userId },
+        update: {},
+      });
+      await tx.tag.createMany({
+        data: [
+          "Food",
+          "Transport",
+          "Shopping",
+          "Travel",
+          "Utilities",
+          "Rent",
+        ].map((name) => ({
+          ownerId: identity!.userId,
+          name,
+          color: "#8576AA",
+        })),
+      });
     }
     return this.newSession(tx, identity.userId, randomUUID());
   }
@@ -298,7 +474,7 @@ export class AuthService {
     const account: Account = {
       id: userId,
       name: user.profile!.name,
-      phone: user.phone!.phone,
+      phone: user.phone?.phone ?? "",
       currency: user.profile!.currency,
       avatar: user.profile!.name.slice(0, 2).toUpperCase(),
     };
