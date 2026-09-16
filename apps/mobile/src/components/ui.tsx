@@ -8,6 +8,7 @@ import {
   type TextInputProps,
   AccessibilityInfo,
   Animated,
+  ActivityIndicator,
   Platform,
 } from "react-native";
 import { Text, YStack, XStack } from "tamagui";
@@ -219,6 +220,48 @@ export function Card({
     </View>
   );
 }
+export function Skeleton({
+  height,
+  width = "100%",
+  radius = 18,
+}: {
+  height: number;
+  width?: number | `${number}%`;
+  radius?: number;
+}) {
+  const c = useColors();
+  const opacity = useRef(new Animated.Value(0.45)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.9,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.45,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [opacity]);
+  return (
+    <Animated.View
+      accessibilityLabel="Loading"
+      style={{
+        height,
+        width,
+        borderRadius: radius,
+        backgroundColor: c.line,
+        opacity,
+      }}
+    />
+  );
+}
 export function Button({
   children,
   onPress,
@@ -226,6 +269,7 @@ export function Button({
   icon,
   disabled,
   compact,
+  loading,
 }: {
   children: React.ReactNode;
   onPress?: () => void;
@@ -233,14 +277,16 @@ export function Button({
   icon?: IconName;
   disabled?: boolean;
   compact?: boolean;
+  loading?: boolean;
 }) {
   const c = useColors();
+  const unavailable = disabled || loading;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled: !!disabled }}
-      aria-disabled={!!disabled}
-      disabled={disabled}
+      accessibilityState={{ disabled: !!unavailable, busy: !!loading }}
+      aria-disabled={!!unavailable}
+      disabled={unavailable}
       onPress={onPress}
       style={({ pressed }) => ({
         minHeight: 46,
@@ -255,13 +301,18 @@ export function Button({
         alignItems: "center",
         justifyContent: "center",
         gap: 9,
-        opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
+        opacity: unavailable ? 0.6 : pressed ? 0.8 : 1,
         transform: [{ scale: pressed ? 0.98 : 1 }],
       })}
     >
-      {!!icon && (
+      {loading ? (
+        <ActivityIndicator
+          size="small"
+          color={secondary ? c.text : "#FFFFFF"}
+        />
+      ) : !!icon ? (
         <Icon name={icon} size={18} color={secondary ? c.text : "#fff"} />
-      )}
+      ) : null}
       <Label bold size={13} color={secondary ? c.text : "#FFFFFF"}>
         {children}
       </Label>

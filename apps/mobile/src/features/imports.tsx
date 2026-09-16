@@ -288,6 +288,7 @@ export function ScanScreen() {
                 </Notice>
 
                 <Button
+                  loading={action.busy}
                   disabled={action.busy || processed}
                   onPress={() =>
                     action.run(async () => {
@@ -739,6 +740,7 @@ function SmsContent({ accountId }: { accountId: string }) {
                 </YStack>
               )}
               <Button
+                loading={action.busy}
                 disabled={action.busy}
                 onPress={() =>
                   action.run(async () => {
@@ -818,6 +820,7 @@ function SmsContent({ accountId }: { accountId: string }) {
             )}
             <XStack gap={10} flexWrap="wrap">
               <Button
+                loading={action.busy}
                 disabled={action.busy}
                 onPress={() =>
                   action.run(async () => {
@@ -881,6 +884,7 @@ function SmsContent({ accountId }: { accountId: string }) {
               </Button>
               <Button
                 secondary
+                loading={action.busy}
                 disabled={action.busy}
                 onPress={() =>
                   action.run(async () => {

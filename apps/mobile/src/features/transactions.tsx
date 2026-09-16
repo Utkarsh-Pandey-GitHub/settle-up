@@ -220,7 +220,11 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
               }
             />
             {!!action.error && <Notice error>{action.error}</Notice>}
-            <Button disabled={action.busy} onPress={submit}>
+            <Button
+              loading={action.busy}
+              disabled={action.busy}
+              onPress={submit}
+            >
               {action.busy ? "Saving…" : "Retry bill attachment"}
             </Button>
             <Button
@@ -612,6 +616,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
               {!!action.success && <Notice>{action.success}</Notice>}
               <Button
                 onPress={submit}
+                loading={action.busy || scanning}
                 disabled={action.busy || scanning || !!savedId}
               >
                 {action.busy
@@ -775,6 +780,7 @@ export function TransactionScreen() {
                 <XStack gap={10} flexWrap="wrap">
                   {t.status === "PENDING" && (
                     <Button
+                      loading={action.busy}
                       disabled={action.busy}
                       onPress={() => perform("complete")}
                     >
@@ -793,6 +799,7 @@ export function TransactionScreen() {
                     )}
                   {t.status === "DISPUTED" && (
                     <Button
+                      loading={action.busy}
                       disabled={action.busy}
                       onPress={() => perform("resolve")}
                     >
@@ -993,6 +1000,7 @@ export function SettlementScreen() {
                     {!!action.error && <Notice error>{action.error}</Notice>}
                     {!!action.success && <Notice>{action.success}</Notice>}
                     <Button
+                      loading={action.busy}
                       disabled={!selected || action.busy}
                       onPress={() =>
                         action.run(async () => {
@@ -1078,7 +1086,11 @@ export function GroupsScreen() {
                         (p) => p.phone === contact.phone,
                       );
                       if (!peer) {
-                        setContacts(items => items.some(p => p.phone === contact.phone) ? items : [...items, contact]);
+                        setContacts((items) =>
+                          items.some((p) => p.phone === contact.phone)
+                            ? items
+                            : [...items, contact],
+                        );
                         return;
                       }
                       setMembers((ms) =>
@@ -1097,7 +1109,19 @@ export function GroupsScreen() {
                   Manage contacts and invitations
                 </Button>
                 <XStack gap={8} flexWrap="wrap">
-                  {contacts.map(contact => <Chip key={contact.phone} selected onPress={() => setContacts(items => items.filter(p => p.phone !== contact.phone))}>{contact.name}</Chip>)}
+                  {contacts.map((contact) => (
+                    <Chip
+                      key={contact.phone}
+                      selected
+                      onPress={() =>
+                        setContacts((items) =>
+                          items.filter((p) => p.phone !== contact.phone),
+                        )
+                      }
+                    >
+                      {contact.name}
+                    </Chip>
+                  ))}
                   {d.peers.map((p) => (
                     <Chip
                       selected={members.includes(p.id)}
@@ -1116,6 +1140,7 @@ export function GroupsScreen() {
                 </XStack>
                 {!!action.error && <Notice error>{action.error}</Notice>}
                 <Button
+                  loading={action.busy}
                   disabled={action.busy}
                   onPress={async () => {
                     if (

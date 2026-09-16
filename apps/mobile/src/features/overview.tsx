@@ -36,6 +36,7 @@ import {
   FilterDropdownPanel,
   useColors,
   type IconName,
+  Skeleton,
 } from "../components/ui";
 export function DataScreen({
   children,
@@ -52,28 +53,9 @@ export function DataScreen({
     <Shell>
       {query.isLoading || !ready ? (
         <YStack gap={24}>
-          <View
-            style={{
-              height: 40,
-              width: 240,
-              backgroundColor: "#EAE7EF",
-              borderRadius: 10,
-            }}
-          />
-          <View
-            style={{
-              height: 190,
-              backgroundColor: "#EDE9F2",
-              borderRadius: 22,
-            }}
-          />
-          <View
-            style={{
-              height: 300,
-              backgroundColor: "#EAE7EF",
-              borderRadius: 22,
-            }}
-          />
+          <Skeleton height={40} width={240} radius={10} />
+          <Skeleton height={190} radius={22} />
+          <Skeleton height={300} radius={22} />
           <Label muted>Loading your account…</Label>
         </YStack>
       ) : query.error ? (

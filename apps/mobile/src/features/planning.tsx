@@ -19,6 +19,7 @@ import {
   Chip,
   Notice,
   Progress,
+  Skeleton,
 } from "../components/ui";
 import { repository, extra, sharedSnapshot } from "../data/repository";
 import { useAction } from "../data/hooks";
@@ -91,6 +92,7 @@ export function GoalsScreen() {
                   ))}
                 </XStack>
                 <Button
+                  loading={action.busy}
                   disabled={action.busy}
                   onPress={async () => {
                     if (
@@ -219,6 +221,7 @@ export function TagsScreen() {
                 )}
               </XStack>
               <Button
+                loading={action.busy}
                 disabled={action.busy}
                 onPress={async () => {
                   if (
@@ -431,6 +434,7 @@ export function ShareScreen() {
                 </Notice>
               )}
               <Button
+                loading={action.busy}
                 disabled={action.busy}
                 onPress={() =>
                   action.run(async () => {
@@ -560,7 +564,10 @@ export function SharedScreen() {
       <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
         <Heading>A shared little picture.</Heading>
         {q.isLoading ? (
-          <Label>Loading snapshot…</Label>
+          <YStack gap={14}>
+            <Skeleton height={84} />
+            <Skeleton height={210} />
+          </YStack>
         ) : q.error ? (
           <>
             <Notice error>{q.error.message}</Notice>

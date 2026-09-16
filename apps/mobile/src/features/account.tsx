@@ -356,6 +356,7 @@ export function AuthScreen() {
                   editable={!action.busy && !truecallerBusy}
                 />
                 <Button
+                  loading={action.busy}
                   disabled={
                     action.busy || truecallerBusy || DEMO || !phone.trim()
                   }
@@ -391,6 +392,7 @@ export function AuthScreen() {
                     </XStack>
                     <Button
                       secondary
+                      loading={truecallerBusy}
                       disabled={action.busy || truecallerBusy}
                       onPress={continueWithTruecaller}
                     >
@@ -426,6 +428,7 @@ export function AuthScreen() {
                   </Notice>
                 )}
                 <Button
+                  loading={action.busy}
                   disabled={action.busy || code.length !== 6}
                   onPress={() =>
                     action.run(async () => {
@@ -483,6 +486,7 @@ export function AuthScreen() {
                   ))}
                 </XStack>
                 <Button
+                  loading={action.busy}
                   disabled={action.busy || !name.trim()}
                   onPress={() =>
                     action.run(async () => {
@@ -560,6 +564,7 @@ export function AuthScreen() {
                   </XStack>
                 ))}
                 <Button
+                  loading={action.busy}
                   disabled={action.busy}
                   onPress={() =>
                     action.run(async () => {
@@ -930,6 +935,7 @@ export function SettingsScreen() {
               />
               <Button
                 secondary
+                loading={action.busy}
                 disabled={deleteText !== "DELETE MY ACCOUNT" || action.busy}
                 onPress={() =>
                   action.run(async () => {
@@ -994,6 +1000,7 @@ export function ContactsScreen() {
                 keyboardType="phone-pad"
               />
               <Button
+                loading={action.busy}
                 disabled={action.busy}
                 onPress={() =>
                   action.run(async () => {
