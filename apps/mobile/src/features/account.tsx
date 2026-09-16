@@ -19,6 +19,7 @@ import {
   ReferenceArt,
   useColors,
   Empty,
+  Icon,
 } from "../components/ui";
 import {
   authorizeWithTruecaller,
@@ -37,6 +38,7 @@ import {
   chooseContact,
   enableNotifications,
   disableLocalNotifications,
+  requestOnboardingPermissions,
 } from "../services/device";
 export function OnboardingScreen() {
   const router = useRouter(),
@@ -154,9 +156,9 @@ export function AuthScreen() {
     action = useAction(),
     c = useColors();
   const active = useSession((s) => s.accounts.find((a) => a.id === s.activeId));
-  const [stage, setStage] = useState<"phone" | "code" | "profile" | "ready">(
-    active?.name === "New friend" ? "profile" : "phone",
-  );
+  const [stage, setStage] = useState<
+    "phone" | "code" | "profile" | "permissions" | "ready"
+  >(active?.name === "New friend" ? "profile" : "phone");
   const [phone, setPhone] = useState(""),
     [code, setCode] = useState(""),
     [challenge, setChallenge] = useState(""),
@@ -195,7 +197,10 @@ export function AuthScreen() {
             avatar: cleanName.slice(0, 2).toUpperCase(),
           },
         });
-        await resumePayment();
+        setVerifiedId(session.account.id);
+        setName(cleanName);
+        setCurrency(session.account.currency);
+        setStage("permissions");
         return;
       } catch {
         // Keep the verified session and let the user finish their profile below.
@@ -232,7 +237,13 @@ export function AuthScreen() {
     }
   };
   const step =
-    stage === "phone" || stage === "code" ? 1 : stage === "profile" ? 2 : 3;
+    stage === "phone" || stage === "code"
+      ? 1
+      : stage === "profile"
+        ? 2
+        : stage === "permissions"
+          ? 3
+          : 4;
   return (
     <Shell>
       <YStack
@@ -247,11 +258,11 @@ export function AuthScreen() {
             YOUR FRESH START
           </Label>
           <Label muted size={11}>
-            Step {step} of 3
+            Step {step} of 4
           </Label>
         </XStack>
         <XStack gap={6}>
-          {[1, 2, 3].map((i) => (
+          {[1, 2, 3, 4].map((i) => (
             <View
               key={i}
               style={{
@@ -307,7 +318,9 @@ export function AuthScreen() {
                     ? "You’re one code away."
                     : stage === "profile"
                       ? "Make yourself at home."
-                      : `You’re all set, ${name.split(" ")[0]}.`}
+                      : stage === "permissions"
+                        ? "Choose what SettleUp can help with."
+                        : `You’re all set, ${name.split(" ")[0]}.`}
               </Heading>
               <Label muted size={13}>
                 {stage === "phone"
@@ -316,7 +329,9 @@ export function AuthScreen() {
                     ? `Enter the six-digit code sent to ${phone}.`
                     : stage === "profile"
                       ? "Just the essentials. You can change these later."
-                      : "Your private space is ready. Start small, make it yours."}
+                      : stage === "permissions"
+                        ? "One clear step now. You can change every permission later in phone settings."
+                        : "Your private space is ready. Start small, make it yours."}
               </Label>
             </YStack>
           </XStack>
@@ -490,11 +505,96 @@ export function AuthScreen() {
                         },
                       });
                       setName(name.trim());
-                      setStage("ready");
+                      setStage("permissions");
                     }, "Your space is ready")
                   }
                 >
                   {action.busy ? "Creating your space…" : "Make it mine"}
+                </Button>
+              </>
+            )}
+            {stage === "permissions" && (
+              <>
+                {[
+                  {
+                    icon: "sms" as const,
+                    title: "Bank SMS",
+                    detail:
+                      "Find debit messages from the last seven days for your review.",
+                  },
+                  {
+                    icon: "camera" as const,
+                    title: "Camera",
+                    detail: "Scan UPI codes and capture bills.",
+                  },
+                  {
+                    icon: "groups" as const,
+                    title: "Contacts",
+                    detail: "Choose people while creating groups and splits.",
+                  },
+                  {
+                    icon: "bell" as const,
+                    title: "Notifications",
+                    detail: "Receive budget and goal reminders.",
+                  },
+                ].map((permission) => (
+                  <XStack key={permission.title} gap={12} alignItems="center">
+                    <View
+                      style={{
+                        width: 42,
+                        height: 42,
+                        borderRadius: 14,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor: c.soft,
+                      }}
+                    >
+                      <Icon name={permission.icon} size={20} color="#5552B4" />
+                    </View>
+                    <YStack flex={1} gap={2}>
+                      <Label bold>{permission.title}</Label>
+                      <Label muted size={11}>
+                        {permission.detail}
+                      </Label>
+                    </YStack>
+                  </XStack>
+                ))}
+                <Button
+                  disabled={action.busy}
+                  onPress={() =>
+                    action.run(async () => {
+                      if (Platform.OS !== "web") {
+                        const permissions =
+                          await requestOnboardingPermissions(verifiedId);
+                        if (permissions.notifications)
+                          await extra(
+                            verifiedId,
+                            "/notifications",
+                            {
+                              goals: true,
+                              ...(permissions.pushToken
+                                ? { pushToken: permissions.pushToken }
+                                : {}),
+                            },
+                            "PATCH",
+                          ).catch(() => undefined);
+                      }
+                      setStage("ready");
+                    }, "Permissions updated")
+                  }
+                >
+                  {action.busy
+                    ? "Opening permissions…"
+                    : Platform.OS === "web"
+                      ? "Continue"
+                      : "Allow permissions"}
+                </Button>
+                <Button
+                  secondary
+                  disabled={action.busy}
+                  onPress={() => setStage("ready")}
+                >
+                  Maybe later
                 </Button>
               </>
             )}

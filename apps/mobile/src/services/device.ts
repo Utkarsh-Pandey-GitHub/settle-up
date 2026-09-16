@@ -12,19 +12,32 @@ import {
   normalizePhone,
   parseUpi,
 } from "@settleup/domain";
-export type SmsDecision = { decision: "ACCEPTED" | "REJECTED"; occurredAt: string; expiresAt: number; title?: string; amountMinor?: number };
+export type SmsDecision = {
+  decision: "ACCEPTED" | "REJECTED";
+  occurredAt: string;
+  expiresAt: number;
+  title?: string;
+  amountMinor?: number;
+};
 export class AndroidSmsProvider implements TransactionImportProvider {
   constructor(private accountId: string) {}
   private native =
     Platform.OS === "android"
       ? requireOptionalNativeModule<{
-          readRange(start: number, end: number): Promise<
-            { id: string; body: string; timestamp: number }[]
-          >;
+          readRange(
+            start: number,
+            end: number,
+          ): Promise<{ id: string; body: string; timestamp: number }[]>;
         }>("TransactionSms")
       : null;
   available() {
     return Platform.OS === "android" && !!this.native;
+  }
+  async hasPermission() {
+    return (
+      this.available() &&
+      (await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS))
+    );
   }
   async requestPermission() {
     if (!this.available()) return false;
@@ -35,13 +48,18 @@ export class AndroidSmsProvider implements TransactionImportProvider {
     );
   }
   private static changes: Promise<unknown> = Promise.resolve();
-  private records(change?: (records: Record<string, SmsDecision>) => void): Promise<Record<string, SmsDecision>> {
+  private records(
+    change?: (records: Record<string, SmsDecision>) => void,
+  ): Promise<Record<string, SmsDecision>> {
     const run = async () => {
       const key = `settleup.sms.${this.accountId}`;
       const raw = await SecureStore.getItemAsync(key);
       const records: Record<string, SmsDecision> = raw ? JSON.parse(raw) : {};
-      const active = Object.fromEntries(Object.entries(records).filter(([, r]) =>
-        r && typeof r === "object" && r.expiresAt > Date.now()));
+      const active = Object.fromEntries(
+        Object.entries(records).filter(
+          ([, r]) => r && typeof r === "object" && r.expiresAt > Date.now(),
+        ),
+      );
       change?.(active);
       const next = JSON.stringify(active);
       if (raw !== next) await SecureStore.setItemAsync(key, next);
@@ -52,7 +70,9 @@ export class AndroidSmsProvider implements TransactionImportProvider {
     AndroidSmsProvider.changes = result.catch(() => {});
     return result;
   }
-  handled() { return this.records(); }
+  handled() {
+    return this.records();
+  }
   async review(range?: { from: string; through: string }) {
     if (!this.native)
       throw new Error("SMS review requires an Android development build.");
@@ -73,16 +93,66 @@ export class AndroidSmsProvider implements TransactionImportProvider {
         Crypto.CryptoDigestAlgorithm.SHA256,
         `${salt}:${message.id}:${message.timestamp}:${message.body}`,
       );
-      if (range || !handled[fingerprint]) suggestions.push({ ...parsed, fingerprint });
+      if (range || !handled[fingerprint])
+        suggestions.push({ ...parsed, fingerprint });
     }
     return suggestions;
   }
-  async markHandled(fingerprint: string, decision: "ACCEPTED" | "REJECTED" = "REJECTED", occurredAt = new Date().toISOString(), details?: { title: string; amountMinor: number }) {
+  async markHandled(
+    fingerprint: string,
+    decision: "ACCEPTED" | "REJECTED" = "REJECTED",
+    occurredAt = new Date().toISOString(),
+    details?: { title: string; amountMinor: number },
+  ) {
     const expiresAt = smsDecisionExpiry(occurredAt);
-    await this.records(records => {
-      if (expiresAt > Date.now()) records[fingerprint] = { decision, occurredAt, expiresAt, ...details };
+    await this.records((records) => {
+      if (expiresAt > Date.now())
+        records[fingerprint] = { decision, occurredAt, expiresAt, ...details };
     });
   }
+}
+export async function requestOnboardingPermissions(accountId: string) {
+  if (Platform.OS === "web")
+    return {
+      camera: false,
+      contacts: false,
+      notifications: false,
+      sms: false,
+    };
+  const Camera = await import("expo-camera");
+  let camera = false;
+  let contacts = false;
+  try {
+    camera = (await Camera.Camera.requestCameraPermissionsAsync()).granted;
+  } catch {
+    // Continue so one unavailable permission cannot block the remaining prompts.
+  }
+  try {
+    contacts = (await Contacts.requestPermissionsAsync()).granted;
+  } catch {
+    // Continue so one unavailable permission cannot block the remaining prompts.
+  }
+  let notifications = false;
+  let pushToken: string | undefined;
+  try {
+    pushToken = await enableNotifications(accountId);
+    notifications = true;
+  } catch {
+    // A declined optional permission must not block the remaining requests.
+  }
+  let sms = false;
+  try {
+    sms = await new AndroidSmsProvider(accountId).requestPermission();
+  } catch {
+    // SMS access remains optional and can be enabled later from the inbox.
+  }
+  return {
+    camera,
+    contacts,
+    notifications,
+    sms,
+    pushToken,
+  };
 }
 export async function chooseContact() {
   if (Platform.OS === "web") {

@@ -72,7 +72,9 @@ export function ScanScreen() {
           return;
         }
       }
-      action.setError("No valid QR code detected in this photo. Try pasting the UPI link below.");
+      action.setError(
+        "No valid QR code detected in this photo. Try pasting the UPI link below.",
+      );
       setPasteMode(true);
     } catch (e) {
       action.setError((e as Error).message);
@@ -626,19 +628,40 @@ function SmsContent({ accountId }: { accountId: string }) {
     [editTitle, setEditTitle] = useState("");
   const keys = useMemo(() => new Map<string, string>(), []);
   useEffect(() => {
+    let live = true;
+    if (provider.available())
+      void provider.hasPermission().then((granted) => {
+        if (live && granted) setEnabled(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [provider]);
+  useEffect(() => {
     if (!enabled || custom || action.busy || editing) return;
     let live = true;
     const refresh = async () => {
       try {
         const items = await provider.review();
         const records = await provider.handled();
-        if (live) { setSuggestions(items); setHistory(records); }
-      } catch (error) { if (live) action.setError((error as Error).message); }
+        if (live) {
+          setSuggestions(items);
+          setHistory(records);
+        }
+      } catch (error) {
+        if (live) action.setError((error as Error).message);
+      }
     };
     void refresh();
     const timer = setInterval(refresh, 60000);
-    const listener = AppState.addEventListener("change", state => { if (state === "active") void refresh(); });
-    return () => { live = false; clearInterval(timer); listener.remove(); };
+    const listener = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refresh();
+    });
+    return () => {
+      live = false;
+      clearInterval(timer);
+      listener.remove();
+    };
   }, [enabled, custom, provider, action.busy, editing]);
 
   return (
@@ -661,36 +684,89 @@ function SmsContent({ accountId }: { accountId: string }) {
           ) : (
             <>
               <Notice>
-                With your permission, SettleUp reads bank expense SMS on this phone.
-                Raw messages stay here. Review amounts before accepting. The weekly
-                inbox covers today and the previous six days; decisions expire when
-                their messages leave that window. You can revoke access in phone settings.
+                With your permission, SettleUp reads bank expense SMS on this
+                phone. Raw messages stay here. Review amounts before accepting.
+                The weekly inbox covers today and the previous six days;
+                decisions expire when their messages leave that window. You can
+                revoke access in phone settings.
               </Notice>
               <XStack gap={8} flexWrap="wrap">
-                <Chip selected={!custom} onPress={() => { setCustom(false); setSuggestions([]); setEditing(null); }}>Last 7 days</Chip>
-                <Chip selected={custom} onPress={() => { setCustom(true); setSuggestions([]); setEditing(null); }}>Choose dates</Chip>
+                <Chip
+                  selected={!custom}
+                  onPress={() => {
+                    setCustom(false);
+                    setSuggestions([]);
+                    setEditing(null);
+                  }}
+                >
+                  Last 7 days
+                </Chip>
+                <Chip
+                  selected={custom}
+                  onPress={() => {
+                    setCustom(true);
+                    setSuggestions([]);
+                    setEditing(null);
+                  }}
+                >
+                  Choose dates
+                </Chip>
               </XStack>
-              {custom && <YStack gap={12}>
-                <Field label="From · YYYY-MM-DD" value={from} onChangeText={value => { setFrom(value); setSuggestions([]); }} placeholder="2026-09-01" />
-                <Field label="Through · YYYY-MM-DD" value={through} onChangeText={value => { setThrough(value); setSuggestions([]); }} placeholder="2026-09-07" />
-                <Label muted>No accept/reject history is saved for this search. Previously reviewed messages may appear.</Label>
-              </YStack>}
+              {custom && (
+                <YStack gap={12}>
+                  <Field
+                    label="From · YYYY-MM-DD"
+                    value={from}
+                    onChangeText={(value) => {
+                      setFrom(value);
+                      setSuggestions([]);
+                    }}
+                    placeholder="2026-09-01"
+                  />
+                  <Field
+                    label="Through · YYYY-MM-DD"
+                    value={through}
+                    onChangeText={(value) => {
+                      setThrough(value);
+                      setSuggestions([]);
+                    }}
+                    placeholder="2026-09-07"
+                  />
+                  <Label muted>
+                    No accept/reject history is saved for this search.
+                    Previously reviewed messages may appear.
+                  </Label>
+                </YStack>
+              )}
               <Button
                 disabled={action.busy}
                 onPress={() =>
                   action.run(async () => {
-                    if (custom && (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(through))) throw new Error("Enter both dates as YYYY-MM-DD.");
+                    if (
+                      custom &&
+                      (!/^\d{4}-\d{2}-\d{2}$/.test(from) ||
+                        !/^\d{4}-\d{2}-\d{2}$/.test(through))
+                    )
+                      throw new Error("Enter both dates as YYYY-MM-DD.");
                     if (!(await provider.requestPermission()))
                       throw new Error(
                         "SMS permission was declined. Manual entry is always available.",
                       );
-                    setSuggestions(await provider.review(custom ? { from, through } : undefined));
+                    setSuggestions(
+                      await provider.review(
+                        custom ? { from, through } : undefined,
+                      ),
+                    );
                     setHistory(await provider.handled());
                     setEnabled(true);
                   }, "Review ready")
                 }
               >
-                {custom ? "Search bank SMS" : enabled ? "Refresh inbox" : "Enable SMS transaction review"}
+                {custom
+                  ? "Search bank SMS"
+                  : enabled
+                    ? "Refresh inbox"
+                    : "Enable SMS transaction review"}
               </Button>
             </>
           )}
@@ -698,7 +774,11 @@ function SmsContent({ accountId }: { accountId: string }) {
           {enabled && !suggestions.length && (
             <Empty
               title="Your inbox is all caught up"
-              detail={custom ? "Choose dates and search for bank expenses." : "No new bank expenses in your seven-day inbox."}
+              detail={
+                custom
+                  ? "Choose dates and search for bank expenses."
+                  : "No new bank expenses in your seven-day inbox."
+              }
             />
           )}
         </YStack>
@@ -766,7 +846,19 @@ function SmsContent({ accountId }: { accountId: string }) {
                       splitMethod: "EQUAL",
                     });
                     if (!custom) {
-                      await provider.markHandled(s.fingerprint, "ACCEPTED", s.occurredAt, { title: editing === s.fingerprint ? editTitle : s.title, amountMinor: editing === s.fingerprint ? parseMoney(editAmount) : s.amountMinor });
+                      await provider.markHandled(
+                        s.fingerprint,
+                        "ACCEPTED",
+                        s.occurredAt,
+                        {
+                          title:
+                            editing === s.fingerprint ? editTitle : s.title,
+                          amountMinor:
+                            editing === s.fingerprint
+                              ? parseMoney(editAmount)
+                              : s.amountMinor,
+                        },
+                      );
                       setHistory(await provider.handled());
                     }
                     setSuggestions((items) =>
@@ -793,7 +885,12 @@ function SmsContent({ accountId }: { accountId: string }) {
                 onPress={() =>
                   action.run(async () => {
                     if (!custom) {
-                      await provider.markHandled(s.fingerprint, "REJECTED", s.occurredAt, { title: s.title, amountMinor: s.amountMinor });
+                      await provider.markHandled(
+                        s.fingerprint,
+                        "REJECTED",
+                        s.occurredAt,
+                        { title: s.title, amountMinor: s.amountMinor },
+                      );
                       setHistory(await provider.handled());
                     }
                     setSuggestions((items) =>
@@ -808,16 +905,33 @@ function SmsContent({ accountId }: { accountId: string }) {
           </YStack>
         </Card>
       ))}
-      {!custom && Object.keys(history).length > 0 && <Card>
-        <YStack gap={12}>
-          <Heading size={18}>Reviewed this week</Heading>
-          {Object.entries(history).sort((a, b) => b[1].occurredAt.localeCompare(a[1].occurredAt)).map(([key, record]) =>
-            <XStack key={key} justifyContent="space-between" gap={12}>
-              <YStack flex={1} gap={4}><Label>{record.title ?? "Bank expense"}{record.amountMinor ? ` · ${money(record.amountMinor)}` : ""}</Label><Label muted size={11}>{new Date(record.occurredAt).toLocaleString()}</Label></YStack>
-              <Label>{record.decision === "ACCEPTED" ? "Accepted" : "Rejected"}</Label>
-            </XStack>)}
-        </YStack>
-      </Card>}
+      {!custom && Object.keys(history).length > 0 && (
+        <Card>
+          <YStack gap={12}>
+            <Heading size={18}>Reviewed this week</Heading>
+            {Object.entries(history)
+              .sort((a, b) => b[1].occurredAt.localeCompare(a[1].occurredAt))
+              .map(([key, record]) => (
+                <XStack key={key} justifyContent="space-between" gap={12}>
+                  <YStack flex={1} gap={4}>
+                    <Label>
+                      {record.title ?? "Bank expense"}
+                      {record.amountMinor
+                        ? ` · ${money(record.amountMinor)}`
+                        : ""}
+                    </Label>
+                    <Label muted size={11}>
+                      {new Date(record.occurredAt).toLocaleString()}
+                    </Label>
+                  </YStack>
+                  <Label>
+                    {record.decision === "ACCEPTED" ? "Accepted" : "Rejected"}
+                  </Label>
+                </XStack>
+              ))}
+          </YStack>
+        </Card>
+      )}
       <Button secondary onPress={() => router.push("/add")}>
         Add a transaction manually
       </Button>

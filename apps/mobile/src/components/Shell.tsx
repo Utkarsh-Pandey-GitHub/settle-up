@@ -76,7 +76,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <Pressable
                 accessibilityRole="button"
                 onPress={() => router.push("/auth")}
-                style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 4 }}
+                style={{
+                  minHeight: 44,
+                  justifyContent: "center",
+                  paddingHorizontal: 4,
+                }}
               >
                 <Label muted size={13}>
                   Skip intro
@@ -331,6 +335,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 name="plus"
                 label="New expense"
                 onPress={() => go("/add")}
+              />
+            )}
+            {!desktop && (
+              <IconButton
+                name="sms"
+                label="Bank SMS inbox"
+                onPress={() => go("/sms")}
               />
             )}
             <IconButton
