@@ -1,16 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <application>
-    <receiver android:name=".ScanQrWidget" android:exported="false" android:label="@string/widget_qr_name">
+    <receiver android:name=".QuickActionsWideWidget" android:exported="false" android:label="@string/widget_quick_wide_name">
       <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
-      <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_qr" />
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_quick_wide" />
     </receiver>
-    <receiver android:name=".RecordTransactionWidget" android:exported="false" android:label="@string/widget_transaction_name">
+    <receiver android:name=".QuickActionsCompactWidget" android:exported="false" android:label="@string/widget_quick_compact_name">
       <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
-      <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_transaction" />
-    </receiver>
-    <receiver android:name=".ScanBillWidget" android:exported="false" android:label="@string/widget_bill_name">
-      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
-      <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_bill" />
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_quick_compact" />
     </receiver>
     <receiver android:name=".SpendingWidget" android:exported="false" android:label="@string/widget_spending_name">
       <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>

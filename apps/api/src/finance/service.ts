@@ -568,7 +568,10 @@ export class PrismaDashboardRepository implements DashboardRepository {
             archived: !!l.archivedAt,
             members: l.members.map((m) => ({
               id: m.userId,
-              name: peers.find(p => p.linkedUserId === m.userId)?.name ?? m.user.profile?.name ?? "Former member",
+              name:
+                peers.find((p) => p.linkedUserId === m.userId)?.name ??
+                m.user.profile?.name ??
+                "Former member",
               role: m.role,
             })),
           })),

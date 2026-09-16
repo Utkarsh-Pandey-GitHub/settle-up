@@ -39,7 +39,8 @@ export const useSession = create<State>((set, get) => ({
   dark: false,
   pendingPayment: null,
   async setPendingPayment(token) {
-    if (token && !/^[A-Za-z0-9_-]{24}$/.test(token)) throw new Error("Invalid payment link.");
+    if (token && !/^[A-Za-z0-9_-]{24}$/.test(token))
+      throw new Error("Invalid payment link.");
     if (token) await storage.set("settleup.pending-payment", token);
     else await storage.remove("settleup.pending-payment");
     set({ pendingPayment: token });
@@ -59,7 +60,11 @@ export const useSession = create<State>((set, get) => ({
           valid.push(account);
         }
       }
-      set({ accounts: valid, activeId: valid[0]?.id ?? null, pendingPayment: await storage.get("settleup.pending-payment") });
+      set({
+        accounts: valid,
+        activeId: valid[0]?.id ?? null,
+        pendingPayment: await storage.get("settleup.pending-payment"),
+      });
     } finally {
       set({ ready: true });
     }

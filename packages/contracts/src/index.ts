@@ -126,9 +126,7 @@ export const shareSchema = z
   .object({
     start: z.string().datetime(),
     end: z.string().datetime(),
-    period: z
-      .enum(["DAY", "WEEK", "MONTH", "LAST_30", "YEAR"])
-      .optional(),
+    period: z.enum(["DAY", "WEEK", "MONTH", "LAST_30", "YEAR"]).optional(),
     currency: currencySchema,
     ledgerIds: z.array(z.string().uuid()).max(30).default([]),
     tagIds: z.array(z.string().uuid()).max(30).default([]),

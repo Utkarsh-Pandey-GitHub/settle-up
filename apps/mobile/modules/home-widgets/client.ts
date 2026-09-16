@@ -5,7 +5,7 @@ import type { Dashboard } from "@settleup/contracts";
 import { personalSpend } from "@settleup/domain/src/analytics";
 import { currencyDigits } from "@settleup/domain";
 
-export type WidgetKind = "qr" | "transaction" | "bill" | "spending";
+export type WidgetKind = "quick-wide" | "quick-compact" | "spending";
 const bridge =
   Platform.OS === "android"
     ? requireOptionalNativeModule<{

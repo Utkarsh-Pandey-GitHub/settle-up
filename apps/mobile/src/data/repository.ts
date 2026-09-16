@@ -19,6 +19,7 @@ import {
   splitExpense,
   obligations,
   applyRepayment,
+  periodRange,
 } from "@settleup/domain";
 import { analytics } from "@settleup/domain/src/analytics";
 import { demoDashboard } from "@settleup/domain/src/fixtures";
@@ -67,7 +68,6 @@ export async function request<T>(
         message: `The sign-in server returned an unexpected response (${response.status}). Please try again shortly.`,
       };
     }
-
   } catch (error) {
     if (controller.signal.aborted)
       throw new DomainError(
@@ -75,7 +75,11 @@ export async function request<T>(
         "The server took too long to respond. Please try again shortly.",
         408,
       );
-    throw new DomainError("NETWORK_ERROR", "Cannot reach the SettleUp server. Check your connection and try again.", 503);
+    throw new DomainError(
+      "NETWORK_ERROR",
+      "Cannot reach the SettleUp server. Check your connection and try again.",
+      503,
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -385,6 +389,18 @@ export class DemoRepository implements AppRepository {
         Date.now() + s.expiresInHours * 3600000,
       ).toISOString();
     const a = analytics(d, s);
+    const weekly = analytics(d, {
+      ...periodRange("WEEK", "Asia/Kolkata"),
+      currency: s.currency,
+      ledgerIds: s.ledgerIds,
+      tagIds: s.tagIds,
+    });
+    const monthly = analytics(d, {
+      ...periodRange("MONTH", "Asia/Kolkata"),
+      currency: s.currency,
+      ledgerIds: s.ledgerIds,
+      tagIds: s.tagIds,
+    });
     demoShares.set(token, {
       id: shareId,
       ownerId: id,
@@ -398,6 +414,10 @@ export class DemoRepository implements AppRepository {
         spendingMinor: a.spendingMinor,
         outgoingMinor: a.outgoingMinor,
         incomingMinor: a.incomingMinor,
+        weeklySpendingMinor: weekly.spendingMinor,
+        monthlySpendingMinor: monthly.spendingMinor,
+        byDay: a.byDay,
+        updatedAt: new Date().toISOString(),
         categories: a.byTag.map((t) => ({
           name: d.tags.find((g) => g.id === t.id)?.name ?? "Uncategorized",
           amountMinor: t.amountMinor,
@@ -416,8 +436,11 @@ export class DemoRepository implements AppRepository {
     if (path === "/groups") {
       const selected = new Set<string>(body.memberIds ?? []);
       for (const contact of body.contacts ?? []) {
-        let peer = d.peers.find(p => p.phone === contact.phone);
-        if (!peer) { peer = { ...contact, id: uuid() }; d.peers.push(peer!); }
+        let peer = d.peers.find((p) => p.phone === contact.phone);
+        if (!peer) {
+          peer = { ...contact, id: uuid() };
+          d.peers.push(peer!);
+        }
         selected.add(peer!.id);
       }
       const groupId = uuid();

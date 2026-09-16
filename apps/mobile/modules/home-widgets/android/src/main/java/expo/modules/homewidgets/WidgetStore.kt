@@ -26,9 +26,8 @@ object WidgetSeries {
 
 object WidgetStore {
   val providers = mapOf(
-    "qr" to ScanQrWidget::class.java,
-    "transaction" to RecordTransactionWidget::class.java,
-    "bill" to ScanBillWidget::class.java,
+    "quick-wide" to QuickActionsWideWidget::class.java,
+    "quick-compact" to QuickActionsCompactWidget::class.java,
     "spending" to SpendingWidget::class.java
   )
   private val lock = Any()
@@ -67,4 +66,3 @@ object WidgetStore {
     return PendingIntent.getActivity(context, route.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
   }
 }
-

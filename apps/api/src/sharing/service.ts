@@ -73,9 +73,7 @@ function livePayload(data: Dashboard, scope: ShareScope, expiresAt: string) {
           date: transaction.occurredAt,
           amountMinor: personalSpend(transaction, data.account.id),
           status: transaction.status,
-          ...(scope.showDescriptions
-            ? { description: transaction.title }
-            : {}),
+          ...(scope.showDescriptions ? { description: transaction.title } : {}),
         }))
       : undefined,
   };

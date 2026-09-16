@@ -423,13 +423,22 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                 </Label>
                 <XStack gap={7} flexWrap="wrap">
                   {(
-                    ["bag", "coffee", "car", "plane", "bolt", "wallet"] as IconName[]
+                    [
+                      "bag",
+                      "coffee",
+                      "car",
+                      "plane",
+                      "bolt",
+                      "wallet",
+                    ] as IconName[]
                   ).map((name) => (
                     <Pressable
                       key={name}
                       accessibilityRole="radio"
                       accessibilityLabel={`${name} icon`}
-                      accessibilityState={{ selected: transactionIcon === name }}
+                      accessibilityState={{
+                        selected: transactionIcon === name,
+                      }}
                       onPress={() => setTransactionIcon(name)}
                       style={({ pressed }) => ({
                         width: 42,
@@ -1013,9 +1022,9 @@ export function SettlementScreen() {
               money.
             </Label>
             <Notice>
-              Settle up clears what you owe after you pay someone outside the app.
-              Choose the person, confirm the amount you paid, and SettleUp will
-              reduce that balance and record the repayment in Activity.
+              Settle up clears what you owe after you pay someone outside the
+              app. Choose the person, confirm the amount you paid, and SettleUp
+              will reduce that balance and record the repayment in Activity.
             </Notice>
             <Card>
               <YStack gap={18}>

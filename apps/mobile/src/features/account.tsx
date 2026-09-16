@@ -823,14 +823,14 @@ export function SettingsScreen() {
               <YStack gap={12}>
                 <SectionTitle title="Home screen widgets" />
                 <Label muted size={12}>
-                  Four shortcuts to your money. Spending and goals show your
-                  active account’s last synced totals on your home screen.
+                  The action widget groups QR scan, bill scan, expense entry,
+                  and payment links. Spending and goals show your active
+                  account’s last synced totals.
                 </Label>
                 {(
                   [
-                    ["qr", "Scan QR"],
-                    ["transaction", "Record transaction"],
-                    ["bill", "Scan bill"],
+                    ["quick-wide", "Quick actions · 5×2"],
+                    ["quick-compact", "Quick actions · 4×2"],
                     ["spending", "Spending & goals"],
                   ] satisfies [WidgetKind, string][]
                 ).map(([kind, label]) => (

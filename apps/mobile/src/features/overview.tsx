@@ -133,9 +133,14 @@ export function TransactionRow({
   const tag = data.tags.find((tag) => tag.id === t.tagIds[0]),
     ledger = data.ledgers.find((l) => l.id === t.ledgerId);
   const incoming = t.destinationId === data.account.id;
-  const storedIcon = ["bag", "coffee", "car", "plane", "bolt", "wallet"].includes(
-    t.icon ?? "",
-  )
+  const storedIcon = [
+    "bag",
+    "coffee",
+    "car",
+    "plane",
+    "bolt",
+    "wallet",
+  ].includes(t.icon ?? "")
     ? (t.icon as IconName)
     : null;
   return (

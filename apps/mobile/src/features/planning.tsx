@@ -334,11 +334,26 @@ export function ShareScreen() {
           <Card>
             <YStack gap={17}>
               <Label bold>Coverage period</Label>
-              <Button secondary icon="calendar" onPress={() => setPicker("period")}>
-                {{ WEEK: "This week", MONTH: "This month", LAST_30: "Last 30 days", YEAR: "This year" }[period] ?? "Choose period"}
+              <Button
+                secondary
+                icon="calendar"
+                onPress={() => setPicker("period")}
+              >
+                {(
+                  {
+                    WEEK: "This week",
+                    MONTH: "This month",
+                    LAST_30: "Last 30 days",
+                    YEAR: "This year",
+                  } as Partial<Record<Period, string>>
+                )[period] ?? "Choose period"}
               </Button>
               <Label bold>Groups</Label>
-              <Button secondary icon="groups" onPress={() => setPicker("groups")}>
+              <Button
+                secondary
+                icon="groups"
+                onPress={() => setPicker("groups")}
+              >
                 {ledgerIds.length
                   ? `${ledgerIds.length} ${ledgerIds.length === 1 ? "group" : "groups"}`
                   : "All accessible groups"}
@@ -407,11 +422,7 @@ export function ShareScreen() {
                       await repository.share(d.account.id, {
                         ...periodRange(period, "Asia/Kolkata"),
                         period: period as
-                          | "DAY"
-                          | "WEEK"
-                          | "MONTH"
-                          | "LAST_30"
-                          | "YEAR",
+                          "DAY" | "WEEK" | "MONTH" | "LAST_30" | "YEAR",
                         currency: d.account.currency,
                         ledgerIds,
                         tagIds,
@@ -511,18 +522,15 @@ export function ShareScreen() {
                     secondary
                     compact
                     onPress={() =>
-                      action.run(
-                        async () => {
-                          await extra(
-                            d.account.id,
-                            `/shares/${link.id}`,
-                            undefined,
-                            "DELETE",
-                          );
-                          await links.refetch();
-                        },
-                        "Monitoring link revoked",
-                      )
+                      action.run(async () => {
+                        await extra(
+                          d.account.id,
+                          `/shares/${link.id}`,
+                          undefined,
+                          "DELETE",
+                        );
+                        await links.refetch();
+                      }, "Monitoring link revoked")
                     }
                   >
                     Revoke
@@ -617,7 +625,7 @@ export function SharedScreen() {
   return (
     <Shell>
       <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
-        <Heading>A shared little picture.</Heading>
+        <Heading>Trusted spending monitor</Heading>
         {q.isLoading ? (
           <YStack gap={14}>
             <Skeleton height={84} />
@@ -633,18 +641,66 @@ export function SharedScreen() {
         ) : (
           q.data && (
             <>
-              <Notice>Read-only snapshot · shared by {q.data.owner}</Notice>
+              <Notice>
+                Live read-only view · shared by {q.data.owner} · refreshes when
+                opened
+              </Notice>
               <Label muted>
                 {new Date(q.data.coverage.start).toLocaleDateString()} –{" "}
                 {new Date(q.data.coverage.end).toLocaleDateString()} · expires{" "}
                 {new Date(q.data.expiresAt).toLocaleString()}
               </Label>
+              {!!q.data.updatedAt && (
+                <Label muted size={11}>
+                  Last refreshed {new Date(q.data.updatedAt).toLocaleString()}
+                </Label>
+              )}
               <Card>
                 <Label muted>Personal spending</Label>
                 <Heading size={36}>
                   {money(q.data.spendingMinor, q.data.currency)}
                 </Heading>
+                <XStack gap={18} marginTop={16}>
+                  <YStack flex={1}>
+                    <Label muted size={11}>
+                      This week
+                    </Label>
+                    <Label bold>
+                      {money(q.data.weeklySpendingMinor ?? 0, q.data.currency)}
+                    </Label>
+                  </YStack>
+                  <YStack flex={1}>
+                    <Label muted size={11}>
+                      This month
+                    </Label>
+                    <Label bold>
+                      {money(q.data.monthlySpendingMinor ?? 0, q.data.currency)}
+                    </Label>
+                  </YStack>
+                </XStack>
               </Card>
+              {!!q.data.byDay?.length && (
+                <Card>
+                  <SectionTitle title="Daily spending" />
+                  {q.data.byDay.slice(-10).map((day: any) => (
+                    <XStack
+                      key={day.date}
+                      justifyContent="space-between"
+                      paddingVertical={8}
+                    >
+                      <Label muted>
+                        {new Date(day.date).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </Label>
+                      <Label bold>
+                        {money(day.amountMinor, q.data.currency)}
+                      </Label>
+                    </XStack>
+                  ))}
+                </Card>
+              )}
               <Card>
                 <SectionTitle title="Spending by category" />
                 {q.data.categories.map((c: any, i: number) => (

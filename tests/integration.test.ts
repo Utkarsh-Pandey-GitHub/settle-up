@@ -467,7 +467,7 @@ describe.runIf(enabled)("PostgreSQL API integration", () => {
     const download = await app.inject(new URL(signed.json().url).pathname);
     expect(download.rawPayload.equals(data)).toBe(true);
   });
-  it("keeps an existing public snapshot frozen after financial changes", async () => {
+  it("refreshes an existing monitoring link after financial changes", async () => {
     const result = await post(
       "/shares",
       {
@@ -480,7 +480,7 @@ describe.runIf(enabled)("PostgreSQL API integration", () => {
       a,
     );
     const path = `/shared/${result.json().url.split("/").pop()}`;
-    const before = (await app.inject(path)).body;
+    const before = (await app.inject(path)).json();
     await post(
       "/transactions",
       {
@@ -493,7 +493,9 @@ describe.runIf(enabled)("PostgreSQL API integration", () => {
       },
       a,
     );
-    expect((await app.inject(path)).body).toBe(before);
+    const after = (await app.inject(path)).json();
+    expect(after.spendingMinor).toBe(before.spendingMinor + 6543);
+    expect(after.transactions.some((entry: any) => entry.description === "Not in existing snapshot")).toBe(true);
   });
   it("records incoming adjustments without creating false spending or debt", async () => {
     const result = await post(
