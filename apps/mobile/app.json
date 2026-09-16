@@ -18,8 +18,15 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#F3F0FA"
       },
-      "permissions": ["android.permission.READ_SMS"],
-      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+      "permissions": [
+        "android.permission.READ_SMS",
+        "android.permission.CAMERA",
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -57,6 +64,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1a6df8cb-0a63-48c1-9e5c-a1754f54f226"
+      }
     }
   }
 }
