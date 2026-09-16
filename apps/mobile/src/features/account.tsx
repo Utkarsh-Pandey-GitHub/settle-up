@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import { Platform, Share, View, Pressable } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { XStack, YStack } from "tamagui";
@@ -166,7 +166,7 @@ export function AuthScreen() {
   const [verifiedId, setVerifiedId] = useState(
     active?.name === "New friend" ? active.id : "",
   );
-  const pendingPayment = useSession(s => s.pendingPayment);
+  const pendingPayment = useSession((s) => s.pendingPayment);
   const resumePayment = async () => {
     const token = useSession.getState().pendingPayment;
     await useSession.getState().setPendingPayment(null);
@@ -176,7 +176,10 @@ export function AuthScreen() {
     session: Session & { suggestedName?: string },
   ) => {
     await useSession.getState().add(session);
-    if (session.suggestedName?.trim() && session.account.name === "New friend") {
+    if (
+      session.suggestedName?.trim() &&
+      session.account.name === "New friend"
+    ) {
       const cleanName = session.suggestedName.trim();
       try {
         await request("/profile", {
@@ -209,28 +212,25 @@ export function AuthScreen() {
   };
   const [truecallerBusy, setTruecallerBusy] = useState(false);
   const [truecallerHint, setTruecallerHint] = useState("");
-  const attemptedTruecaller = useRef(false);
-  useEffect(() => {
-    if (stage !== "phone" || !truecallerAvailable || DEMO || attemptedTruecaller.current) return;
-    let mounted = true;
-    // Schedule after mounting so Strict Mode cannot launch two native consent sheets.
-    const timer = setTimeout(async () => {
-      if (!mounted) return;
-      attemptedTruecaller.current = true;
-      setTruecallerBusy(true);
-      try {
-        const proof = await authorizeWithTruecaller();
-        if (!mounted) return;
-        const session = await request<Session & { suggestedName?: string }>("/auth/truecaller", { body: proof });
-        if (mounted) { setTruecallerBusy(false); await acceptSession(session); }
-      } catch (err: any) {
-        if (mounted) {
-          setTruecallerHint(err?.message || "Continue with an SMS code to verify your number.");
-        }
-      } finally { if (mounted) setTruecallerBusy(false); }
-    }, 0);
-    return () => { mounted = false; clearTimeout(timer); };
-  }, [stage]);
+  const continueWithTruecaller = async () => {
+    setTruecallerBusy(true);
+    setTruecallerHint("");
+    try {
+      const proof = await authorizeWithTruecaller();
+      const session = await request<Session & { suggestedName?: string }>(
+        "/auth/truecaller",
+        { body: proof },
+      );
+      await acceptSession(session);
+    } catch (err: any) {
+      setTruecallerHint(
+        err?.message ||
+          "Truecaller could not verify this phone. You can use an SMS code instead.",
+      );
+    } finally {
+      setTruecallerBusy(false);
+    }
+  };
   const step =
     stage === "phone" || stage === "code" ? 1 : stage === "profile" ? 2 : 3;
   return (
@@ -331,8 +331,6 @@ export function AuthScreen() {
           <YStack gap={16}>
             {stage === "phone" && (
               <>
-                {truecallerBusy && <Label muted>Verifying your phone securely…</Label>}
-                {!!truecallerHint && <Label muted>{truecallerHint}</Label>}
                 <Field
                   label="Phone number"
                   placeholder="+91 98765 43210"
@@ -343,9 +341,12 @@ export function AuthScreen() {
                   editable={!action.busy && !truecallerBusy}
                 />
                 <Button
-                  disabled={action.busy || truecallerBusy || DEMO || !phone.trim()}
+                  disabled={
+                    action.busy || truecallerBusy || DEMO || !phone.trim()
+                  }
                   onPress={() =>
                     action.run(async () => {
+                      setTruecallerHint("");
                       const normalized = normalizePhone(phone);
                       const result = await request<{
                         challengeId: string;
@@ -358,8 +359,33 @@ export function AuthScreen() {
                     }, "Code sent")
                   }
                 >
-                  {truecallerBusy ? "Verifying phone…" : action.busy ? "Sending code…" : "Continue with phone"}
+                  {action.busy ? "Sending code…" : "Continue with phone"}
                 </Button>
+                {truecallerAvailable && !DEMO && (
+                  <>
+                    <XStack alignItems="center" gap={12}>
+                      <View
+                        style={{ flex: 1, height: 1, backgroundColor: c.line }}
+                      />
+                      <Label muted size={11}>
+                        OR
+                      </Label>
+                      <View
+                        style={{ flex: 1, height: 1, backgroundColor: c.line }}
+                      />
+                    </XStack>
+                    <Button
+                      secondary
+                      disabled={action.busy || truecallerBusy}
+                      onPress={continueWithTruecaller}
+                    >
+                      {truecallerBusy
+                        ? "Opening Truecaller…"
+                        : "Continue with Truecaller"}
+                    </Button>
+                  </>
+                )}
+                {!!truecallerHint && <Notice>{truecallerHint}</Notice>}
                 <Label muted size={11}>
                   We use your number to verify your account. Your address book
                   is not required.
@@ -474,7 +500,15 @@ export function AuthScreen() {
             )}
             {stage === "ready" && (
               <>
-                {pendingPayment && <Button onPress={() => action.run(resumePayment, "Payment request ready")}>Continue to payment request</Button>}
+                {pendingPayment && (
+                  <Button
+                    onPress={() =>
+                      action.run(resumePayment, "Payment request ready")
+                    }
+                  >
+                    Continue to payment request
+                  </Button>
+                )}
                 <Label bold size={14}>
                   Start with something from today.
                 </Label>
@@ -560,7 +594,11 @@ export function AccountsScreen() {
           </Card>
         ))}
         {!!action.error && <Notice error>{action.error}</Notice>}
-        {!!activeId && <Button secondary onPress={() => router.push("/settings")}>Settings & permissions</Button>}
+        {!!activeId && (
+          <Button secondary onPress={() => router.push("/settings")}>
+            Settings & permissions
+          </Button>
+        )}
         <Button icon="plus" onPress={() => router.push("/auth")}>
           Add another account
         </Button>
