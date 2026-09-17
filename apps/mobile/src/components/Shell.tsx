@@ -22,6 +22,7 @@ import {
   Mascot,
 } from "./ui";
 import { useSession, DEMO } from "../data/session";
+import { WalkthroughTour } from "./WalkthroughTour";
 const navigation: { label: string; path: string; icon: IconName }[] = [
   { label: "Overview", path: "/", icon: "home" },
   { label: "Activity", path: "/activity", icon: "activity" },
@@ -37,6 +38,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     insets = useSafeAreaInsets();
   const desktop = width >= 1050;
   const feedback = useSession((s) => s.feedback);
+  const tourAccountId = useSession((s) => s.tourAccountId);
   useEffect(() => {
     if (!feedback) return;
     const timer = setTimeout(() => {
@@ -476,6 +478,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
             ))}
           </View>
         )}
+        <WalkthroughTour
+          visible={!!account && tourAccountId === account.id}
+          desktop={desktop}
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          onNavigate={go}
+          onComplete={() => void useSession.getState().completeTour()}
+        />
       </View>
     </KeyboardAvoidingView>
   );

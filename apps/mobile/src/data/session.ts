@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Account, Session } from "@settleup/contracts";
 import { ids, demoDashboard } from "@settleup/domain/src/fixtures";
 export const DEMO = process.env.EXPO_PUBLIC_DEMO !== "false";
@@ -24,6 +25,8 @@ type State = {
   activeId: string | null;
   ready: boolean;
   dark: boolean;
+  tourAccountId: string | null;
+  completeTour(): Promise<void>;
   setDark(value: boolean): void;
   hydrate(): Promise<void>;
   add(session: Session): Promise<void>;
@@ -37,6 +40,7 @@ export const useSession = create<State>((set, get) => ({
   activeId: DEMO ? ids.Utkarsh : null,
   ready: DEMO,
   dark: false,
+  tourAccountId: null,
   pendingPayment: null,
   async setPendingPayment(token) {
     if (token && !/^[A-Za-z0-9_-]{24}$/.test(token))
@@ -60,9 +64,14 @@ export const useSession = create<State>((set, get) => ({
           valid.push(account);
         }
       }
+      const activeId = valid[0]?.id ?? null;
+      const toured = activeId
+        ? await AsyncStorage.getItem(`settleup.tour.${activeId}`)
+        : "done";
       set({
         accounts: valid,
-        activeId: valid[0]?.id ?? null,
+        activeId,
+        tourAccountId: activeId && !toured ? activeId : null,
         pendingPayment: await storage.get("settleup.pending-payment"),
       });
     } finally {
@@ -80,7 +89,14 @@ export const useSession = create<State>((set, get) => ({
       session.account,
     ];
     await storage.set("settleup.accounts", JSON.stringify(accounts));
-    set({ accounts, activeId: session.account.id });
+    const toured = await AsyncStorage.getItem(
+      `settleup.tour.${session.account.id}`,
+    );
+    set({
+      accounts,
+      activeId: session.account.id,
+      tourAccountId: toured ? null : session.account.id,
+    });
   },
   switchTo(id) {
     if (get().accounts.some((a) => a.id === id))
@@ -97,13 +113,20 @@ export const useSession = create<State>((set, get) => ({
       await storage.remove(key);
     await storage.remove(`settleup.session.${id}`);
     await storage.remove(`settleup.draft.${id}`);
+    await AsyncStorage.removeItem(`settleup.tour.${id}`);
     const accounts = get().accounts.filter((a) => a.id !== id);
     await storage.set("settleup.accounts", JSON.stringify(accounts));
     set({
       accounts,
       activeId:
         get().activeId === id ? (accounts[0]?.id ?? null) : get().activeId,
+      tourAccountId: get().tourAccountId === id ? null : get().tourAccountId,
     });
+  },
+  async completeTour() {
+    const id = get().tourAccountId;
+    if (id) await AsyncStorage.setItem(`settleup.tour.${id}`, "done");
+    set({ tourAccountId: null });
   },
 }));
 export const getTokenSession = (id: string) => tokenMemory.get(id);

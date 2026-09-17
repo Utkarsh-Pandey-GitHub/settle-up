@@ -12,6 +12,7 @@ import {
   Platform,
   Modal,
   ScrollView,
+  type ViewStyle,
 } from "react-native";
 import { Text, YStack, XStack } from "tamagui";
 import Svg, { Path, Circle, Rect, Ellipse, G } from "react-native-svg";
@@ -272,6 +273,7 @@ export function Button({
   disabled,
   compact,
   loading,
+  style,
 }: {
   children: React.ReactNode;
   onPress?: () => void;
@@ -280,6 +282,7 @@ export function Button({
   disabled?: boolean;
   compact?: boolean;
   loading?: boolean;
+  style?: ViewStyle;
 }) {
   const c = useColors();
   const unavailable = disabled || loading;
@@ -290,22 +293,25 @@ export function Button({
       aria-disabled={!!unavailable}
       disabled={unavailable}
       onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: 46,
-        paddingHorizontal: compact ? 14 : 20,
-        paddingVertical: 11,
-        borderRadius: 15,
-        borderBottomWidth: 1,
-        backgroundColor: secondary ? c.card : "#6F6CD9",
-        borderWidth: 1,
-        borderColor: secondary ? c.line : "#6F6CD9",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 9,
-        opacity: unavailable ? 0.6 : pressed ? 0.8 : 1,
-        transform: [{ scale: pressed ? 0.98 : 1 }],
-      })}
+      style={({ pressed }) => [
+        {
+          minHeight: 46,
+          paddingHorizontal: compact ? 14 : 20,
+          paddingVertical: 11,
+          borderRadius: 15,
+          borderBottomWidth: 1,
+          backgroundColor: secondary ? c.card : "#6F6CD9",
+          borderWidth: 1,
+          borderColor: secondary ? c.line : "#6F6CD9",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 9,
+          opacity: unavailable ? 0.6 : pressed ? 0.8 : 1,
+          transform: [{ scale: pressed ? 0.98 : 1 }],
+        },
+        style,
+      ]}
     >
       {loading ? (
         <ActivityIndicator
