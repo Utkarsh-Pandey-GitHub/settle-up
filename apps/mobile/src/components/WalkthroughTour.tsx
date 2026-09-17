@@ -69,6 +69,11 @@ const steps = [
     detail:
       "Add expense records a transaction or split. Record payment logs a repayment made outside the app. Scan bill opens the camera to capture a receipt and extract its amount and items.",
   },
+  {
+    title: "Widgets for quick access",
+    detail:
+      "Add SettleUp widgets from your phone’s home-screen widget picker. Quick actions opens QR scan, bill scan, expense, and payment links. Spending shows progress and goals at a glance.",
+  },
 ];
 
 const pointers: { icon: IconName; text: string }[][] = [
@@ -96,6 +101,13 @@ const pointers: { icon: IconName; text: string }[][] = [
       icon: "camera",
       text: "Scan bill — capture a receipt to extract its amount and items.",
     },
+  ],
+  [
+    {
+      icon: "wallet",
+      text: "Quick actions — QR, bill, expense, and payment links.",
+    },
+    { icon: "chart", text: "Spending — weekly or monthly progress and goals." },
   ],
 ];
 
@@ -220,7 +232,7 @@ export function WalkthroughTour({
             pointerEvents="none"
             style={{ position: "absolute", top: -30, left: -8, zIndex: 1 }}
           >
-            <Mascot size={52} mood={index === 2 ? "success" : "wave"} />
+            <Mascot size={52} mood={index >= 2 ? "success" : "wave"} />
           </View>
           <ScrollView
             style={{
@@ -235,7 +247,7 @@ export function WalkthroughTour({
           >
             <YStack gap={6}>
               <Label muted size={10} marginLeft={30}>
-                SETTLY’S TOUR · {index + 1} OF 3
+                SETTLY’S TOUR · {index + 1} OF {steps.length}
               </Label>
               <Label bold size={16}>
                 {step.title}
@@ -267,10 +279,12 @@ export function WalkthroughTour({
             <Button
               compact
               onPress={() =>
-                index === 2 ? onComplete() : onStep(Math.min(index + 1, 2))
+                index === steps.length - 1
+                  ? onComplete()
+                  : onStep(Math.min(index + 1, steps.length - 1))
               }
             >
-              {index === 2 ? "Got it" : "Next"}
+              {index === steps.length - 1 ? "Got it" : "Next"}
             </Button>
           </XStack>
         </View>
