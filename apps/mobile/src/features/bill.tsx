@@ -246,7 +246,7 @@ export function BillEditor({
                 backgroundColor: "rgba(0,0,0,0.5)",
               }}
             >
-              <XStack gap={10} justifyContent="center">
+              <XStack gap={10} justifyContent="center" flexWrap="wrap">
                 <Button
                   loading={busy}
                   disabled={!ready || busy}
@@ -286,6 +286,9 @@ export function BillEditor({
                   }
                 >
                   Capture bill
+                </Button>
+                <Button secondary disabled={busy} onPress={choose}>
+                  Choose from gallery
                 </Button>
                 <Button
                   secondary

@@ -790,8 +790,11 @@ export function SettingsScreen() {
     <DataScreen>
       {(d) => (
         <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
-          <Heading>Settings</Heading>
-          <Card>
+          <YStack gap={4}>
+            <Heading>Settings</Heading>
+            <Label muted>Make SettleUp feel right for you</Label>
+          </YStack>
+          <Card style={{ borderRadius: 20, padding: 18 }}>
             <YStack gap={17}>
               <SectionTitle title="Profile" />
               <Field
@@ -819,9 +822,9 @@ export function SettingsScreen() {
               </Button>
             </YStack>
           </Card>
-          <Card>
+          <Card style={{ borderRadius: 20, padding: 18 }}>
             <YStack gap={17}>
-              <SectionTitle title="Your preferences" />
+              <SectionTitle title="Preferences" />
               <XStack justifyContent="space-between" alignItems="center">
                 <Label>Appearance</Label>
                 <Chip
@@ -954,7 +957,7 @@ export function SettingsScreen() {
               )}
             </YStack>
           </Card>
-          <Card>
+          <Card style={{ borderRadius: 20, padding: 18 }}>
             <YStack gap={16}>
               <SectionTitle title="Privacy & security" />
               <Notice>
@@ -1028,7 +1031,7 @@ export function SettingsScreen() {
               {!!exported && <Label muted>{exported}</Label>}
             </YStack>
           </Card>
-          <Card>
+          <Card style={{ borderRadius: 20, padding: 18 }}>
             <YStack gap={14}>
               <Heading size={18}>Delete account</Heading>
               <Label muted size={12}>

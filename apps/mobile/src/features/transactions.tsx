@@ -293,13 +293,18 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                 secondary
                 compact
                 icon={photo ? "check" : "image"}
+                style={{
+                  borderWidth: 2,
+                  borderColor: "#9B84D6",
+                  borderRadius: 12,
+                }}
                 onPress={() => setBillOpen(true)}
               >
                 {photo ? `Bill · ${lines.length} items` : "Add bill"}
               </Button>
             )}
           </XStack>
-          <XStack gap={8} flexWrap="wrap">
+          <XStack gap={8} flexWrap="wrap" justifyContent="center">
             {(
               [
                 ["PERSONAL_EXPENSE", "Just me"],
@@ -460,18 +465,33 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   ))}
                 </XStack>
               </YStack>
-              <Label size={13} bold>
-                Group or ledger{" "}
-                {type === "PERSONAL_EXPENSE" ? "(optional)" : "(required)"}
-              </Label>
-              <Button
-                secondary
-                icon="groups"
-                onPress={() => setPicker("ledger")}
-              >
-                {ledger?.name ??
-                  (type === "PERSONAL_EXPENSE" ? "Personal" : "Choose a group")}
-              </Button>
+              <XStack gap={10} alignItems="flex-end">
+                <YStack flex={1} gap={6}>
+                  <Label size={13} bold>
+                    Group or ledger
+                  </Label>
+                  <Button
+                    secondary
+                    icon="groups"
+                    onPress={() => setPicker("ledger")}
+                  >
+                    {ledger?.name ??
+                      (type === "PERSONAL_EXPENSE"
+                        ? "Personal"
+                        : "Choose a group")}
+                  </Button>
+                </YStack>
+                <YStack flex={1} gap={6}>
+                  <Label size={13} bold>
+                    Tags
+                  </Label>
+                  <Button secondary onPress={() => setPicker("tags")}>
+                    {tagIds.length
+                      ? `${tagIds.length} ${tagIds.length === 1 ? "tag" : "tags"}`
+                      : "Choose tags"}
+                  </Button>
+                </YStack>
+              </XStack>
               {type === "SHARED_EXPENSE" && (
                 <YStack gap={14}>
                   <Label bold>
@@ -544,14 +564,6 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   </Button>
                 </YStack>
               )}
-              <Label size={13} bold>
-                Tags
-              </Label>
-              <Button secondary onPress={() => setPicker("tags")}>
-                {tagIds.length
-                  ? `${tagIds.length} ${tagIds.length === 1 ? "tag" : "tags"}`
-                  : "Choose tags"}
-              </Button>
               <YStack gap={10}>
                 <Label size={13} bold>
                   Paid to contact / UPI (optional)
@@ -1280,23 +1292,23 @@ export function GroupsScreen() {
             >
               <Card
                 style={{
-                  padding: 18,
-                  borderTopWidth: 5,
+                  padding: 12,
+                  borderTopWidth: 4,
                   borderTopColor: ["#B6A2E2", "#90BDB2", "#E4B297"][index % 3],
                   backgroundColor: c.card,
                 }}
               >
                 <View
                   style={{
-                    width: 48,
-                    height: 48,
+                    width: 38,
+                    height: 38,
                     borderRadius: 16,
                     backgroundColor: ["#EDE7F9", "#E5F2ED", "#FAEDE4"][
                       index % 3
                     ],
                     alignItems: "center",
                     justifyContent: "center",
-                    marginBottom: 12,
+                    marginBottom: 8,
                   }}
                 >
                   <Icon
@@ -1305,9 +1317,9 @@ export function GroupsScreen() {
                     size={25}
                   />
                 </View>
-                <YStack gap={14}>
+                <YStack gap={8}>
                   <XStack justifyContent="space-between" alignItems="center">
-                    <Heading size={21}>{l.name}</Heading>
+                    <Heading size={18}>{l.name}</Heading>
                     <Label muted size={12}>
                       {l.archived ? "Archived" : l.currency}
                     </Label>

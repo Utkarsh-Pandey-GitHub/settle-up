@@ -348,9 +348,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             )}
             <IconButton
               name="bell"
-              label="Notifications"
+              label="Ledger activity"
               borderless
-              onPress={() => go("/notifications")}
+              onPress={() => go("/activity")}
             />
             <Pressable
               onPress={() => go("/accounts")}
