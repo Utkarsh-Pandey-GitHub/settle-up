@@ -18,6 +18,7 @@ import { money, periodRange, type Period } from "@settleup/domain";
 import { useDashboard, useAction } from "../data/hooks";
 import { repository } from "../data/repository";
 import { useSession } from "../data/session";
+import { TourGroup } from "../components/WalkthroughTour";
 import { Shell } from "../components/Shell";
 import {
   Label,
@@ -438,71 +439,73 @@ function HomeContent({ data: d }: { data: Dashboard }) {
           </YStack>
         </XStack>
       </Card>
-      <XStack gap={12}>
-        {(
-          [
-            {
-              label: "Add transaction",
-              short: "Add expense",
-              icon: "plus",
-              path: "/add",
-              color: "#DED2F9",
-            },
-            {
-              label: "Settle up",
-              short: "Record payment",
-              icon: "arrow",
-              path: "/settle",
-              color: "#D3E1FF",
-            },
-            {
-              label: "Scan a bill",
-              short: "Scan bill",
-              icon: "camera",
-              path: "/add?bill=camera",
-              color: "#FDC9D2",
-            },
-          ] as const
-        ).map((tile) => (
-          <View key={tile.label} style={{ flex: 1 }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={tile.label}
-              onPress={() => go(tile.path)}
-              style={{
-                width: "100%",
-                minHeight: 106,
-                paddingVertical: 10,
-                alignItems: "center",
-                gap: 7,
-                backgroundColor: tile.color,
-                borderRadius: 17,
-              }}
-            >
-              <View
+      <TourGroup step={2}>
+        <XStack gap={12}>
+          {(
+            [
+              {
+                label: "Add transaction",
+                short: "Add expense",
+                icon: "plus",
+                path: "/add",
+                color: "#DED2F9",
+              },
+              {
+                label: "Settle up",
+                short: "Record payment",
+                icon: "arrow",
+                path: "/settle",
+                color: "#D3E1FF",
+              },
+              {
+                label: "Scan a bill",
+                short: "Scan bill",
+                icon: "camera",
+                path: "/add?bill=camera",
+                color: "#FDC9D2",
+              },
+            ] as const
+          ).map((tile) => (
+            <View key={tile.label} style={{ flex: 1 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={tile.label}
+                onPress={() => go(tile.path)}
                 style={{
-                  padding: 11,
-                  borderRadius: 30,
-                  backgroundColor: "#FFFFFF",
+                  width: "100%",
+                  minHeight: 106,
+                  paddingVertical: 10,
+                  alignItems: "center",
+                  gap: 7,
+                  backgroundColor: tile.color,
+                  borderRadius: 17,
                 }}
               >
-                <Icon name={tile.icon} color="#191D21" size={27} />
-              </View>
-              <Label
-                color="#191D21"
-                size={width < 390 ? 10 : 12}
-                bold
-                textAlign="center"
-                numberOfLines={2}
-                width="100%"
-                minHeight={32}
-              >
-                {tile.short}
-              </Label>
-            </Pressable>
-          </View>
-        ))}
-      </XStack>
+                <View
+                  style={{
+                    padding: 11,
+                    borderRadius: 30,
+                    backgroundColor: "#FFFFFF",
+                  }}
+                >
+                  <Icon name={tile.icon} color="#191D21" size={27} />
+                </View>
+                <Label
+                  color="#191D21"
+                  size={width < 390 ? 10 : 12}
+                  bold
+                  textAlign="center"
+                  numberOfLines={2}
+                  width="100%"
+                  minHeight={32}
+                >
+                  {tile.short}
+                </Label>
+              </Pressable>
+            </View>
+          ))}
+        </XStack>
+      </TourGroup>
 
       <YStack gap={5}>
         <SectionTitle

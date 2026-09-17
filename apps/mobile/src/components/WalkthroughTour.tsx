@@ -1,255 +1,279 @@
-import React, { useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  Modal,
-  Platform,
-  Pressable,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import React, { createContext, useContext, useEffect, useRef } from "react";
+import { Modal, ScrollView, View, useWindowDimensions } from "react-native";
 import { XStack, YStack } from "tamagui";
-import { Button, Icon, Label, Mascot, useColors } from "./ui";
-import type { IconName } from "./ui";
+import { Button, Icon, Label, Mascot, useColors, type IconName } from "./ui";
 
-type Step = {
-  title: string;
-  detail: string;
-  icon: IconName;
-  target: "center" | "add" | "scan" | "activity" | "groups";
-};
+export const TourStepContext = createContext<number | null>(null);
+export type TourRect = { x: number; y: number; width: number; height: number };
+export const TourMeasureContext = createContext<(rect: TourRect) => void>(
+  () => {},
+);
 
-const steps: Step[] = [
+// Outlines follow the actual containers through scrolling and resizing.
+export function TourGroup({
+  step,
+  children,
+}: {
+  step: number;
+  children: React.ReactNode;
+}) {
+  const active = useContext(TourStepContext) === step;
+  const report = useContext(TourMeasureContext);
+  const ref = useRef<View>(null);
+  const { width, height } = useWindowDimensions();
+  const measure = () => {
+    if (active)
+      ref.current?.measureInWindow((x, y, width, height) =>
+        report({ x, y, width, height }),
+      );
+  };
+  useEffect(() => {
+    const frame = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(frame);
+  }, [active, width, height]);
+  return (
+    <View ref={ref} collapsable={false} onLayout={measure}>
+      {children}
+      {active && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderWidth: 3,
+            borderColor: "#F5F5EF",
+            borderRadius: 18,
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+const steps = [
   {
-    title: "Your money, in one calm place",
+    title: "Your top controls",
     detail:
-      "I’ll show you the four shortcuts you’ll use most. This takes less than a minute.",
-    icon: "home",
-    target: "center",
+      "SettleUp identifies your home space. Plus adds an expense. SMS lets you review bank debits. The bell opens ledger activity. Your avatar switches accounts and leads to Settings.",
   },
   {
-    title: "Record an expense",
+    title: "Your five main destinations",
     detail:
-      "Tap the plus button whenever you pay. Add a bill, choose a group, and split it in the same form.",
-    icon: "plus",
-    target: "add",
+      "Home shows spending and balances. Activity lists transactions. Scan QR opens the payment scanner. Analytics shows spending trends. Groups opens shared ledgers and members.",
   },
   {
-    title: "Scan and pay",
+    title: "Quick actions from Home",
     detail:
-      "The large Scan QR action opens the camera directly. Bill scanning is available from Add expense.",
-    icon: "scan",
-    target: "scan",
-  },
-  {
-    title: "See ledger activity",
-    detail:
-      "The bell at the top opens recent activity. Filter it by ledger or expand the full history.",
-    icon: "activity",
-    target: "activity",
-  },
-  {
-    title: "Keep groups organised",
-    detail:
-      "Open Groups to see shared ledgers, members, and balances. You’re ready to start.",
-    icon: "groups",
-    target: "groups",
+      "Add expense records a transaction or split. Record payment logs a repayment made outside the app. Scan bill opens the camera to capture a receipt and extract its amount and items.",
   },
 ];
 
+const pointers: { icon: IconName; text: string }[][] = [
+  [
+    { icon: "home", text: "SettleUp — your home space." },
+    { icon: "plus", text: "Plus — add an expense or split." },
+    { icon: "sms", text: "SMS — review bank debits." },
+    { icon: "bell", text: "Bell — view ledger activity." },
+    { icon: "groups", text: "Avatar — accounts and Settings." },
+  ],
+  [
+    { icon: "home", text: "Home — spending and balances." },
+    { icon: "activity", text: "Activity — your transactions." },
+    { icon: "scan", text: "Scan QR — scan a payment code." },
+    { icon: "chart", text: "Analytics — spending trends." },
+    { icon: "groups", text: "Groups — shared ledgers and members." },
+  ],
+  [
+    { icon: "plus", text: "Add expense — record or split a transaction." },
+    {
+      icon: "arrow",
+      text: "Record payment — log a repayment made outside the app.",
+    },
+    {
+      icon: "camera",
+      text: "Scan bill — capture a receipt to extract its amount and items.",
+    },
+  ],
+];
+
 export function WalkthroughTour({
-  visible,
+  index,
   desktop,
   topInset,
   bottomInset,
+  onStep,
   onComplete,
+  rect,
 }: {
-  visible: boolean;
+  index: number;
   desktop: boolean;
   topInset: number;
   bottomInset: number;
+  onStep(index: number): void;
   onComplete(): void;
+  rect: TourRect | null;
 }) {
   const c = useColors();
-  const { width } = useWindowDimensions();
-  const [index, setIndex] = useState(0);
-  const entrance = useRef(new Animated.Value(0)).current;
+  const { width, height } = useWindowDimensions();
+  const x = Math.max(0, rect?.x ?? 0);
+  const y = Math.max(0, rect?.y ?? 0);
+  const right = Math.min(width, x + (rect?.width ?? 0));
+  const bottom = Math.min(height, y + (rect?.height ?? 0));
+  const above = y > height / 2;
+  const rows =
+    desktop && index === 1
+      ? [
+          pointers[1][0],
+          pointers[1][1],
+          pointers[1][4],
+          pointers[1][3],
+          {
+            icon: "goal" as const,
+            text: "Goals — plan and track your budgets.",
+          },
+        ]
+      : pointers[index];
   const step = steps[Math.min(index, steps.length - 1)];
-
-  useEffect(() => {
-    if (!visible) {
-      setIndex(0);
-      return;
-    }
-    entrance.setValue(0);
-    const animation = Animated.spring(entrance, {
-      toValue: 1,
-      friction: 8,
-      tension: 80,
-      useNativeDriver: Platform.OS !== "web",
-    });
-    animation.start();
-    return () => animation.stop();
-  }, [visible, index]);
-
-  const targetStyle = (() => {
-    if (desktop) {
-      if (step.target === "scan") return { left: 18, top: 392 };
-      if (step.target === "groups") return { left: 18, top: 214 };
-      if (step.target === "add") return { right: 118, top: 17 };
-      if (step.target === "activity") return { right: 68, top: 17 };
-      return null;
-    }
-    if (step.target === "scan")
-      return { left: width / 2 - 35, bottom: Math.max(bottomInset, 10) + 25 };
-    if (step.target === "groups")
-      return { right: 12, bottom: Math.max(bottomInset, 10) + 18 };
-    if (step.target === "add") return { right: 142, top: topInset + 4 };
-    if (step.target === "activity") return { right: 56, top: topInset + 4 };
-    return null;
-  })();
-
-  const cardAtBottom =
-    step.target === "add" ||
-    step.target === "activity" ||
-    step.target === "center";
-
   return (
     <Modal
-      visible={visible}
       transparent
+      visible
       animationType="fade"
       statusBarTranslucent
       onRequestClose={onComplete}
     >
       <View style={{ flex: 1 }}>
+        {[
+          { left: 0, top: 0, width, height: y },
+          { left: 0, top: y, width: x, height: Math.max(0, bottom - y) },
+          {
+            left: right,
+            top: y,
+            width: Math.max(0, width - right),
+            height: Math.max(0, bottom - y),
+          },
+          { left: 0, top: bottom, width, height: Math.max(0, height - bottom) },
+        ].map((style, i) => (
+          <View
+            key={i}
+            style={{
+              position: "absolute",
+              backgroundColor: "rgba(22,24,28,0.74)",
+              ...style,
+            }}
+          />
+        ))}
+        {rect && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              left: x,
+              top: y,
+              width: right - x,
+              height: bottom - y,
+              borderWidth: 3,
+              borderRadius: 18,
+              borderColor: "#F5F5EF",
+            }}
+          />
+        )}
         <View
           style={{
             position: "absolute",
-            inset: 0,
-            backgroundColor: "rgba(31, 28, 38, 0.68)",
-          }}
-        />
-        {targetStyle && (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              {
-                position: "absolute",
-                width: 70,
-                height: 70,
-                borderRadius: 25,
-                borderWidth: 3,
-                borderColor: "#FFFFFF",
-                backgroundColor: "rgba(255,255,255,0.14)",
-                transform: [{ scale: entrance }],
-              },
-              targetStyle,
-            ]}
-          />
-        )}
-        <Animated.View
-          style={{
-            position: "absolute",
-            left: 18,
-            right: 18,
-            ...(cardAtBottom
-              ? { bottom: Math.max(bottomInset, 18) + (desktop ? 22 : 92) }
-              : { top: topInset + 92 }),
-            maxWidth: 430,
-            alignSelf: desktop ? "center" : undefined,
-            opacity: entrance,
-            transform: [
-              {
-                translateY: entrance.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [18, 0],
-                }),
-              },
-            ],
+            left: 16,
+            right: 16,
+            maxWidth: 400,
+            alignSelf: "center",
+            ...(above
+              ? { bottom: height - y + 14 }
+              : { top: Math.max(topInset + 12, bottom + 14) }),
+            padding: 12,
+            paddingTop: 18,
+            borderRadius: 20,
+            overflow: "visible",
+            borderWidth: 1,
+            borderColor: c.line,
+            backgroundColor: c.card,
+            elevation: 12,
+            shadowColor: "#25202E",
+            shadowOpacity: 0.18,
+            shadowRadius: 20,
+            shadowOffset: { width: 0, height: 8 },
           }}
         >
           <View
             style={{
-              borderRadius: 24,
-              padding: 18,
+              position: "absolute",
+              left: 76,
+              ...(above ? { bottom: -8 } : { top: -8 }),
+              width: 16,
+              height: 16,
               backgroundColor: c.card,
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.65)",
-              shadowColor: "#25202E",
-              shadowOpacity: 0.22,
-              shadowRadius: 24,
-              shadowOffset: { width: 0, height: 12 },
-              elevation: 12,
+              transform: [{ rotate: "45deg" }],
+            }}
+          />
+          <View
+            pointerEvents="none"
+            style={{ position: "absolute", top: -30, left: -8, zIndex: 1 }}
+          >
+            <Mascot size={52} mood={index === 2 ? "success" : "wave"} />
+          </View>
+          <ScrollView
+            style={{
+              maxHeight: Math.max(
+                90,
+                Math.min(
+                  240,
+                  (above ? y : height - bottom) - 125 - bottomInset,
+                ),
+              ),
             }}
           >
-            <XStack gap={12} alignItems="flex-start">
-              <View
-                style={{
-                  width: 58,
-                  height: 58,
-                  borderRadius: 18,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: c.soft,
-                }}
-              >
-                <Mascot
-                  size={48}
-                  mood={index === steps.length - 1 ? "success" : "wave"}
-                />
-              </View>
-              <YStack flex={1} gap={6} paddingTop={2}>
-                <XStack alignItems="center" gap={7}>
-                  <Icon name={step.icon} size={17} color="#626078" />
-                  <Label bold size={16}>
-                    {step.title}
+            <YStack gap={6}>
+              <Label muted size={10} marginLeft={30}>
+                SETTLY’S TOUR · {index + 1} OF 3
+              </Label>
+              <Label bold size={16}>
+                {step.title}
+              </Label>
+              {rows.map((row) => (
+                <XStack key={row.text} gap={8} alignItems="flex-start">
+                  <Icon name={row.icon} size={16} />
+                  <Label flex={1} muted size={12} lineHeight={18}>
+                    {row.text}
                   </Label>
                 </XStack>
-                <Label muted size={12} lineHeight={18}>
-                  {step.detail}
-                </Label>
-              </YStack>
-            </XStack>
-            <XStack alignItems="center" marginTop={16} gap={6}>
-              {steps.map((_, dot) => (
-                <View
-                  key={dot}
-                  style={{
-                    width: dot === index ? 18 : 6,
-                    height: 6,
-                    borderRadius: 3,
-                    backgroundColor: dot === index ? "#6F6CD9" : c.line,
-                  }}
-                />
               ))}
-              <View style={{ flex: 1 }} />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Skip walkthrough"
-                onPress={onComplete}
-                style={{
-                  minHeight: 42,
-                  justifyContent: "center",
-                  paddingHorizontal: 8,
-                }}
-              >
-                <Label muted size={12}>
-                  Skip
-                </Label>
-              </Pressable>
-              <Button
-                compact
-                onPress={() => {
-                  if (index === steps.length - 1) onComplete();
-                  else
-                    setIndex((value) => Math.min(value + 1, steps.length - 1));
-                }}
-              >
-                {index === steps.length - 1 ? "Start using SettleUp" : "Next"}
+            </YStack>
+          </ScrollView>
+          <XStack
+            marginTop={8}
+            gap={6}
+            justifyContent="flex-end"
+            flexWrap="wrap"
+          >
+            <Button compact secondary onPress={onComplete}>
+              Skip
+            </Button>
+            {index > 0 && (
+              <Button compact secondary onPress={() => onStep(index - 1)}>
+                Back
               </Button>
-            </XStack>
-          </View>
-        </Animated.View>
+            )}
+            <Button
+              compact
+              onPress={() =>
+                index === 2 ? onComplete() : onStep(Math.min(index + 1, 2))
+              }
+            >
+              {index === 2 ? "Got it" : "Next"}
+            </Button>
+          </XStack>
+        </View>
       </View>
     </Modal>
   );
