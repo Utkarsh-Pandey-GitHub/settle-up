@@ -50,7 +50,9 @@ export function DataScreen({
   if (query.data?.account.name === "New friend")
     return <Redirect href="/auth" />;
   return (
-    <Shell>
+    <Shell
+      tourReady={ready && !!query.data && !query.error && !query.isLoading}
+    >
       {query.isLoading || !ready ? (
         <YStack gap={24}>
           <Skeleton height={40} width={240} radius={10} />

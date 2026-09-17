@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Modal,
+  Platform,
   Pressable,
   View,
   useWindowDimensions,
@@ -14,7 +15,6 @@ type Step = {
   title: string;
   detail: string;
   icon: IconName;
-  route?: string;
   target: "center" | "add" | "scan" | "activity" | "groups";
 };
 
@@ -24,7 +24,6 @@ const steps: Step[] = [
     detail:
       "I’ll show you the four shortcuts you’ll use most. This takes less than a minute.",
     icon: "home",
-    route: "/",
     target: "center",
   },
   {
@@ -62,21 +61,19 @@ export function WalkthroughTour({
   desktop,
   topInset,
   bottomInset,
-  onNavigate,
   onComplete,
 }: {
   visible: boolean;
   desktop: boolean;
   topInset: number;
   bottomInset: number;
-  onNavigate(path: string): void;
   onComplete(): void;
 }) {
   const c = useColors();
   const { width } = useWindowDimensions();
   const [index, setIndex] = useState(0);
   const entrance = useRef(new Animated.Value(0)).current;
-  const step = steps[index];
+  const step = steps[Math.min(index, steps.length - 1)];
 
   useEffect(() => {
     if (!visible) {
@@ -84,13 +81,14 @@ export function WalkthroughTour({
       return;
     }
     entrance.setValue(0);
-    Animated.spring(entrance, {
+    const animation = Animated.spring(entrance, {
       toValue: 1,
       friction: 8,
       tension: 80,
-      useNativeDriver: true,
-    }).start();
-    if (step.route) onNavigate(step.route);
+      useNativeDriver: Platform.OS !== "web",
+    });
+    animation.start();
+    return () => animation.stop();
   }, [visible, index]);
 
   const targetStyle = (() => {
@@ -121,6 +119,7 @@ export function WalkthroughTour({
       transparent
       animationType="fade"
       statusBarTranslucent
+      onRequestClose={onComplete}
     >
       <View style={{ flex: 1 }}>
         <View
@@ -242,7 +241,8 @@ export function WalkthroughTour({
                 compact
                 onPress={() => {
                   if (index === steps.length - 1) onComplete();
-                  else setIndex((value) => value + 1);
+                  else
+                    setIndex((value) => Math.min(value + 1, steps.length - 1));
                 }}
               >
                 {index === steps.length - 1 ? "Start using SettleUp" : "Next"}

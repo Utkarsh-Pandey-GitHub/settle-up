@@ -125,8 +125,14 @@ export const useSession = create<State>((set, get) => ({
   },
   async completeTour() {
     const id = get().tourAccountId;
-    if (id) await AsyncStorage.setItem(`settleup.tour.${id}`, "done");
     set({ tourAccountId: null });
+    if (id) {
+      try {
+        await AsyncStorage.setItem(`settleup.tour.${id}`, "done");
+      } catch {
+        // Dismiss immediately even if device storage is temporarily unavailable.
+      }
+    }
   },
 }));
 export const getTokenSession = (id: string) => tokenMemory.get(id);

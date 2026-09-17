@@ -30,7 +30,13 @@ const navigation: { label: string; path: string; icon: IconName }[] = [
   { label: "Analytics", path: "/analytics", icon: "chart" },
   { label: "Goals", path: "/goals", icon: "goal" },
 ];
-export function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({
+  children,
+  tourReady = false,
+}: {
+  children: React.ReactNode;
+  tourReady?: boolean;
+}) {
   const router = useRouter(),
     path = usePathname(),
     { width } = useWindowDimensions(),
@@ -478,14 +484,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
             ))}
           </View>
         )}
-        <WalkthroughTour
-          visible={!!account && tourAccountId === account.id}
-          desktop={desktop}
-          topInset={insets.top}
-          bottomInset={insets.bottom}
-          onNavigate={go}
-          onComplete={() => void useSession.getState().completeTour()}
-        />
+        {path === "/" &&
+          tourReady &&
+          !!account &&
+          tourAccountId === account.id && (
+            <WalkthroughTour
+              key={account.id}
+              visible
+              desktop={desktop}
+              topInset={insets.top}
+              bottomInset={insets.bottom}
+              onComplete={() => void useSession.getState().completeTour()}
+            />
+          )}
       </View>
     </KeyboardAvoidingView>
   );
