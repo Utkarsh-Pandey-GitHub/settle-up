@@ -1,5 +1,93 @@
 # Release gates and platform boundaries
 
+## Android Play Store and OTA release runbook
+
+The production Android application ID is `app.settleup.mobile`. Do not change it after the first Play Console upload. Production builds use an Android App Bundle, the `production` EAS environment, the `production` update channel, and the visible app version as the OTA runtime version. Preview builds remain installable APKs and receive only `preview` updates.
+
+### One-time account setup
+
+1. From `apps/mobile`, run `npx eas-cli@latest login`, then `npx eas-cli@latest whoami`. Confirm that project `1a6df8cb-0a63-48c1-9e5c-a1754f54f226` belongs to the intended Expo account.
+2. In the Expo project dashboard, create the `production` environment values listed below. Client values are embedded in the application and must never contain server secrets.
+3. In Play Console, create SettleUp with package name `app.settleup.mobile`. Enable Play App Signing.
+4. Let EAS create and retain the Android upload keystore during the first production build. Download a backup with `npx eas-cli@latest credentials --platform android`; store it outside the repository.
+5. Upload the first `.aab` manually to Play Console's Internal testing track. After Google has registered the application, create a Google Play service account, grant it release access, and upload its JSON key under the Expo project's Android service credentials. Never commit that JSON file.
+6. Copy the SHA-1 of the **Play App Signing certificate** from Play Console → Setup → App integrity. Add it to the Truecaller app and the production Android Google OAuth client. The upload-key SHA-1 alone is insufficient for installations delivered by Play.
+
+### EAS production environment
+
+Set these in Expo Dashboard → Project → Environment variables → Production:
+
+```text
+EXPO_PUBLIC_API_URL=https://settleup-api-j248.onrender.com
+EXPO_PUBLIC_DEMO=false
+EXPO_PUBLIC_EAS_PROJECT_ID=1a6df8cb-0a63-48c1-9e5c-a1754f54f226
+EXPO_PUBLIC_TRUECALLER_CLIENT_ID=<public Truecaller client ID>
+EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=<public Android OAuth client ID>
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=<public web OAuth client ID, if Google sign-in uses it>
+```
+
+Do not put `JWT_SECRET`, `OTP_PEPPER`, database credentials, Supabase secret/service-role keys, Stytch secrets, or Google service-account JSON in any `EXPO_PUBLIC_` variable. Do not set `EXPO_PUBLIC_OPENROUTER_API_KEY` in production; a mobile client cannot keep it secret, and bill scanning falls back to local OCR when it is absent.
+
+### Production API gate
+
+Before inviting Play testers, rotate every credential that has ever been pasted into chat or another public channel, including the database password, Supabase secret key, Stytch secret, `JWT_SECRET`, and `OTP_PEPPER`. Update Render with the rotated values and set `NODE_ENV=production`. Keep secrets only in Render's encrypted environment settings.
+
+Use the Supabase session-pooler URL for `DATABASE_URL`, run `npm run db:migrate`, and verify `https://settleup-api-j248.onrender.com/health` after deployment. Set `PUBLIC_APP_URL` and `CORS_ORIGIN` to the deployed HTTPS web origin rather than localhost. A sleeping free Render instance can delay account loading and Truecaller/OTP callbacks; use an always-on instance or another always-on host before a public launch.
+
+### First store build
+
+Run these commands from `apps/mobile`:
+
+```bash
+npx expo-doctor
+npx eas-cli@latest build --platform android --profile production
+```
+
+The production profile produces an `.aab`; the APK in the repository is only for direct device installation. Upload the first AAB to Internal testing, complete App content and the store listing, and test authentication, Truecaller, Google sign-in, SMS review, camera/bill OCR, contacts, payment links, widgets, account deletion, and update delivery on the Play-installed build.
+
+After the first manual upload and service-account setup, subsequent internal uploads can use:
+
+```bash
+npx eas-cli@latest submit --platform android --profile internal --latest
+```
+
+For the final production draft:
+
+```bash
+npx eas-cli@latest submit --platform android --profile production --latest
+```
+
+The production submission is intentionally created as a draft. Review countries, release notes, policy declarations, and staged rollout in Play Console before publishing.
+
+### Play Console declarations
+
+- Complete the SMS and Call Log Permissions Declaration for `READ_SMS`, selecting **SMS-based money management**. Explain that SettleUp reads a bounded seven-day window on-device, filters financial debit/credit messages, uploads no raw SMS, requires review before creating a transaction, and retains only a salted handled-message fingerprint for the seven-day window.
+- Publish the operator-completed privacy policy from `docs/PRIVACY.md` at a public HTTPS URL. Add the operator identity, support email, deletion request route, retention periods, subprocessors, and jurisdiction before publishing.
+- Complete Data safety for phone number/account data, user-created financial entries, selected contacts, receipts, notification tokens, and optional SMS access. Match the answers to actual production providers and retention.
+- Complete App access with a working reviewer account or review instructions, Content rating, Target audience, Ads declaration, Financial features declaration where shown, and the account deletion URL.
+- Add the store icon, feature graphic, phone screenshots, short/full descriptions, support email, and privacy-policy URL.
+- Personal Play developer accounts created after 13 November 2023 must complete a closed test with at least 12 continuously opted-in testers for 14 days, then apply for production access.
+
+`READ_SMS` approval is case-by-case. If Google rejects the declaration, create a Play build without `READ_SMS` and the SMS inbox module; do not attempt to disguise the permission or its purpose.
+
+### OTA updates after the store build
+
+The store build must include `expo-updates`; old APKs cannot gain OTA support retroactively. For JavaScript, styling, and bundled-image changes that do not alter native code:
+
+```bash
+npx eas-cli@latest update --channel preview --environment preview --message "Describe the change"
+```
+
+Test that update on a preview build. Then publish the reviewed code to production:
+
+```bash
+npx eas-cli@latest update --channel production --environment production --message "Describe the change" --rollout-percentage 10
+```
+
+Increase the rollout with `npx eas-cli@latest update:edit`. Roll back with `npx eas-cli@latest update:rollback` if needed.
+
+Create a new Play Store build whenever native code or native configuration changes, including Expo SDK upgrades, installed native modules, permissions, widgets, package identifiers, app icons, notification configuration, Truecaller configuration, or Android resources. Increment `expo.version` before that build so the `appVersion` runtime policy prevents incompatible OTA delivery. EAS increments the Play `versionCode` separately.
+
 ## Verified in this environment
 
 The project passes TypeScript checking, PostgreSQL migration execution, 17 API integration tests, 35 domain/parser/contract tests, and an Expo web export. Browser verification covers desktop/phone journeys, photo persistence, itemisation, actual local Tesseract OCR, and JPEG camera capture with a simulated webcam. Native autolinking discovers the receipt scanner on Android and Apple and the SMS module on Android. Native OCR and hardware permission behavior still require a compiled development build and real-device verification.
