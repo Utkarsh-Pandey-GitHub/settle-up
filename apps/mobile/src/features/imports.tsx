@@ -617,17 +617,54 @@ function SmsContent({ accountId }: { accountId: string }) {
       [accountId],
     ),
     action = useAction(),
-    router = useRouter();
+    router = useRouter(),
+    c = useColors();
   const [suggestions, setSuggestions] = useState<ImportSuggestion[]>([]),
     [enabled, setEnabled] = useState(false),
     [custom, setCustom] = useState(false),
     [from, setFrom] = useState(""),
     [through, setThrough] = useState(""),
+    [search, setSearch] = useState(""),
+    [pending, setPending] = useState<{
+      fingerprint: string;
+      kind: "accept" | "reject" | "refresh";
+    } | null>(null),
     [history, setHistory] = useState<Record<string, SmsDecision>>({}),
     [editing, setEditing] = useState<string | null>(null),
     [editAmount, setEditAmount] = useState(""),
     [editTitle, setEditTitle] = useState("");
   const keys = useMemo(() => new Map<string, string>(), []);
+  const filteredSuggestions = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return suggestions;
+    return suggestions.filter((suggestion) =>
+      [
+        suggestion.title,
+        suggestion.reference,
+        suggestion.accountSuffix,
+        suggestion.direction,
+        String(suggestion.amountMinor / 100),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [search, suggestions]);
+  const perform = async (
+    kind: "accept" | "reject" | "refresh",
+    fingerprint: string,
+    work: () => Promise<void>,
+    success: string,
+  ) => {
+    if (pending) return;
+    setPending({ kind, fingerprint });
+    try {
+      await action.run(work, success);
+    } finally {
+      setPending(null);
+    }
+  };
   useEffect(() => {
     let live = true;
     if (provider.available())
@@ -666,14 +703,15 @@ function SmsContent({ accountId }: { accountId: string }) {
   }, [enabled, custom, provider, action.busy, editing]);
 
   return (
-    <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
-      <Heading>A second pair of eyes.</Heading>
-      <Label muted>
-        Review suggested transactions from financial messages. You stay in
-        control.
-      </Label>
-      <Card>
-        <YStack gap={16}>
+    <YStack gap={12} maxWidth={760} width="100%" alignSelf="center">
+      <YStack gap={2}>
+        <Heading size={24}>Bank SMS review</Heading>
+        <Label muted size={12}>
+          Confirm or dismiss suggested transactions.
+        </Label>
+      </YStack>
+      <Card style={{ padding: 14 }}>
+        <YStack gap={11}>
           {!provider.available() ? (
             <Notice>
               {Platform.OS === "ios"
@@ -684,13 +722,24 @@ function SmsContent({ accountId }: { accountId: string }) {
             </Notice>
           ) : (
             <>
-              <Notice>
-                With your permission, SettleUp reads bank expense SMS on this
-                phone. Raw messages stay here. Review amounts before accepting.
-                The weekly inbox covers today and the previous six days;
-                decisions expire when their messages leave that window. You can
-                revoke access in phone settings.
-              </Notice>
+              <XStack gap={9} alignItems="center">
+                <View
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 11,
+                    backgroundColor: c.soft,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Icon name="sms" size={18} color="#626078" />
+                </View>
+                <Label muted size={11} flex={1} lineHeight={16}>
+                  Messages stay on this phone. The weekly inbox covers today and
+                  the previous six days.
+                </Label>
+              </XStack>
               <XStack gap={8} flexWrap="wrap">
                 <Chip
                   selected={!custom}
@@ -740,28 +789,33 @@ function SmsContent({ accountId }: { accountId: string }) {
                 </YStack>
               )}
               <Button
-                loading={action.busy}
+                loading={pending?.kind === "refresh"}
                 disabled={action.busy}
                 onPress={() =>
-                  action.run(async () => {
-                    if (
-                      custom &&
-                      (!/^\d{4}-\d{2}-\d{2}$/.test(from) ||
-                        !/^\d{4}-\d{2}-\d{2}$/.test(through))
-                    )
-                      throw new Error("Enter both dates as YYYY-MM-DD.");
-                    if (!(await provider.requestPermission()))
-                      throw new Error(
-                        "SMS permission was declined. Manual entry is always available.",
+                  perform(
+                    "refresh",
+                    "inbox",
+                    async () => {
+                      if (
+                        custom &&
+                        (!/^\d{4}-\d{2}-\d{2}$/.test(from) ||
+                          !/^\d{4}-\d{2}-\d{2}$/.test(through))
+                      )
+                        throw new Error("Enter both dates as YYYY-MM-DD.");
+                      if (!(await provider.requestPermission()))
+                        throw new Error(
+                          "SMS permission was declined. Manual entry is always available.",
+                        );
+                      setSuggestions(
+                        await provider.review(
+                          custom ? { from, through } : undefined,
+                        ),
                       );
-                    setSuggestions(
-                      await provider.review(
-                        custom ? { from, through } : undefined,
-                      ),
-                    );
-                    setHistory(await provider.handled());
-                    setEnabled(true);
-                  }, "Review ready")
+                      setHistory(await provider.handled());
+                      setEnabled(true);
+                    },
+                    "Review ready",
+                  )
                 }
               >
                 {custom
@@ -785,24 +839,56 @@ function SmsContent({ accountId }: { accountId: string }) {
           )}
         </YStack>
       </Card>
-      {suggestions.map((s) => (
-        <Card key={s.fingerprint}>
-          <YStack gap={14}>
-            <Heading size={18}>{s.title}</Heading>
-            <Label>
-              {money(s.amountMinor)} · {s.direction.toLowerCase()}
-            </Label>
+      {!!suggestions.length && (
+        <Field
+          label="Search messages"
+          placeholder="Merchant, amount, reference or account"
+          value={search}
+          onChangeText={setSearch}
+        />
+      )}
+      {filteredSuggestions.map((s) => (
+        <Card key={s.fingerprint} style={{ padding: 14 }}>
+          <YStack gap={9}>
+            <XStack alignItems="center" gap={10}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  backgroundColor: s.direction === "CREDIT" ? c.mint : c.soft,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Icon
+                  name={s.direction === "CREDIT" ? "down" : "up"}
+                  size={18}
+                  color="#626078"
+                />
+              </View>
+              <YStack flex={1} gap={2}>
+                <Heading size={16}>{s.title}</Heading>
+                <Label muted size={10}>
+                  {new Date(s.occurredAt).toLocaleString()}
+                  {s.accountSuffix ? ` · A/c •${s.accountSuffix}` : ""}
+                </Label>
+              </YStack>
+              <YStack alignItems="flex-end" gap={2}>
+                <Label bold size={16}>
+                  {money(s.amountMinor)}
+                </Label>
+                <Label muted size={9}>
+                  {s.direction.toLowerCase()}
+                </Label>
+              </YStack>
+            </XStack>
             {s.direction === "CREDIT" && (
-              <Notice>
+              <Label muted size={11} lineHeight={16}>
                 Accept as personal money in only. If this is a loan repayment,
-                reject this suggestion and use Record repayment so the correct
-                debt is reduced.
-              </Notice>
+                use Record repayment instead.
+              </Label>
             )}
-            <Label muted size={11}>
-              {new Date(s.occurredAt).toLocaleString()}{" "}
-              {s.accountSuffix ? `· account ending ${s.accountSuffix}` : ""}
-            </Label>
             {editing === s.fingerprint && (
               <>
                 <Field
@@ -818,62 +904,73 @@ function SmsContent({ accountId }: { accountId: string }) {
                 />
               </>
             )}
-            <XStack gap={10} flexWrap="wrap">
+            <XStack gap={8} flexWrap="wrap" justifyContent="flex-end">
               <Button
-                loading={action.busy}
+                compact
+                loading={
+                  pending?.fingerprint === s.fingerprint &&
+                  pending.kind === "accept"
+                }
                 disabled={action.busy}
                 onPress={() =>
-                  action.run(async () => {
-                    if (!keys.has(s.fingerprint))
-                      keys.set(
-                        s.fingerprint,
-                        `${s.fingerprint.slice(0, 8)}-${s.fingerprint.slice(8, 12)}-4${s.fingerprint.slice(13, 16)}-8${s.fingerprint.slice(17, 20)}-${s.fingerprint.slice(20, 32)}`,
+                  perform(
+                    "accept",
+                    s.fingerprint,
+                    async () => {
+                      if (!keys.has(s.fingerprint))
+                        keys.set(
+                          s.fingerprint,
+                          `${s.fingerprint.slice(0, 8)}-${s.fingerprint.slice(8, 12)}-4${s.fingerprint.slice(13, 16)}-8${s.fingerprint.slice(17, 20)}-${s.fingerprint.slice(20, 32)}`,
+                        );
+                      await repository.create(accountId, {
+                        idempotencyKey: keys.get(s.fingerprint)!,
+                        title: editing === s.fingerprint ? editTitle : s.title,
+                        amountMinor:
+                          editing === s.fingerprint
+                            ? parseMoney(editAmount)
+                            : s.amountMinor,
+                        currency: "INR",
+                        type:
+                          s.direction === "CREDIT"
+                            ? "ADJUSTMENT"
+                            : "PERSONAL_EXPENSE",
+                        status: "SETTLED",
+                        occurredAt: s.occurredAt,
+                        paymentReference: s.reference,
+                        tagIds: [],
+                        participants: [],
+                        splitMethod: "EQUAL",
+                      });
+                      if (!custom) {
+                        await provider.markHandled(
+                          s.fingerprint,
+                          "ACCEPTED",
+                          s.occurredAt,
+                          {
+                            title:
+                              editing === s.fingerprint ? editTitle : s.title,
+                            amountMinor:
+                              editing === s.fingerprint
+                                ? parseMoney(editAmount)
+                                : s.amountMinor,
+                          },
+                        );
+                        setHistory(await provider.handled());
+                      }
+                      setSuggestions((items) =>
+                        items.filter((i) => i.fingerprint !== s.fingerprint),
                       );
-                    await repository.create(accountId, {
-                      idempotencyKey: keys.get(s.fingerprint)!,
-                      title: editing === s.fingerprint ? editTitle : s.title,
-                      amountMinor:
-                        editing === s.fingerprint
-                          ? parseMoney(editAmount)
-                          : s.amountMinor,
-                      currency: "INR",
-                      type:
-                        s.direction === "CREDIT"
-                          ? "ADJUSTMENT"
-                          : "PERSONAL_EXPENSE",
-                      status: "SETTLED",
-                      occurredAt: s.occurredAt,
-                      paymentReference: s.reference,
-                      tagIds: [],
-                      participants: [],
-                      splitMethod: "EQUAL",
-                    });
-                    if (!custom) {
-                      await provider.markHandled(
-                        s.fingerprint,
-                        "ACCEPTED",
-                        s.occurredAt,
-                        {
-                          title:
-                            editing === s.fingerprint ? editTitle : s.title,
-                          amountMinor:
-                            editing === s.fingerprint
-                              ? parseMoney(editAmount)
-                              : s.amountMinor,
-                        },
-                      );
-                      setHistory(await provider.handled());
-                    }
-                    setSuggestions((items) =>
-                      items.filter((i) => i.fingerprint !== s.fingerprint),
-                    );
-                  }, "Suggestion accepted")
+                    },
+                    "Suggestion accepted",
+                  )
                 }
               >
                 Accept
               </Button>
               <Button
                 secondary
+                compact
+                disabled={action.busy}
                 onPress={() => {
                   setEditing(s.fingerprint);
                   setEditAmount(String(s.amountMinor / 100));
@@ -884,23 +981,32 @@ function SmsContent({ accountId }: { accountId: string }) {
               </Button>
               <Button
                 secondary
-                loading={action.busy}
+                compact
+                loading={
+                  pending?.fingerprint === s.fingerprint &&
+                  pending.kind === "reject"
+                }
                 disabled={action.busy}
                 onPress={() =>
-                  action.run(async () => {
-                    if (!custom) {
-                      await provider.markHandled(
-                        s.fingerprint,
-                        "REJECTED",
-                        s.occurredAt,
-                        { title: s.title, amountMinor: s.amountMinor },
+                  perform(
+                    "reject",
+                    s.fingerprint,
+                    async () => {
+                      if (!custom) {
+                        await provider.markHandled(
+                          s.fingerprint,
+                          "REJECTED",
+                          s.occurredAt,
+                          { title: s.title, amountMinor: s.amountMinor },
+                        );
+                        setHistory(await provider.handled());
+                      }
+                      setSuggestions((items) =>
+                        items.filter((i) => i.fingerprint !== s.fingerprint),
                       );
-                      setHistory(await provider.handled());
-                    }
-                    setSuggestions((items) =>
-                      items.filter((i) => i.fingerprint !== s.fingerprint),
-                    );
-                  }, "Suggestion dismissed")
+                    },
+                    "Suggestion dismissed",
+                  )
                 }
               >
                 Reject
@@ -909,6 +1015,12 @@ function SmsContent({ accountId }: { accountId: string }) {
           </YStack>
         </Card>
       ))}
+      {!!suggestions.length && !filteredSuggestions.length && (
+        <Empty
+          title="No matching messages"
+          detail="Try a merchant name, amount, reference, or account digits."
+        />
+      )}
       {!custom && Object.keys(history).length > 0 && (
         <Card>
           <YStack gap={12}>
