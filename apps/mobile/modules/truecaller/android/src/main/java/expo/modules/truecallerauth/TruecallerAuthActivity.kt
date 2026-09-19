@@ -9,6 +9,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import com.truecaller.android.sdk.oAuth.*
 import expo.modules.kotlin.Promise
+import java.security.MessageDigest
 import java.security.SecureRandom
 
 class TruecallerAuthActivity : FragmentActivity() {
@@ -38,8 +39,9 @@ class TruecallerAuthActivity : FragmentActivity() {
           finish()
         }
         override fun onFailure(error: TcOAuthError) {
-          Log.w("SettleUpTruecaller", "OAuth failure type=${error.javaClass.simpleName} code=${error.errorCode} message=${error.errorMessage}")
-          fail("TRUECALLER_${error.errorCode}", "Truecaller verification failed (code ${error.errorCode}). Check the app credential and try again.")
+          val sha1 = getAppSigningSha1()
+          Log.w("SettleUpTruecaller", "OAuth failure type=${error.javaClass.simpleName} code=${error.errorCode} message=${error.errorMessage} appSHA1=$sha1")
+          fail("TRUECALLER_${error.errorCode}", "Truecaller failed (code ${error.errorCode}). App SHA-1: $sha1")
         }
         override fun onVerificationRequired(error: TcOAuthError?) {
           error?.let { Log.w("SettleUpTruecaller", "Verification required type=${it.javaClass.simpleName} code=${it.errorCode} message=${it.errorMessage}") }
@@ -94,5 +96,26 @@ class TruecallerAuthActivity : FragmentActivity() {
     if (initialized) TcSdk.clear()
     if (pending != null) { pending?.reject("CANCELLED", "Verification was closed. Please try again.", null); pending = null }
     super.onDestroy()
+  }
+  private fun getAppSigningSha1(): String {
+    return try {
+      val info = if (android.os.Build.VERSION.SDK_INT >= 28) {
+        packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
+      } else {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNATURES)
+      }
+      val sig = if (android.os.Build.VERSION.SDK_INT >= 28) {
+        info.signingInfo?.apkContentsSigners?.firstOrNull()
+      } else {
+        @Suppress("DEPRECATION")
+        info.signatures?.firstOrNull()
+      }
+      if (sig == null) return "unknown"
+      val digest = MessageDigest.getInstance("SHA-1").digest(sig.toByteArray())
+      digest.joinToString(":") { "%02X".format(it) }
+    } catch (e: Exception) {
+      "error: ${e.message}"
+    }
   }
 }
