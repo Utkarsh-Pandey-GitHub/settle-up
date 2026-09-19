@@ -153,6 +153,11 @@ export async function createApp() {
       try {
         verified = await verifyTruecallerAuthorization(proof, clientId);
       } catch (error) {
+        // Never log authorization proofs, provider tokens, or profile contents.
+        req.log.warn({
+          code: error instanceof TruecallerVerificationError ? error.code : "TRUECALLER_INVALID_RESPONSE",
+          clientId,
+        }, "Truecaller server verification failed");
         if (error instanceof TruecallerVerificationError)
           throw new DomainError(error.code, error.message, error.status);
         throw new DomainError(

@@ -3,7 +3,7 @@
     "name": "SettleUp",
     "slug": "settleup",
     "scheme": "settleup",
-    "version": "1.0.0",
+    "version": "1.0.7",
     "runtimeVersion": {
       "policy": "appVersion"
     },

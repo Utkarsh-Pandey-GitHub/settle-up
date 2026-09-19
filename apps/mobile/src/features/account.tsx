@@ -295,6 +295,12 @@ export function AuthScreen() {
       );
       await acceptSession(session);
     } catch (err: any) {
+      // The Truecaller footer is an intentional switch to our phone form.
+      if (err?.code === "TRUECALLER_14") {
+        setStage("phone");
+        setTruecallerHint("Enter another mobile number below to receive an SMS code.");
+        return;
+      }
       setTruecallerHint(
         err?.message ||
           "Truecaller could not verify this phone. You can use an SMS code instead.",

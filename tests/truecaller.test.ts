@@ -64,7 +64,7 @@ describe("Truecaller server verification", () => {
       .mockResolvedValue(new Response("", { status: 403 }));
     await expect(
       verifyTruecallerAuthorization(proof, "client", fetcher),
-    ).rejects.toThrow("expired or failed");
+    ).rejects.toMatchObject({ code: "TRUECALLER_TOKEN_REJECTED", status: 401 });
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it("does not contact Truecaller without configuration", async () => {

@@ -47,8 +47,10 @@ export async function verifyTruecallerAuthorization(
     },
   );
   if (!tokenResponse.ok)
-    throw new Error(
+    throw new TruecallerVerificationError(
+      "TRUECALLER_TOKEN_REJECTED",
       "Truecaller verification expired or failed. Please try again.",
+      401,
     );
   const token = z
     .object({
@@ -64,8 +66,10 @@ export async function verifyTruecallerAuthorization(
     },
   );
   if (!profileResponse.ok)
-    throw new Error(
+    throw new TruecallerVerificationError(
+      "TRUECALLER_PROFILE_REJECTED",
       "Could not verify your Truecaller profile. Use phone verification.",
+      401,
     );
   const profile = z
     .object({
