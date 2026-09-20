@@ -31,7 +31,7 @@ import {
 } from "./WalkthroughTour";
 const navigation: { label: string; path: string; icon: IconName }[] = [
   { label: "Overview", path: "/", icon: "home" },
-  { label: "Activity", path: "/activity", icon: "activity" },
+  { label: "Transactions", path: "/activity", icon: "activity" },
   { label: "Groups", path: "/groups", icon: "groups" },
   { label: "Analytics", path: "/analytics", icon: "chart" },
   { label: "Goals", path: "/goals", icon: "goal" },
@@ -330,7 +330,7 @@ export function Shell({
               style={{
                 minHeight: desktop ? 80 : 52,
                 paddingTop: desktop ? 0 : insets.top,
-                paddingHorizontal: desktop ? 39 : 21,
+                paddingHorizontal: desktop ? 39 : width < 360 ? 12 : 21,
                 borderBottomWidth: 1,
                 borderColor: c.line,
                 backgroundColor: c.card,
@@ -366,7 +366,7 @@ export function Shell({
                   </View>
                 )}
               </XStack>
-              <XStack alignItems="center" gap={desktop ? 17 : 10}>
+              <XStack alignItems="center" gap={desktop ? 17 : width < 360 ? 4 : 10}>
                 {desktop && (
                   <XStack gap={8} alignItems="center">
                     <Icon name="calendar" size={16} />
@@ -380,14 +380,6 @@ export function Shell({
                     </Label>
                   </XStack>
                 )}
-                {path !== "/add" && (
-                  <IconButton
-                    name="plus"
-                    label="New expense"
-                    borderless
-                    onPress={() => go("/add")}
-                  />
-                )}
                 {!desktop && (
                   <IconButton
                     name="sms"
@@ -397,10 +389,10 @@ export function Shell({
                   />
                 )}
                 <IconButton
-                  name="bell"
-                  label="Ledger activity"
+                  name="link"
+                  label="Payment links"
                   borderless
-                  onPress={() => go("/activity")}
+                  onPress={() => go("/payment-links")}
                 />
                 <Pressable
                   onPress={() => go("/accounts")}
@@ -413,14 +405,17 @@ export function Shell({
                     alignItems: "center",
                   }}
                 >
-                  <Avatar name={account?.name ?? "Account"} size={37} />
+                  <Avatar
+                    name={account?.name ?? "Account"}
+                    size={width < 360 ? 32 : 37}
+                  />
                 </Pressable>
               </XStack>
             </View>
             <ScrollView
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{
-                padding: desktop ? 36 : 20,
+                padding: desktop ? 36 : width < 360 ? 14 : 20,
                 paddingBottom: desktop ? 40 : 110,
                 maxWidth: 1510,
                 width: "100%",
@@ -485,7 +480,11 @@ export function Shell({
               >
                 {[
                   { label: "Home", path: "/", icon: "home" },
-                  { label: "Activity", path: "/activity", icon: "activity" },
+                  {
+                    label: "Transactions",
+                    path: "/activity",
+                    icon: "activity",
+                  },
                   { label: "Scan QR", path: "/scan", icon: "scan" },
                   { label: "Analytics", path: "/analytics", icon: "chart" },
                   { label: "Groups", path: "/groups", icon: "groups" },

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Platform, Share, View, Pressable } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
-import { Redirect, useRouter, useLocalSearchParams } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { XStack, YStack } from "tamagui";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@settleup/contracts";
@@ -32,7 +32,6 @@ import { request, extra } from "../data/repository";
 import { useAction } from "../data/hooks";
 import { DataScreen, SectionTitle } from "./overview";
 import {
-  chooseContact,
   enableNotifications,
   disableLocalNotifications,
   requestOnboardingPermissions,
@@ -244,6 +243,13 @@ export function AuthScreen() {
     session: Session & { suggestedName?: string },
   ) => {
     await useSession.getState().add(session);
+    if (session.needsOnboarding) {
+      setVerifiedId(session.account.id);
+      setName(session.suggestedName?.trim() || session.account.name);
+      setCurrency(session.account.currency);
+      setStage("profile");
+      return;
+    }
     if (
       session.suggestedName?.trim() &&
       session.account.name === "New friend"
@@ -298,7 +304,9 @@ export function AuthScreen() {
       // The Truecaller footer is an intentional switch to our phone form.
       if (err?.code === "TRUECALLER_14") {
         setStage("phone");
-        setTruecallerHint("Enter another mobile number below to receive an SMS code.");
+        setTruecallerHint(
+          "Enter another mobile number below to receive an SMS code.",
+        );
         return;
       }
       setTruecallerHint(
@@ -877,18 +885,15 @@ export function SettingsScreen() {
                 Disable notifications
               </Button>
               <Button secondary onPress={() => router.push("/contacts")}>
-                Contacts & peers
-              </Button>
-              <Button secondary onPress={() => router.push("/payment-links")}>
-                Payment links
+                Saved contacts
               </Button>
               <Button secondary onPress={() => setBlockOpen((open) => !open)}>
-                {blockOpen ? "Hide blocked peers" : "Block a peer"}
+                {blockOpen ? "Hide saved contacts" : "Block a saved contact"}
               </Button>
               {blockOpen && (
                 <YStack gap={10}>
                   <Field
-                    label="Search peers"
+                    label="Search saved contacts"
                     placeholder="Search by name or phone"
                     value={blockSearch}
                     onChangeText={(value) => {
@@ -896,25 +901,25 @@ export function SettingsScreen() {
                       setBlockPage(0);
                     }}
                   />
-                  {d.peers
-                    .filter((peer) =>
-                      `${peer.name} ${peer.phone ?? ""}`
+                  {d.savedContacts
+                    .filter((contact) =>
+                      `${contact.name} ${contact.phone ?? ""}`
                         .toLowerCase()
                         .includes(blockSearch.toLowerCase()),
                     )
                     .slice(blockPage * 4, blockPage * 4 + 4)
-                    .map((peer) => (
+                    .map((contact) => (
                       <XStack
-                        key={peer.id}
+                        key={contact.id}
                         alignItems="center"
                         justifyContent="space-between"
                         paddingVertical={6}
                       >
                         <YStack flex={1}>
-                          <Label bold>{peer.name}</Label>
-                          {!!peer.phone && (
+                          <Label bold>{contact.name}</Label>
+                          {!!contact.phone && (
                             <Label muted size={11}>
-                              {peer.phone}
+                              {contact.phone}
                             </Label>
                           )}
                         </YStack>
@@ -925,9 +930,9 @@ export function SettingsScreen() {
                             action.run(
                               () =>
                                 extra(d.account.id, "/blocks", {
-                                  userId: peer.id,
+                                  userId: contact.id,
                                 }),
-                              `${peer.name} blocked`,
+                              `${contact.name} blocked`,
                             )
                           }
                         >
@@ -948,12 +953,12 @@ export function SettingsScreen() {
                     </Button>
                     <Label muted size={11}>
                       Showing {blockPage * 4 + 1}–
-                      {Math.min((blockPage + 1) * 4, d.peers.length)}
+                      {Math.min((blockPage + 1) * 4, d.savedContacts.length)}
                     </Label>
                     <Button
                       secondary
                       compact
-                      disabled={(blockPage + 1) * 4 >= d.peers.length}
+                      disabled={(blockPage + 1) * 4 >= d.savedContacts.length}
                       onPress={() => setBlockPage((page) => page + 1)}
                     >
                       Next
@@ -989,16 +994,16 @@ export function SettingsScreen() {
                 Disable contact discovery
               </Button>
               <Label bold size={13}>
-                Block a peer
+                Block a saved contact
               </Label>
               <XStack gap={8} flexWrap="wrap">
-                {d.peers.map((p) => (
+                {d.savedContacts.map((p) => (
                   <Chip
                     key={p.id}
                     onPress={() =>
                       action.run(
                         () => extra(d.account.id, "/blocks", { userId: p.id }),
-                        "Peer blocked",
+                        "Saved contact blocked",
                       )
                     }
                   >
@@ -1079,98 +1084,36 @@ export function SettingsScreen() {
   );
 }
 export function ContactsScreen() {
-  const [name, setName] = useState(""),
-    [phone, setPhone] = useState(""),
-    [invite, setInvite] = useState(""),
-    action = useAction();
   return (
     <DataScreen>
       {(d) => (
         <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
-          <Heading>Your people, at your pace.</Heading>
+          <Heading>Saved contacts</Heading>
           <Notice>
-            Choose one contact at a time. Your address book is never uploaded.
-            New peers stay unverified until they accept an invitation using the
-            same verified phone number.
+            These are people who share a group or transaction with you. Add a
+            phone contact while creating a group; SettleUp creates an unverified
+            account for them until they sign in with that number.
           </Notice>
-          <Button
-            secondary
-            onPress={() =>
-              action.run(async () => {
-                const contact = await chooseContact();
-                if (contact) {
-                  setName(contact.name);
-                  setPhone(contact.phone);
-                }
-              }, "Contact selected")
-            }
-          >
-            Choose a phone contact
-          </Button>
-          <Card>
-            <YStack gap={15}>
-              <Field label="Name" value={name} onChangeText={setName} />
-              <Field
-                label="Phone number"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-              />
-              <Button
-                loading={action.busy}
-                disabled={action.busy}
-                onPress={() =>
-                  action.run(async () => {
-                    if (!name.trim()) throw new Error("Enter a name.");
-                    await extra(d.account.id, "/peers", {
-                      name,
-                      phone: normalizePhone(phone),
-                    });
-                    setName("");
-                    setPhone("");
-                  }, "Peer saved")
-                }
-              >
-                Save peer
-              </Button>
-            </YStack>
-          </Card>
-          {d.peers.map((p) => (
+          {d.savedContacts.map((p) => (
             <Card key={p.id}>
               <XStack alignItems="center" gap={12}>
                 <Avatar name={p.name} />
                 <YStack flex={1}>
                   <Label bold>{p.name}</Label>
                   <Label muted size={12}>
-                    {p.phone ?? "Group member"}
+                    {p.phone ?? "Shared transaction"} ·{" "}
+                    {p.verified ? "Verified" : "Not verified yet"}
                   </Label>
                 </YStack>
-                {!!p.phone && (
-                  <Button
-                    secondary
-                    compact
-                    onPress={() =>
-                      action.run(async () => {
-                        const result = await extra(
-                          d.account.id,
-                          `/peers/${p.id}/invite`,
-                          {},
-                        );
-                        setInvite(result.url);
-                      }, "Invitation created. Share it yourself when ready.")
-                    }
-                  >
-                    Create invite
-                  </Button>
-                )}
               </XStack>
             </Card>
           ))}
-          {!!invite && (
-            <Field label="Invitation link" value={invite} editable={false} />
+          {!d.savedContacts.length && (
+            <Empty
+              title="No saved contacts yet"
+              detail="Create a group and choose a phone contact to add someone."
+            />
           )}
-          {!!action.error && <Notice error>{action.error}</Notice>}
-          {!!action.success && <Notice>{action.success}</Notice>}
         </YStack>
       )}
     </DataScreen>
@@ -1182,7 +1125,7 @@ export function NotificationsScreen() {
       {(d) => (
         <YStack gap={22}>
           <Heading>A little heads-up.</Heading>
-          <Label muted>Your recent ledger activity.</Label>
+          <Label muted>Your recent ledger changes.</Label>
           <Card>
             {d.activity.length ? (
               d.activity.map((a) => (
@@ -1200,35 +1143,6 @@ export function NotificationsScreen() {
               />
             )}
           </Card>
-        </YStack>
-      )}
-    </DataScreen>
-  );
-}
-export function InviteScreen() {
-  const { token } = useLocalSearchParams<{ token: string }>(),
-    action = useAction();
-  return (
-    <DataScreen>
-      {(d) => (
-        <YStack gap={20}>
-          <Heading>A friend saved you a spot.</Heading>
-          <Notice>
-            Accepting links your verified phone number to this invitation. The
-            intended number is never shown to visitors.
-          </Notice>
-          <Button
-            onPress={() =>
-              action.run(
-                () => extra(d.account.id, "/invites/claim", { token }),
-                "Invitation accepted",
-              )
-            }
-          >
-            Accept invitation
-          </Button>
-          {!!action.error && <Notice error>{action.error}</Notice>}
-          {!!action.success && <Notice>{action.success}</Notice>}
         </YStack>
       )}
     </DataScreen>

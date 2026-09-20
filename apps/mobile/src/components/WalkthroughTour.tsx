@@ -57,17 +57,17 @@ const steps = [
   {
     title: "Your top controls",
     detail:
-      "SettleUp identifies your home space. Plus adds an expense. SMS lets you review bank debits. The bell opens ledger activity. Your avatar switches accounts and leads to Settings.",
+      "SettleUp identifies your home space. SMS lets you review bank debits. The link icon creates payment links. Your avatar switches accounts and leads to Settings.",
   },
   {
     title: "Your five main destinations",
     detail:
-      "Home shows spending and balances. Activity lists transactions. Scan QR opens the payment scanner. Analytics shows spending trends. Groups opens shared ledgers and members.",
+      "Home shows spending and balances. Transactions lists your records. Scan QR opens the payment scanner. Analytics shows spending trends. Groups opens shared ledgers and members.",
   },
   {
     title: "Quick actions from Home",
     detail:
-      "Add expense records a transaction or split. Record payment logs a repayment made outside the app. Scan bill opens the camera to capture a receipt and extract its amount and items.",
+      "Add expense records a transaction or split. Settle debts logs a repayment made outside the app. Scan bill opens the camera to capture a receipt and extract its amount and items.",
   },
   {
     title: "Widgets for quick access",
@@ -79,14 +79,13 @@ const steps = [
 const pointers: { icon: IconName; text: string }[][] = [
   [
     { icon: "home", text: "SettleUp — your home space." },
-    { icon: "plus", text: "Plus — add an expense or split." },
     { icon: "sms", text: "SMS — review bank debits." },
-    { icon: "bell", text: "Bell — view ledger activity." },
+    { icon: "link", text: "Link — create or open payment links." },
     { icon: "groups", text: "Avatar — accounts and Settings." },
   ],
   [
     { icon: "home", text: "Home — spending and balances." },
-    { icon: "activity", text: "Activity — your transactions." },
+    { icon: "activity", text: "Transactions — your money records." },
     { icon: "scan", text: "Scan QR — scan a payment code." },
     { icon: "chart", text: "Analytics — spending trends." },
     { icon: "groups", text: "Groups — shared ledgers and members." },
@@ -95,7 +94,7 @@ const pointers: { icon: IconName; text: string }[][] = [
     { icon: "plus", text: "Add expense — record or split a transaction." },
     {
       icon: "arrow",
-      text: "Record payment — log a repayment made outside the app.",
+      text: "Settle debts — log a repayment made outside the app.",
     },
     {
       icon: "camera",

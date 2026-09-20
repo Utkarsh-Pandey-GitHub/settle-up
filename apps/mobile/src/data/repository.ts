@@ -31,6 +31,20 @@ export const uuid = () => Crypto.randomUUID();
 export const API_URL = (
   process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000"
 ).replace(/\/+$/, "");
+const dashboardCacheKey = (accountId: string) =>
+  `settleup.dashboard.v1.${accountId}`;
+export async function readCachedDashboard(accountId: string) {
+  const value = await AsyncStorage.getItem(dashboardCacheKey(accountId));
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as Dashboard;
+  } catch {
+    await AsyncStorage.removeItem(dashboardCacheKey(accountId));
+    return undefined;
+  }
+}
+export const clearCachedDashboard = (accountId: string) =>
+  AsyncStorage.removeItem(dashboardCacheKey(accountId));
 
 const refreshing = new Map<string, Promise<Session>>();
 export async function request<T>(
@@ -44,7 +58,9 @@ export async function request<T>(
   const controller = new AbortController();
   // A sleeping hosted API can need a minute to start, before provider verification.
   const timeoutMs =
-    path === "/auth/truecaller"
+    path === "/bill/extract"
+      ? 65000
+      : path === "/auth/truecaller"
       ? 30000
       : path.startsWith("/auth/")
         ? 90000
@@ -441,12 +457,12 @@ export class DemoRepository implements AppRepository {
     if (path === "/groups") {
       const selected = new Set<string>(body.memberIds ?? []);
       for (const contact of body.contacts ?? []) {
-        let peer = d.peers.find((p) => p.phone === contact.phone);
-        if (!peer) {
-          peer = { ...contact, id: uuid() };
-          d.peers.push(peer!);
-        }
-        selected.add(peer!.id);
+        const existing = d.savedContacts.find(
+          (entry) => entry.phone === contact.phone,
+        );
+        const saved = existing ?? { ...contact, id: uuid(), verified: false };
+        if (!existing) d.savedContacts.push(saved);
+        selected.add(saved.id);
       }
       const groupId = uuid();
       d.ledgers.push({
@@ -457,12 +473,29 @@ export class DemoRepository implements AppRepository {
         currency: body.currency,
         members: [
           { id, name: d.account.name, role: "OWNER" },
-          ...d.peers
+          ...d.savedContacts
             .filter((p) => selected.has(p.id))
             .map((p) => ({ ...p, role: "MEMBER" })),
         ],
         archived: false,
       });
+    } else if (path === "/transactions/assign-group") {
+      const ledger = d.ledgers.find((entry) => entry.id === body.ledgerId);
+      if (!ledger) throw new Error("Group unavailable.");
+      const selected = new Set(body.ids);
+      d.transactions.forEach((transaction) => {
+        if (selected.has(transaction.id)) transaction.ledgerId = ledger.id;
+      });
+      d.activity.unshift(
+        ...d.transactions
+          .filter((transaction) => selected.has(transaction.id))
+          .map((transaction) => ({
+            id: uuid(),
+            ledgerId: ledger.id,
+            message: `${transaction.title} moved to ${ledger.name}`,
+            createdAt: new Date().toISOString(),
+          })),
+      );
     } else if (path === "/tags")
       d.tags.push({ id: uuid(), ...body, archived: false });
     else if (path.startsWith("/tags/")) {
@@ -470,11 +503,25 @@ export class DemoRepository implements AppRepository {
       if (t) Object.assign(t, body);
     } else if (path.startsWith("/goals/"))
       d.goals = d.goals.filter((g) => g.id !== path.split("/")[2]);
-    else if (path.startsWith("/ledgers/")) {
+    else if (path.includes("/members/") && method === "DELETE") {
+      const [, , groupId, , memberId] = path.split("/");
+      const ledger = d.ledgers.find((entry) => entry.groupId === groupId);
+      if (ledger) {
+        const member = ledger.members.find((entry) => entry.id === memberId);
+        ledger.members = ledger.members.filter(
+          (entry) => entry.id !== memberId,
+        );
+        d.activity.unshift({
+          id: uuid(),
+          ledgerId: ledger.id,
+          message: `${member?.name ?? "A member"} was removed from the group`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    } else if (path.startsWith("/ledgers/")) {
       const l = d.ledgers.find((l) => l.id === path.split("/")[2]);
       if (l) Object.assign(l, body);
-    } else if (path === "/peers") d.peers.push({ id: uuid(), ...body });
-    else if (path === "/blocks") return { ok: true };
+    } else if (path === "/blocks") return { ok: true };
     else if (path === "/profile") Object.assign(d.account, body);
     else if (path === "/notifications") {
       if (!body) return d.activity;
@@ -494,10 +541,6 @@ export class DemoRepository implements AppRepository {
     else if (path === "/account" && method === "DELETE") {
       await AsyncStorage.removeItem(`settleup.demo.v1.${id}`);
       cache.delete(id);
-      const photoKeys = (await AsyncStorage.getAllKeys()).filter((key) =>
-        key.startsWith(`settleup.demo.bill.${id}.`),
-      );
-      if (photoKeys.length) await AsyncStorage.multiRemove(photoKeys);
       return { ok: true };
     } else if (path === "/sessions") return [];
     else throw new Error("This security feature requires API mode.");
@@ -506,8 +549,14 @@ export class DemoRepository implements AppRepository {
   }
 }
 class ApiRepository implements AppRepository {
-  dashboard = (accountId: string) =>
-    request<Dashboard>("/dashboard", { accountId });
+  dashboard = async (accountId: string) => {
+    const dashboard = await request<Dashboard>("/dashboard", { accountId });
+    await AsyncStorage.setItem(
+      dashboardCacheKey(accountId),
+      JSON.stringify(dashboard),
+    );
+    return dashboard;
+  };
   create = (accountId: string, body: CreateTransaction) =>
     request("/transactions", { accountId, body });
   settle = (accountId: string, body: CreateSettlement) =>
@@ -540,15 +589,19 @@ class ApiRepository implements AppRepository {
 export const repository: AppRepository = DEMO
   ? new DemoRepository()
   : new ApiRepository();
-export const extra = (
+export const extra = async (
   accountId: string,
   path: string,
   body?: unknown,
   method?: string,
-) =>
-  DEMO
-    ? (repository as DemoRepository).extra(accountId, path, body, method)
-    : request<any>(path, { accountId, body, method });
+) => {
+  const result = DEMO
+    ? await (repository as DemoRepository).extra(accountId, path, body, method)
+    : await request<any>(path, { accountId, body, method });
+  if (path === "/account" && method === "DELETE")
+    await clearCachedDashboard(accountId);
+  return result;
+};
 export async function sharedSnapshot(
   token: string,
   accountId?: string,
@@ -558,89 +611,4 @@ export async function sharedSnapshot(
   if (!s || s.revoked || s.expiresAt <= new Date().toISOString())
     throw new Error("This demo link is unavailable or expired.");
   return s.payload;
-}
-
-// Demo photos are device-local; API photos reuse the existing private attachment flow.
-export async function getDemoBillPhoto(
-  accountId: string,
-  transactionId: string,
-) {
-  const d = await demoLoad(accountId);
-  if (!d.transactions.some((t) => t.id === transactionId))
-    throw new Error("Expense unavailable.");
-  return AsyncStorage.getItem(
-    `settleup.demo.bill.${accountId}.${transactionId}`,
-  );
-}
-const billUploads = new Map<
-  string,
-  { id: string; uploadUrl: string; uploaded: boolean }
->();
-export async function saveBillPhoto(
-  accountId: string,
-  transactionId: string,
-  photo: { uri: string; contentType: string },
-) {
-  const blob = await (await fetch(photo.uri)).blob();
-  if (!blob.size || blob.size > 10485760)
-    throw new Error("Bill photos must be under 10 MB.");
-  if (DEMO) {
-    const d = await demoLoad(accountId);
-    if (!d.transactions.some((t) => t.id === transactionId))
-      throw new Error("Expense unavailable.");
-    const dataUri = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error("Could not read the photo."));
-      reader.readAsDataURL(blob);
-    });
-    await AsyncStorage.setItem(
-      `settleup.demo.bill.${accountId}.${transactionId}`,
-      dataUri,
-    );
-    return;
-  }
-  const key = `${accountId}:${transactionId}`;
-  let upload = billUploads.get(key);
-  if (!upload) {
-    upload = {
-      ...(await extra(accountId, `/transactions/${transactionId}/attachments`, {
-        contentType: photo.contentType,
-        size: blob.size,
-      })),
-      uploaded: false,
-    };
-    billUploads.set(key, upload!);
-  }
-  if (!upload!.uploaded) {
-    const response = await fetch(upload!.uploadUrl, {
-      method: "PUT",
-      headers: { "content-type": photo.contentType },
-      body: blob,
-    });
-    if (!response.ok) {
-      const checked = await extra(
-        accountId,
-        `/attachments/${upload!.id}/complete`,
-        {},
-      );
-      if (checked.state !== "READY")
-        throw new Error(
-          "Photo upload failed. Try again, or attach a new photo from the saved expense.",
-        );
-    }
-    upload!.uploaded = true;
-  }
-  const result = await extra(
-    accountId,
-    `/attachments/${upload!.id}/complete`,
-    {},
-  );
-  if (result?.state !== "READY")
-    throw new Error(
-      result?.state === "REJECTED"
-        ? "This photo was rejected. Attach a valid photo from the saved expense."
-        : "The photo is awaiting its storage check. Retry shortly.",
-    );
-  billUploads.delete(key);
 }

@@ -26,44 +26,31 @@ EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=<public Android OAuth client ID>
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=<public web OAuth client ID, if Google sign-in uses it>
 ```
 
-Do not put `JWT_SECRET`, `OTP_PEPPER`, database credentials, Supabase secret/service-role keys, Stytch secrets, or Google service-account JSON in any `EXPO_PUBLIC_` variable. Do not set `EXPO_PUBLIC_OPENROUTER_API_KEY` in production; a mobile client cannot keep it secret, and bill scanning falls back to local OCR when it is absent.
+Do not put `JWT_SECRET`, `OTP_PEPPER`, database credentials, Supabase secret/service-role keys, Stytch secrets, Google service-account JSON, or `OPENROUTER_API_KEY` in any `EXPO_PUBLIC_` variable. Bill scanning sends the selected image through the authenticated API for one-time vision extraction; the app does not store it as a receipt.
 
 ### Production API gate
 
-Before inviting Play testers, rotate every credential that has ever been pasted into chat or another public channel, including the database password, Supabase secret key, Stytch secret, `JWT_SECRET`, and `OTP_PEPPER`. Update Render with the rotated values and set `NODE_ENV=production`. Keep secrets only in Render's encrypted environment settings.
+Before inviting Play testers, rotate every credential that has ever been pasted into chat or another public channel, including the database password, Supabase secret key, Stytch secret, OpenRouter key, `JWT_SECRET`, and `OTP_PEPPER`. Update Render with the rotated values, add `OPENROUTER_API_KEY` and `BILL_VISION_MODEL=openrouter/free`, and set `NODE_ENV=production`. Keep secrets only in Render's encrypted environment settings.
 
 Use the Supabase session-pooler URL for `DATABASE_URL`, run `npm run db:migrate`, and verify `https://settleup-api-j248.onrender.com/health` after deployment. Set `PUBLIC_APP_URL` and `CORS_ORIGIN` to the deployed HTTPS web origin rather than localhost. A sleeping free Render instance can delay account loading and Truecaller/OTP callbacks; use an always-on instance or another always-on host before a public launch.
 
 ### First store build
 
-Run these commands from `apps/mobile`:
+Run these commands locally from the repository root:
 
 ```bash
 npx expo-doctor
-npx eas-cli@latest build --platform android --profile production
+cd apps/mobile/android
+./gradlew clean bundleRelease
 ```
 
-The production profile produces an `.aab`; the APK in the repository is only for direct device installation. Upload the first AAB to Internal testing, complete App content and the store listing, and test authentication, Truecaller, Google sign-in, SMS review, camera/bill OCR, contacts, payment links, widgets, account deletion, and update delivery on the Play-installed build.
-
-After the first manual upload and service-account setup, subsequent internal uploads can use:
-
-```bash
-npx eas-cli@latest submit --platform android --profile internal --latest
-```
-
-For the final production draft:
-
-```bash
-npx eas-cli@latest submit --platform android --profile production --latest
-```
-
-The production submission is intentionally created as a draft. Review countries, release notes, policy declarations, and staged rollout in Play Console before publishing.
+The bundle is written to `apps/mobile/android/app/build/outputs/bundle/release/app-release.aab`. Upload it manually to Internal testing, complete App content and the store listing, and test authentication, Truecaller, Google sign-in, SMS review, bill vision, contacts, payment links, widgets, account deletion, and OTA delivery on the Play-installed build. Increment both the visible version and Android `versionCode` before every later Play upload.
 
 ### Play Console declarations
 
 - Complete the SMS and Call Log Permissions Declaration for `READ_SMS`, selecting **SMS-based money management**. Explain that SettleUp reads a bounded seven-day window on-device, filters financial debit/credit messages, uploads no raw SMS, requires review before creating a transaction, and retains only a salted handled-message fingerprint for the seven-day window.
 - Publish the operator-completed privacy policy from `docs/PRIVACY.md` at a public HTTPS URL. Add the operator identity, support email, deletion request route, retention periods, subprocessors, and jurisdiction before publishing.
-- Complete Data safety for phone number/account data, user-created financial entries, selected contacts, receipts, notification tokens, and optional SMS access. Match the answers to actual production providers and retention.
+- Complete Data safety for phone number/account data, user-created financial entries, selected contacts, one-time bill processing, notification tokens, and optional SMS access. Match the answers to actual production providers and retention.
 - Complete App access with a working reviewer account or review instructions, Content rating, Target audience, Ads declaration, Financial features declaration where shown, and the account deletion URL.
 - Add the store icon, feature graphic, phone screenshots, short/full descriptions, support email, and privacy-policy URL.
 - Personal Play developer accounts created after 13 November 2023 must complete a closed test with at least 12 continuously opted-in testers for 14 days, then apply for production access.
@@ -86,11 +73,11 @@ npx eas-cli@latest update --channel production --environment production --messag
 
 Increase the rollout with `npx eas-cli@latest update:edit`. Roll back with `npx eas-cli@latest update:rollback` if needed.
 
-Create a new Play Store build whenever native code or native configuration changes, including Expo SDK upgrades, installed native modules, permissions, widgets, package identifiers, app icons, notification configuration, Truecaller configuration, or Android resources. Increment `expo.version` before that build so the `appVersion` runtime policy prevents incompatible OTA delivery. EAS increments the Play `versionCode` separately.
+Create a new Play Store build whenever native code or native configuration changes, including Expo SDK upgrades, installed native modules, permissions, widgets, package identifiers, app icons, notification configuration, Truecaller configuration, or Android resources. Increment `expo.version`, `versionName`, and `versionCode` before that build so the `appVersion` runtime policy prevents incompatible OTA delivery.
 
 ## Verified in this environment
 
-The project passes TypeScript checking, PostgreSQL migration execution, 17 API integration tests, 35 domain/parser/contract tests, and an Expo web export. Browser verification covers desktop/phone journeys, photo persistence, itemisation, actual local Tesseract OCR, and JPEG camera capture with a simulated webcam. Native autolinking discovers the receipt scanner on Android and Apple and the SMS module on Android. Native OCR and hardware permission behavior still require a compiled development build and real-device verification.
+The project passes TypeScript checking, Prisma validation, domain tests, and API tests when an isolated test database is enabled. Bill camera and provider behavior still require staging verification on a real device with the production API configuration.
 
 These checks are not a substitute for a signed Android/iOS build or an independent security review.
 
@@ -101,12 +88,12 @@ These checks are not a substitute for a signed Android/iOS build or an independe
 - [ ] Build and test iOS on devices. Confirm there is no SMS request. Test contacts, SecureStore, camera, fonts, Dynamic Type, VoiceOver, dark mode, keyboard behavior, and app switching after opening UPI.
 - [ ] Configure a real OTP gateway, separate generated secrets, regional sender requirements, provider outage handling, and anti-abuse controls. Add stronger recovery/step-up checks for SIM swaps, recycled numbers, and account deletion before broad rollout.
 - [ ] Use TLS, a private database with encryption at rest, a least-privilege application role, encrypted backups, point-in-time recovery, and a tested restore procedure. Use a separate migration role. Enforce append-only audit retention at the database/operator level.
-- [ ] Configure receipt storage and malware scanning. Never treat the development file-signature mock as a scanner. Add orphan cleanup, retention and privacy redaction processes.
+- [ ] Configure and monitor the bill vision provider. Confirm its data-retention terms, rate limits, regional processing, failure behavior, and privacy disclosure.
 - [ ] Configure APNs/FCM/Expo push credentials, register device tokens, process push receipts, monitor retries and invalid tokens. The initial worker is single-instance and bounded; add distributed job claims and fair cursor batches before scaling it.
 - [ ] Move OTP/link/IP rate limits to shared infrastructure for multi-instance API deployment. Configure trusted proxy hops explicitly; do not blindly trust forwarded headers.
 - [ ] Replace full-dashboard data reads with indexed aggregate queries and paginated activity once accounts become large. Preserve complete scoped snapshots and exact totals during that change.
-- [ ] Add operational metrics/traces without phone numbers, receipt URLs, SMS contents or descriptions; configure actionable alerts, incident response, retention and access review.
-- [ ] Complete independent IDOR, concurrent money mutation, replay, attachment, and share-token security review; run load and fault-injection tests.
+- [ ] Add operational metrics/traces without phone numbers, bill images, SMS contents or descriptions; configure actionable alerts, incident response, retention and access review.
+- [ ] Complete independent IDOR, concurrent money mutation, replay, bill-processing, and share-token security review; run load and fault-injection tests.
 - [ ] Publish an operator-specific privacy policy and store disclosures; document legitimate shared-history retention, free-text redaction, account recovery and data deletion SLAs.
 
 ## Implemented boundaries and follow-up scope

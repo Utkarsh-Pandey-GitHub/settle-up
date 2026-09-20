@@ -16,7 +16,7 @@ import {
 } from "@settleup/domain/src/analytics";
 import { money, periodRange, type Period } from "@settleup/domain";
 import { useDashboard, useAction } from "../data/hooks";
-import { repository } from "../data/repository";
+import { repository, extra } from "../data/repository";
 import { useSession } from "../data/session";
 import { TourGroup } from "../components/WalkthroughTour";
 import { Shell } from "../components/Shell";
@@ -35,6 +35,7 @@ import {
   SearchBar,
   FilterDropdownTrigger,
   FilterDropdownPanel,
+  SearchPicker,
   useColors,
   type IconName,
   Skeleton,
@@ -121,6 +122,7 @@ export function TransactionRow({
   selected = false,
   onSelect,
   onLongPress,
+  onAssignGroup,
 }: {
   transaction: TransactionView;
   data: Dashboard;
@@ -130,6 +132,7 @@ export function TransactionRow({
   selected?: boolean;
   onSelect?: () => void;
   onLongPress?: () => void;
+  onAssignGroup?: () => void;
 }) {
   const c = useColors(),
     router = useRouter();
@@ -243,6 +246,26 @@ export function TransactionRow({
           )}
         </XStack>
       </YStack>
+      {!!onAssignGroup && !selectable && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Assign ${t.title} to a group`}
+          onPress={(event) => {
+            event.stopPropagation();
+            onAssignGroup();
+          }}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 10,
+            backgroundColor: c.soft,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Icon name="groups" size={15} color="#5552B4" />
+        </Pressable>
+      )}
       <YStack alignItems="flex-end" gap={3}>
         <Label size={14} bold color={incoming ? "#218262" : c.text}>
           {incoming ? "+" : "−"}
@@ -440,7 +463,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
         </XStack>
       </Card>
       <TourGroup step={2}>
-        <XStack gap={12}>
+        <XStack gap={width < 360 ? 8 : 12} flexWrap="wrap">
           {(
             [
               {
@@ -452,7 +475,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
               },
               {
                 label: "Settle up",
-                short: "Record payment",
+                short: "Settle debts",
                 icon: "arrow",
                 path: "/settle",
                 color: "#D3E1FF",
@@ -466,7 +489,14 @@ function HomeContent({ data: d }: { data: Dashboard }) {
               },
             ] as const
           ).map((tile) => (
-            <View key={tile.label} style={{ flex: 1 }}>
+            <View
+              key={tile.label}
+              style={
+                width < 360
+                  ? { width: "48%" }
+                  : { flex: 1, minWidth: 0 }
+              }
+            >
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={tile.label}
@@ -509,8 +539,8 @@ function HomeContent({ data: d }: { data: Dashboard }) {
 
       <YStack gap={5}>
         <SectionTitle
-          title="Your last activity"
-          action="All activity"
+          title="Recent transactions"
+          action="All transactions"
           onPress={() => go("/activity")}
         />
         {d.transactions.slice(0, visibleRows).map((t) => (
@@ -546,6 +576,7 @@ export function ActivityScreen() {
     [sinceDate, setSinceDate] = useState("");
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [assignIds, setAssignIds] = useState<string[]>([]);
   const [openDropdown, setOpenDropdown] = useState<
     "tag" | "status" | "ledger" | null
   >(null);
@@ -628,13 +659,30 @@ export function ActivityScreen() {
             ],
           );
         };
+        const eligibleLedgers = d.ledgers.filter((ledger) =>
+          assignIds.every((id) => {
+            const transaction = d.transactions.find((item) => item.id === id);
+            if (!transaction || transaction.currency !== ledger.currency)
+              return false;
+            const related = new Set([
+              transaction.sourceId,
+              ...(transaction.destinationId
+                ? [transaction.destinationId]
+                : []),
+              ...transaction.allocations.map((item) => item.userId),
+            ]);
+            return [...related].every((memberId) =>
+              ledger.members.some((member) => member.id === memberId),
+            );
+          }),
+        );
 
         return (
           <YStack gap={14}>
             {/* Title & Action Bar */}
             <XStack justifyContent="space-between" alignItems="center">
               <YStack gap={2}>
-                <Heading size={22}>Activity</Heading>
+                <Heading size={22}>Transactions</Heading>
                 <Label muted size={12}>
                   {filtered.length} transaction
                   {filtered.length !== 1 ? "s" : ""}
@@ -697,11 +745,12 @@ export function ActivityScreen() {
             <SearchBar
               value={search}
               onChangeText={setSearch}
-              placeholder="Search activity…"
+              placeholder="Search transactions…"
             />
 
             {/* Dropdown Filter Triggers */}
-            <XStack gap={8} alignItems="center">
+            <Card style={{ padding: 10 }}>
+              <XStack gap={8} alignItems="center" flexWrap="wrap">
               <FilterDropdownTrigger
                 label={
                   tag
@@ -768,10 +817,10 @@ export function ActivityScreen() {
                   </Label>
                 </Pressable>
               )}
-            </XStack>
+              </XStack>
 
-            {/* Expandable Dropdown Content Panels */}
-            {openDropdown === "tag" && (
+              {/* Expandable Dropdown Content Panels */}
+              {openDropdown === "tag" && (
               <FilterDropdownPanel title="FILTER BY TAG">
                 <Chip
                   selected={!tag}
@@ -797,9 +846,9 @@ export function ActivityScreen() {
                     </Chip>
                   ))}
               </FilterDropdownPanel>
-            )}
+              )}
 
-            {openDropdown === "status" && (
+              {openDropdown === "status" && (
               <FilterDropdownPanel title="FILTER BY STATUS">
                 {["", "PENDING", "SETTLED", "DISPUTED", "PENDING_LOAN"].map(
                   (s) => (
@@ -816,8 +865,8 @@ export function ActivityScreen() {
                   ),
                 )}
               </FilterDropdownPanel>
-            )}
-            {openDropdown === "ledger" && (
+              )}
+              {openDropdown === "ledger" && (
               <FilterDropdownPanel title="FILTER BY LEDGER">
                 <Chip
                   selected={!ledgerFilter}
@@ -847,7 +896,8 @@ export function ActivityScreen() {
                   onChangeText={setSinceDate}
                 />
               </FilterDropdownPanel>
-            )}
+              )}
+            </Card>
 
             {/* Multi-Select Floating Action Bar */}
             {isSelecting && selectedIds.length > 0 && (
@@ -862,6 +912,24 @@ export function ActivityScreen() {
                 <Label color="#FFFFFF" bold size={13}>
                   {selectedIds.length} selected
                 </Label>
+                <Pressable
+                  onPress={() => setAssignIds(selectedIds)}
+                  disabled={action.busy}
+                  style={{
+                    backgroundColor: "rgba(255,255,255,0.16)",
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 10,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Icon name="groups" size={14} color="#FFFFFF" />
+                  <Label color="#FFFFFF" bold size={12}>
+                    Assign group
+                  </Label>
+                </Pressable>
                 <Pressable
                   onPress={handleDelete}
                   disabled={action.busy}
@@ -895,6 +963,14 @@ export function ActivityScreen() {
                   selected={selectedIds.includes(t.id)}
                   onSelect={() => toggleSelect(t.id)}
                   onLongPress={() => handleLongPress(t.id)}
+                  onAssignGroup={
+                    t.sourceId === d.account.id &&
+                    !["SETTLEMENT", "LOAN_REPAYMENT", "REVERSAL"].includes(
+                      t.type,
+                    )
+                      ? () => setAssignIds([t.id])
+                      : undefined
+                  }
                 />
               ))}
               {!filtered.length && (
@@ -904,6 +980,41 @@ export function ActivityScreen() {
                 />
               )}
             </Card>
+            <SearchPicker
+              visible={assignIds.length > 0}
+              title={
+                assignIds.length > 1
+                  ? `Assign ${assignIds.length} transactions`
+                  : "Assign transaction to group"
+              }
+              placeholder="Search groups"
+              options={eligibleLedgers.map((ledger) => ({
+                id: ledger.id,
+                label: ledger.name,
+                detail: `${ledger.members.length} members · ${ledger.currency}`,
+              }))}
+              selected={[]}
+              onClose={() => setAssignIds([])}
+              onSelect={(ledgerId) => {
+                const count = assignIds.length;
+                action
+                  .run(
+                    () =>
+                      extra(d.account.id, "/transactions/assign-group", {
+                        ids: assignIds,
+                        ledgerId,
+                      }),
+                    `${count} transaction${count === 1 ? "" : "s"} assigned to group.`,
+                  )
+                  .then((ok) => {
+                    if (ok) {
+                      setAssignIds([]);
+                      setSelectedIds([]);
+                      setIsSelecting(false);
+                    }
+                  });
+              }}
+            />
           </YStack>
         );
       }}

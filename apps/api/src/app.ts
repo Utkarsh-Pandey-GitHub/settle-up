@@ -7,7 +7,6 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import { registerAttachments } from "./infra/attachments";
 import { z, ZodError } from "zod";
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
@@ -22,6 +21,7 @@ import {
   normalizePhone,
   SMS_TTL_MS,
   parseUpi,
+  parseMoney,
 } from "@settleup/domain";
 import { analytics } from "@settleup/domain/src/analytics";
 import { AuthService, validateConfig } from "./auth/service";
@@ -193,6 +193,154 @@ export async function createApp() {
   app.get("/dashboard", async (req) =>
     dashboard.get((await actor(req)).userId),
   );
+  app.post(
+    "/bill/extract",
+    {
+      bodyLimit: 14 * 1024 * 1024,
+      config: { rateLimit: { max: 12, timeWindow: "15 minutes" } },
+    },
+    async (req) => {
+      await actor(req);
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      if (!apiKey)
+        throw new DomainError(
+          "BILL_AI_DISABLED",
+          "Bill scanning is not configured yet.",
+          503,
+        );
+      const body = z
+        .object({
+          image: z
+            .string()
+            .max(14 * 1024 * 1024)
+            .regex(/^data:image\/(jpeg|png);base64,/),
+          currency: z.string().regex(/^[A-Z]{3}$/),
+        })
+        .parse(req.body);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 55_000);
+      let response: Response;
+      try {
+        response = await fetch(
+          "https://openrouter.ai/api/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${apiKey}`,
+              "content-type": "application/json",
+              "http-referer":
+                process.env.PUBLIC_APP_URL || "https://settleup.app",
+              "x-title": "SettleUp bill scanner",
+            },
+            body: JSON.stringify({
+              model: process.env.BILL_VISION_MODEL || "openrouter/free",
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: `Read this receipt carefully. Return only JSON with merchantName, items, taxAmount, and totalAmount. Each item needs name, quantity, and its full line amount. Put GST, VAT, service charge, delivery, packing, tips, and other taxes or fees into separate items. Put discounts in separate items as negative amounts. Preserve decimals and use ${body.currency}. Do not guess unreadable values.`,
+                    },
+                    { type: "image_url", image_url: { url: body.image } },
+                  ],
+                },
+              ],
+              response_format: { type: "json_object" },
+              provider: { data_collection: "deny" },
+              temperature: 0.1,
+              max_tokens: 2200,
+            }),
+            signal: controller.signal,
+          },
+        );
+      } catch (error) {
+        throw new DomainError(
+          "BILL_AI_UNAVAILABLE",
+          error instanceof Error && error.name === "AbortError"
+            ? "Bill reading timed out. Please try again."
+            : "The bill reader is unavailable. Please try again.",
+          503,
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!response.ok)
+        throw new DomainError(
+          "BILL_AI_UNAVAILABLE",
+          "The bill reader could not process this image. Please try again.",
+          503,
+        );
+      const providerResult = (await response.json()) as any;
+      const rawContent = providerResult?.choices?.[0]?.message?.content;
+      const content = Array.isArray(rawContent)
+        ? rawContent.map((part: any) => part?.text || "").join("")
+        : rawContent;
+      if (typeof content !== "string" || !content.trim())
+        throw new DomainError("BILL_AI_RESULT", "No bill details were found.");
+      let parsed: any;
+      try {
+        parsed = JSON.parse(
+          content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""),
+        );
+      } catch {
+        throw new DomainError(
+          "BILL_AI_RESULT",
+          "The bill result was incomplete. Please try a clearer photo.",
+        );
+      }
+      const amountMinor = (value: unknown) => {
+        const cleaned = String(value ?? "").replace(/[^0-9.-]/g, "");
+        if (!cleaned) return undefined;
+        try {
+          const negative = cleaned.startsWith("-");
+          const parsedAmount = parseMoney(
+            cleaned.replace(/^-/, ""),
+            body.currency,
+            true,
+          );
+          return negative ? -parsedAmount : parsedAmount;
+        } catch {
+          return undefined;
+        }
+      };
+      const items = Array.isArray(parsed.items)
+        ? parsed.items
+            .map((item: any) => ({
+              name: String(item?.name || "").trim().slice(0, 120),
+              quantity: Math.max(0.01, Number(item?.quantity) || 1),
+              amountMinor: amountMinor(item?.amount),
+            }))
+            .filter(
+              (item: any) => item.name && item.amountMinor !== undefined,
+            )
+            .slice(0, 99)
+        : [];
+      const tax = amountMinor(parsed.taxAmount ?? parsed.tax);
+      if (
+        tax !== undefined &&
+        tax !== 0 &&
+        !items.some((item: any) => /tax|gst|vat|cgst|sgst/i.test(item.name))
+      )
+        items.push({ name: "Tax", quantity: 1, amountMinor: tax });
+      const detectedTotal = amountMinor(
+        parsed.totalAmount ?? parsed.grandTotal ?? parsed.total,
+      );
+      if (!items.length && detectedTotal === undefined)
+        throw new DomainError(
+          "BILL_AI_RESULT",
+          "No clear items or total were found. Please try a clearer photo.",
+        );
+      return {
+        merchantName:
+          String(parsed.merchantName || "").trim().slice(0, 120) || undefined,
+        items,
+        totalMinor:
+          detectedTotal ??
+          items.reduce((sum: number, item: any) => sum + item.amountMinor, 0),
+      };
+    },
+  );
   app.get("/analytics", async (req) => {
     const a = await actor(req);
     const q = z
@@ -203,7 +351,7 @@ export async function createApp() {
         zone: z.string().default("Asia/Kolkata"),
         ledgerId: idSchema.optional(),
         tagId: idSchema.optional(),
-        peerId: idSchema.optional(),
+        contactId: idSchema.optional(),
         type: z.string().optional(),
         status: z.string().optional(),
       })
@@ -226,6 +374,13 @@ export async function createApp() {
       .object({ ids: z.array(idSchema).min(1).max(100) })
       .parse(req.body);
     return finance.remove(userId, ids);
+  });
+  app.post("/transactions/assign-group", async (req) => {
+    const { userId } = await actor(req);
+    const body = z
+      .object({ ids: z.array(idSchema).min(1).max(100), ledgerId: idSchema })
+      .parse(req.body);
+    return finance.assignLedger(userId, body.ids, body.ledgerId);
   });
   app.post("/settlements", async (req) =>
     finance.settle((await actor(req)).userId, settlementSchema.parse(req.body)),
@@ -281,12 +436,41 @@ export async function createApp() {
       const contacts = [...b.contacts];
       for (const id of b.memberIds) {
         if (id === userId) continue;
-        const peer = await tx.contactPeer.findFirst({
-          where: { ownerId: userId, OR: [{ id }, { linkedUserId: id }] },
+        const savedContact = await tx.user.findFirst({
+          where: {
+            id,
+            deletedAt: null,
+            OR: [
+              {
+                ledgerMembers: {
+                  some: {
+                    leftAt: null,
+                    ledger: {
+                      members: { some: { userId, leftAt: null } },
+                    },
+                  },
+                },
+              },
+              {
+                participants: {
+                  some: {
+                    transaction: {
+                      deletedAt: null,
+                      participants: { some: { userId } },
+                    },
+                  },
+                },
+              },
+            ],
+          },
         });
-        if (!peer)
-          throw new DomainError("PEER", "Choose one of your contacts.", 403);
-        contacts.push({ name: peer.name, phone: peer.phone });
+        if (!savedContact)
+          throw new DomainError(
+            "CONTACT",
+            "Choose one of your saved contacts.",
+            403,
+          );
+        if (!members.includes(id)) members.push(id);
       }
       for (const contact of contacts) {
         const phone = normalizePhone(contact.phone);
@@ -295,12 +479,12 @@ export async function createApp() {
           include: { user: true },
         });
         if (identity?.user.deletedAt)
-          throw new DomainError("PEER", "This contact is unavailable.", 403);
+          throw new DomainError("CONTACT", "This contact is unavailable.", 403);
         if (!identity) {
           // Reserve a member identity, never a session or a verified phone number.
           const user = await tx.user.create({
             data: {
-              profile: { create: { name: "New friend" } },
+              profile: { create: { name: contact.name } },
               phone: { create: { phone, verifiedAt: null } },
             },
             include: { phone: true },
@@ -319,17 +503,11 @@ export async function createApp() {
             },
           })
         )
-          throw new DomainError("PEER", "This contact cannot be added.", 403);
-        await tx.contactPeer.upsert({
-          where: { ownerId_phone: { ownerId: userId, phone } },
-          create: {
-            ownerId: userId,
-            phone,
-            name: contact.name,
-            linkedUserId: id,
-          },
-          update: { linkedUserId: id },
-        });
+          throw new DomainError(
+            "CONTACT",
+            "This contact cannot be added.",
+            403,
+          );
         if (!members.includes(id)) members.push(id);
       }
       if (members.length > 100)
@@ -391,63 +569,83 @@ export async function createApp() {
       return { ok: true };
     });
   });
-  app.post("/peers", async (req) => {
+  app.delete("/groups/:id/members/:memberId", async (req) => {
     const { userId } = await actor(req);
-    const b = z
-      .object({
-        name: z.string().trim().min(1).max(100),
-        phone: z.string().max(30),
-      })
-      .parse(req.body);
-    const phone = normalizePhone(b.phone);
-    return db.contactPeer.upsert({
-      where: { ownerId_phone: { ownerId: userId, phone } },
-      create: { ownerId: userId, name: b.name, phone },
-      update: { name: b.name },
-    });
-  });
-  app.post("/peers/:id/invite", async (req) => {
-    const { userId } = await actor(req);
-    const id = pathId(req);
-    const token = randomBytes(32).toString("base64url");
-    const result = await db.contactPeer.updateMany({
-      where: { id, ownerId: userId },
-      data: {
-        inviteDigest: digest(token),
-        inviteExpiresAt: new Date(Date.now() + 86400000),
-      },
-    });
-    if (!result.count)
-      throw new DomainError("NOT_FOUND", "Peer unavailable.", 404);
-    return { url: `${process.env.PUBLIC_APP_URL}/invite/${token}` };
-  });
-  app.post("/invites/claim", async (req) => {
-    const { userId } = await actor(req);
-    const { token } = z
-      .object({ token: z.string().length(43) })
-      .parse(req.body);
+    const groupId = pathId(req);
+    const memberId = idSchema.parse(
+      (req.params as { memberId: string }).memberId,
+    );
     return atomic(async (tx) => {
-      const phone = await tx.phoneIdentity.findUniqueOrThrow({
-        where: { userId },
+      const actorMembership = await tx.groupMember.findUnique({
+        where: { groupId_userId: { groupId, userId } },
       });
-      const p = await tx.contactPeer.findFirst({
+      if (
+        !actorMembership ||
+        actorMembership.leftAt ||
+        !["OWNER", "ADMIN"].includes(actorMembership.role)
+      )
+        throw new DomainError(
+          "FORBIDDEN",
+          "Only active group admins can remove members.",
+          403,
+        );
+      if (memberId === userId)
+        throw new DomainError(
+          "OWNER",
+          "Transfer ownership before leaving this group.",
+          409,
+        );
+      const member = await tx.groupMember.findUnique({
+        where: { groupId_userId: { groupId, userId: memberId } },
+        include: { user: { include: { profile: true } } },
+      });
+      if (!member || member.leftAt)
+        throw new DomainError("NOT_FOUND", "Group member unavailable.", 404);
+      if (member.role === "OWNER")
+        throw new DomainError(
+          "OWNER",
+          "The group owner cannot be removed.",
+          409,
+        );
+      const ledgers = await tx.ledger.findMany({
+        where: { groupId },
+        select: { id: true },
+      });
+      const ledgerIds = ledgers.map((ledger) => ledger.id);
+      const outstanding = await tx.obligation.count({
         where: {
-          inviteDigest: digest(token),
-          inviteExpiresAt: { gt: new Date() },
-          phone: phone.phone,
+          ledgerId: { in: ledgerIds },
+          remainingMinor: { gt: 0 },
+          OR: [{ debtorId: memberId }, { creditorId: memberId }],
+          transaction: { deletedAt: null },
         },
       });
-      if (!p || p.ownerId === userId)
-        throw new DomainError("INVITE", "Invitation unavailable.", 404);
-      await tx.contactPeer.update({
-        where: { id: p.id },
-        data: {
-          linkedUserId: userId,
-          inviteDigest: null,
-          inviteExpiresAt: null,
-        },
+      if (outstanding)
+        throw new DomainError(
+          "OUTSTANDING_BALANCE",
+          "Settle this member's outstanding balances before removing them.",
+          409,
+        );
+      const leftAt = new Date();
+      await tx.groupMember.update({
+        where: { groupId_userId: { groupId, userId: memberId } },
+        data: { leftAt },
       });
-      await audit(tx, userId, p.id, "PEER_VERIFIED");
+      await tx.ledgerMember.updateMany({
+        where: { userId: memberId, ledgerId: { in: ledgerIds }, leftAt: null },
+        data: { leftAt },
+      });
+      const name = member.user.profile?.name ?? "A member";
+      for (const ledger of ledgers)
+        await audit(
+          tx,
+          userId,
+          memberId,
+          "GROUP_MEMBER_REMOVED",
+          { groupId, memberId },
+          ledger.id,
+          `${name} was removed from the group`,
+        );
       return { ok: true };
     });
   });
@@ -751,11 +949,6 @@ export async function createApp() {
         where: { ownerId: userId },
         data: { revokedAt: new Date() },
       });
-      await tx.contactPeer.deleteMany({ where: { ownerId: userId } });
-      await tx.contactPeer.updateMany({
-        where: { linkedUserId: userId },
-        data: { linkedUserId: null },
-      });
       await tx.smsImportRecord.deleteMany({ where: { ownerId: userId } });
       await tx.paymentLink.deleteMany({ where: { ownerId: userId } });
       await tx.notificationPreference.deleteMany({ where: { userId } });
@@ -763,6 +956,5 @@ export async function createApp() {
       return { ok: true };
     });
   });
-  await registerAttachments(app, auth);
   return app;
 }

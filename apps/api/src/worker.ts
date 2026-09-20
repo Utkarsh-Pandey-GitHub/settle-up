@@ -48,10 +48,6 @@ export async function cleanup(now = new Date()) {
     await tx.sharedLinkAccessEvent.deleteMany({
       where: { createdAt: { lt: new Date(+now - 90 * 86400000) } },
     });
-    await tx.contactPeer.updateMany({
-      where: { inviteExpiresAt: { lte: now } },
-      data: { inviteDigest: null, inviteExpiresAt: null },
-    });
   });
 }
 export async function processGoals() {

@@ -25,4 +25,8 @@ services:
       - key: STYTCH_SECRET
         sync: false
       - key: TRUECALLER_CLIENT_ID
-        value: reu4dkuzbwcc9bcwz2yjepj1cewqd4tpf7_xl11cd1s
+        value: f6ydr8pehvg_69vacnh7z4alfzdzpywyremiruuuegg
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: BILL_VISION_MODEL
+        value: openrouter/free

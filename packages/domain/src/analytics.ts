@@ -11,7 +11,7 @@ export type AnalyticsFilter = {
   currency: string;
   tagIds?: string[];
   ledgerIds?: string[];
-  peerId?: string;
+  contactId?: string;
   type?: string;
   status?: string;
   zone?: string;
@@ -30,10 +30,10 @@ export function filterTransactions(
         (!!t.ledgerId && f.ledgerIds.includes(t.ledgerId))) &&
       (!f.type || t.type === f.type) &&
       (!f.status || t.status === f.status) &&
-      (!f.peerId ||
-        t.sourceId === f.peerId ||
-        t.destinationId === f.peerId ||
-        t.allocations.some((a) => a.userId === f.peerId)),
+      (!f.contactId ||
+        t.sourceId === f.contactId ||
+        t.destinationId === f.contactId ||
+        t.allocations.some((a) => a.userId === f.contactId)),
   );
 }
 export function personalSpend(t: TransactionView, userId: string): number {
@@ -56,7 +56,7 @@ export function analytics(data: Dashboard, f: AnalyticsFilter): Analytics {
   const uid = data.account.id;
   const byTag = new Map<string, number>(),
     byDay = new Map<string, number>(),
-    byPeer = new Map<string, number>(),
+    byContact = new Map<string, number>(),
     byLedger = new Map<string, number>();
   let spendingMinor = 0,
     incomingMinor = 0,
@@ -82,8 +82,9 @@ export function analytics(data: Dashboard, f: AnalyticsFilter): Analytics {
       byDay.set(day, (byDay.get(day) ?? 0) + spent);
       if (t.ledgerId)
         byLedger.set(t.ledgerId, (byLedger.get(t.ledgerId) ?? 0) + spent);
-      const peer = t.sourceId === uid ? t.destinationId : t.sourceId;
-      if (peer) byPeer.set(peer, (byPeer.get(peer) ?? 0) + spent);
+      const contact = t.sourceId === uid ? t.destinationId : t.sourceId;
+      if (contact)
+        byContact.set(contact, (byContact.get(contact) ?? 0) + spent);
     }
   }
   const duration = Date.parse(f.end) - Date.parse(f.start);
@@ -112,7 +113,7 @@ export function analytics(data: Dashboard, f: AnalyticsFilter): Analytics {
     byDay: [...byDay]
       .sort()
       .map(([date, amountMinor]) => ({ date, amountMinor })),
-    byPeer: [...byPeer].map(([id, amountMinor]) => ({ id, amountMinor })),
+    byContact: [...byContact].map(([id, amountMinor]) => ({ id, amountMinor })),
     byLedger: [...byLedger].map(([id, amountMinor]) => ({ id, amountMinor })),
     previousSpendingMinor,
   };

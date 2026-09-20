@@ -27,24 +27,6 @@ For Render, deploy this repository's API, then check `<service-url>/health` retu
 
 The blueprint uses generated signing secrets, Stytch credentials supplied through Render's secret environment settings, and an explicitly supplied `DATABASE_URL`. Existing services need their environment settings updated too; editing the blueprint alone does not change a live service. Keep the database password in environment settings and use the intended database/schema; this configuration does not copy local data. Redeploy after setting the variables. Never use development OTP or the sample signing secrets in production.
 
-## Storage and malware scanning
-
-`AttachmentProvider` supports `upload`, `download`, and `inspect`. Production uses:
-
-```dotenv
-STORAGE_PROVIDER=gateway
-STORAGE_GATEWAY_URL=https://your-private-storage-gateway.example
-STORAGE_GATEWAY_TOKEN=<secret>
-```
-
-Endpoints accept the same gateway Bearer token:
-
-- POST `/upload`: `{objectKey,contentType,size,expiresInSeconds:300}` → `{url}`. Sign a private object upload constrained to this key, maximum size and exact content type. Object keys are random and do not reveal users.
-- POST `/inspect`: `{objectKey}` → `{state:"READY"|"REJECTED"|"QUARANTINED"}`. Validate actual size, decode/signature consistency, and malware scanning. Never return READY before a clean verdict.
-- POST `/download`: `{objectKey,expiresInSeconds:60}` → `{url}`. Private signed GET with safe content disposition and no active-content execution.
-
-The development adapter stores files under the OS temp directory in `settleup-receipts`, checks file signatures and sizes, rejects reused uploads, and serves downloads as attachments. Files are temporary and are not a production backup strategy. There is no external upload in demo mode.
-
 ## Notifications
 
 The worker implements the Expo push gateway adapter and a retrying notification outbox. Native permission is requested only from Settings. Configure your Expo project, APNs credentials and FCM credentials through your deployment process, set `EXPO_PUBLIC_EAS_PROJECT_ID` in the native app. Enabling notifications registers the Expo push token with `PATCH /notifications`. Without a project ID, local threshold reminders run on foreground data refresh. No credentials are embedded in the app.
@@ -60,16 +42,9 @@ Budget thresholds default to 50/80/100. Outbox keys include goal, period, and th
 
 The repository's installed Expo SDK provides the authoritative compatible package list in `node_modules/expo/bundledNativeModules.json`. Native verification should use that matrix rather than installing unrelated latest peer versions.
 
-## Free receipt OCR
+## Bill vision
 
-No API keys: Tesseract.js runs in a browser worker, bundled ML Kit handles Android, and Apple's Vision framework handles iOS. The bill image is processed locally. Web downloads OCR code/WASM/English data from the engine's default CDN locations on first use; self-host those engine assets if deployment policy requires it. This is separate from attaching the photo to a saved expense, which uploads in API mode.
-
-- [Tesseract.js and its Apache-2.0 license](https://github.com/naptha/tesseract.js)
-- [Bundled Android ML Kit text recognition](https://developers.google.com/ml-kit/vision/text-recognition/v2/android)
-- [Apple Vision text recognition](https://developer.apple.com/documentation/vision/recognizing-text-in-images)
-- [Expo SDK 54 image picker](https://docs.expo.dev/versions/v54.0.0/sdk/imagepicker/)
-
-The free local demo and local API need no new provider credentials. Existing production SMS and storage integrations may have operational costs; this change adds no paid OCR service.
+Set `OPENROUTER_API_KEY` only on the API server. `BILL_VISION_MODEL` defaults to `openrouter/free`, which routes to currently available free models that support the request. Free routing is rate-limited and availability can vary. The mobile app sends an authenticated JPEG or PNG data URL to `/bill/extract`; the server forwards it once with provider data collection disabled, returns structured items, taxes, discounts, and total, and does not persist the image. Rotate any OpenRouter key that was ever embedded in or shipped with a mobile build.
 
 ## Truecaller onboarding
 

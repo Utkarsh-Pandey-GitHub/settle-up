@@ -238,6 +238,8 @@ export function demoDashboard(
             ledgerId: ids.home,
           },
         ],
-    peers: names.slice(1).map((m) => ({ id: m.id, name: m.name })),
+    savedContacts: names
+      .slice(1)
+      .map((m) => ({ id: m.id, name: m.name, verified: true })),
   };
 }

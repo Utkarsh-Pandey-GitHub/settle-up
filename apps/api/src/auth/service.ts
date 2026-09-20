@@ -411,7 +411,8 @@ export class AuthService {
         include: { user: true },
       });
     }
-    if (!identity.verifiedAt) {
+    const needsOnboarding = !identity.verifiedAt;
+    if (needsOnboarding) {
       // Reached only after OTP or Truecaller proof has been verified.
       await tx.phoneIdentity.update({
         where: { userId: identity.userId },
@@ -437,7 +438,8 @@ export class AuthService {
         })),
       });
     }
-    return this.newSession(tx, identity.userId, randomUUID());
+    const session = await this.newSession(tx, identity.userId, randomUUID());
+    return needsOnboarding ? { ...session, needsOnboarding: true } : session;
   }
   async signInWithVerifiedPhone(phone: string): Promise<Session> {
     const session = await atomic((tx) => this.verifiedPhoneSession(tx, phone));

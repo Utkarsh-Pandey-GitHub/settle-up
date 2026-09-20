@@ -43,8 +43,6 @@ model User {
   phone            PhoneIdentity?
   google           GoogleIdentity?
   sessions         DeviceSession[]
-  peers            ContactPeer[]            @relation("PeerOwner")
-  linkedPeers      ContactPeer[]            @relation("LinkedUser")
   groupMembers     GroupMember[]
   ledgerMembers    LedgerMember[]
   transactions     Transaction[]            @relation("Source")
@@ -115,20 +113,6 @@ model DeviceSession {
   @@index([userId, revokedAt])
   @@index([familyId])
   @@index([expiresAt])
-}
-
-model ContactPeer {
-  id              String    @id @default(uuid()) @db.Uuid
-  ownerId         String    @db.Uuid
-  owner           User      @relation("PeerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  name            String    @db.VarChar(100)
-  phone           String    @db.VarChar(16)
-  linkedUserId    String?   @db.Uuid
-  linkedUser      User?     @relation("LinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
-  inviteDigest    String?   @unique
-  inviteExpiresAt DateTime? @db.Timestamptz
-
-  @@unique([ownerId, phone])
 }
 
 model UserBlock {
@@ -222,7 +206,6 @@ model Transaction {
   settlements      Settlement[]
   tags             TransactionTag[]
   disputes         Dispute[]
-  attachments      Attachment[]
   items            TransactionItem[]
 
   @@unique([sourceId, idempotencyKey])
@@ -408,16 +391,6 @@ model SharedLinkAccessEvent {
   createdAt DateTime            @default(now()) @db.Timestamptz
 
   @@index([linkId, createdAt])
-}
-
-model Attachment {
-  id            String      @id @default(uuid()) @db.Uuid
-  transactionId String      @db.Uuid
-  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
-  objectKey     String      @unique
-  contentType   String      @db.VarChar(50)
-  size          Int
-  state         String      @default("QUARANTINED") @db.VarChar(16)
 }
 
 model NotificationPreference {

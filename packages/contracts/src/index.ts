@@ -172,6 +172,7 @@ export type Session = {
   account: Account;
   accessToken: string;
   refreshToken: string;
+  needsOnboarding?: boolean;
 };
 export type TransactionView = {
   id: string;
@@ -229,7 +230,12 @@ export type Dashboard = {
   tags: TagView[];
   goals: GoalView[];
   activity: ActivityView[];
-  peers: { id: string; name: string; phone?: string }[];
+  savedContacts: {
+    id: string;
+    name: string;
+    phone?: string;
+    verified: boolean;
+  }[];
 };
 export type Analytics = {
   spendingMinor: number;
@@ -239,7 +245,7 @@ export type Analytics = {
   receivableMinor: number;
   byTag: { id: string; amountMinor: number }[];
   byDay: { date: string; amountMinor: number }[];
-  byPeer: { id: string; amountMinor: number }[];
+  byContact: { id: string; amountMinor: number }[];
   byLedger: { id: string; amountMinor: number }[];
   previousSpendingMinor: number;
   currency: string;

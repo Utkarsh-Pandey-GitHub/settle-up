@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useSession } from "./session";
 import { syncGoalNotifications } from "../services/device";
-import { repository } from "./repository";
+import { repository, readCachedDashboard } from "./repository";
 import { syncWidgets } from "../../modules/home-widgets/client";
 const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -25,11 +25,28 @@ function queueAccountRefresh(
 }
 export function useDashboard() {
   const id = useSession((s) => s.activeId);
+  const query = useQueryClient();
   const result = useQuery({
     queryKey: ["account", id, "dashboard"],
     queryFn: () => repository.dashboard(id!),
     enabled: !!id,
+    staleTime: 30_000,
   });
+  useEffect(() => {
+    if (!id) return;
+    let current = true;
+    readCachedDashboard(id).then((cached) => {
+      if (
+        current &&
+        cached &&
+        !query.getQueryData(["account", id, "dashboard"])
+      )
+        query.setQueryData(["account", id, "dashboard"], cached);
+    });
+    return () => {
+      current = false;
+    };
+  }, [id, query]);
   useEffect(() => {
     if (result.data) {
       syncGoalNotifications(result.data).catch(() => {});

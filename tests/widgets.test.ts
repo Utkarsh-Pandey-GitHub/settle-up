@@ -36,7 +36,7 @@ function dashboard(transactions: TransactionView[]): Dashboard {
     ledgers: [],
     tags: [],
     goals: [],
-    peers: [],
+    savedContacts: [],
     activity: [],
     obligations: [],
   };
@@ -96,7 +96,7 @@ describe("Home widget snapshots", () => {
       },
     ]);
   });
-  it("does not export transaction details, phone numbers, peer identities or credentials", () => {
+  it("does not export transaction details, phone numbers, contact identities or credentials", () => {
     const snapshot = createWidgetSnapshot(dashboard([transaction()]), now);
     const json = JSON.stringify(snapshot);
     for (const privateText of [

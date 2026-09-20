@@ -56,6 +56,13 @@ export function ScanScreen() {
       action.setError((e as Error).message);
     }
   };
+  const inspectEntry = (value: string) => {
+    const entered = value.trim();
+    const paymentUri = entered.toLowerCase().startsWith("upi:")
+      ? entered
+      : `upi://pay?pa=${encodeURIComponent(entered)}&pn=${encodeURIComponent(entered)}&cu=INR`;
+    inspect(paymentUri);
+  };
 
   const pickImage = async () => {
     try {
@@ -130,17 +137,17 @@ export function ScanScreen() {
               Choose QR photo from gallery
             </Button>
             <Button secondary onPress={() => setPasteMode(true)}>
-              Paste UPI link instead
+              Enter UPI ID instead
             </Button>
             {pasteMode && (
               <YStack gap={12} width="100%">
                 <Field
-                  label="UPI payment link"
-                  placeholder="upi://pay?pa=merchant@upi&pn=Merchant&am=100"
+                  label="UPI ID or payment link"
+                  placeholder="merchant@upi"
                   value={uri}
                   onChangeText={setUri}
                 />
-                <Button secondary onPress={() => inspect(uri)}>
+                <Button secondary onPress={() => inspectEntry(uri)}>
                   Review payment
                 </Button>
               </YStack>
@@ -173,7 +180,7 @@ export function ScanScreen() {
                   justifyContent: "center",
                 }}
               >
-                <Icon name="arrow" size={20} />
+                <Icon name="back" size={20} />
               </Pressable>
               <Heading size={20}>Review Payment</Heading>
             </XStack>
@@ -324,7 +331,7 @@ export function ScanScreen() {
                         });
                       setProcessed(true);
                       await paymentLauncher.open(confirmed.toString());
-                    }, "Payment app opened. Entry saved as Settled in Activity.")
+                    }, "Payment app opened. Entry saved as Settled in Transactions.")
                   }
                 >
                   {amount ? `Pay ₹${amount}` : "Confirm & pay"}
@@ -333,7 +340,7 @@ export function ScanScreen() {
                 {processed && (
                   <Notice>
                     {track
-                      ? "Completed entry saved as Settled in Activity. "
+                      ? "Completed entry saved as Settled in Transactions. "
                       : ""}
                     This QR is locked for this review session to prevent
                     duplicate entries.
@@ -498,7 +505,7 @@ export function ScanScreen() {
             alignItems: "center",
           }}
         >
-          <Icon name="arrow" size={18} color="#FFF" />
+          <Icon name="back" size={18} color="#FFF" />
         </Pressable>
         <Label bold size={16} color="#FFF">
           Scan & Pay
@@ -600,6 +607,36 @@ export function ScanScreen() {
             Choose QR from Gallery / Photos
           </Label>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setPasteMode((visible) => !visible)}
+          style={{
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "rgba(255,255,255,0.12)",
+            paddingVertical: 10,
+            borderRadius: 14,
+          }}
+        >
+          <Label bold size={13} color="#FFF">
+            Enter UPI ID
+          </Label>
+        </Pressable>
+        {pasteMode && (
+          <XStack gap={8} alignItems="flex-end">
+            <View style={{ flex: 1 }}>
+              <Field
+                label="UPI ID or payment link"
+                placeholder="merchant@upi"
+                value={uri}
+                onChangeText={setUri}
+              />
+            </View>
+            <Button compact onPress={() => inspectEntry(uri)}>
+              Review
+            </Button>
+          </XStack>
+        )}
       </View>
     </View>
   );
@@ -848,7 +885,10 @@ function SmsContent({ accountId }: { accountId: string }) {
         />
       )}
       {filteredSuggestions.map((s) => (
-        <Card key={s.fingerprint} style={{ padding: 14 }}>
+        <Card
+          key={s.fingerprint}
+          style={{ padding: 14, paddingRight: 112, minHeight: 154 }}
+        >
           <YStack gap={9}>
             <XStack alignItems="center" gap={10}>
               <View
@@ -869,24 +909,23 @@ function SmsContent({ accountId }: { accountId: string }) {
               </View>
               <YStack flex={1} gap={2}>
                 <Heading size={16}>{s.title}</Heading>
+                <Label
+                  bold
+                  size={15}
+                  color={s.direction === "CREDIT" ? "#218262" : c.text}
+                >
+                  {money(s.amountMinor)} · {s.direction.toLowerCase()}
+                </Label>
                 <Label muted size={10}>
                   {new Date(s.occurredAt).toLocaleString()}
                   {s.accountSuffix ? ` · A/c •${s.accountSuffix}` : ""}
-                </Label>
-              </YStack>
-              <YStack alignItems="flex-end" gap={2}>
-                <Label bold size={16}>
-                  {money(s.amountMinor)}
-                </Label>
-                <Label muted size={9}>
-                  {s.direction.toLowerCase()}
                 </Label>
               </YStack>
             </XStack>
             {s.direction === "CREDIT" && (
               <Label muted size={11} lineHeight={16}>
                 Accept as personal money in only. If this is a loan repayment,
-                use Record repayment instead.
+                use Settle debts instead.
               </Label>
             )}
             {editing === s.fingerprint && (
@@ -904,7 +943,13 @@ function SmsContent({ accountId }: { accountId: string }) {
                 />
               </>
             )}
-            <XStack gap={8} flexWrap="wrap" justifyContent="flex-end">
+            <YStack
+              gap={7}
+              position="absolute"
+              top={0}
+              right={-98}
+              width={88}
+            >
               <Button
                 compact
                 loading={
@@ -1011,7 +1056,7 @@ function SmsContent({ accountId }: { accountId: string }) {
               >
                 Reject
               </Button>
-            </XStack>
+            </YStack>
           </YStack>
         </Card>
       ))}

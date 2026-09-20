@@ -3,14 +3,11 @@ import { DateTime } from "luxon";
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
-  Linking,
-  Image,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
 } from "react-native";
-import * as DocumentPicker from "expo-document-picker";
-import { useQuery } from "@tanstack/react-query";
 import { XStack, YStack } from "tamagui";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useForm, Controller } from "react-hook-form";
@@ -25,9 +22,7 @@ import {
   type SplitMethod,
 } from "@settleup/domain";
 import { BillEditor, type BillPhoto, type BillLine } from "./bill";
-import { saveBillPhoto, getDemoBillPhoto } from "../data/repository";
 import { repository, uuid, extra } from "../data/repository";
-import { DEMO } from "../data/session";
 import { useAction } from "../data/hooks";
 import { DataScreen, SectionTitle, TransactionRow } from "./overview";
 import {
@@ -95,7 +90,6 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   const [photo, setPhoto] = useState<BillPhoto | null>(null);
   const [lines, setLines] = useState<BillLine[]>([]);
   const [scanning, setScanning] = useState(false);
-  const [savedId, setSavedId] = useState<string | null>(null);
   const saving = useRef(false);
   const isExpense = type === "PERSONAL_EXPENSE" || type === "SHARED_EXPENSE";
   const {
@@ -119,30 +113,32 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   useEffect(() => {
     if (ledger) setSelected(ledger.members.map((m) => m.id));
   }, [ledgerId]);
-  const choosePayee = (peerId: string) => {
-    if (peerId === "__none") {
+  const choosePayee = (contactId: string) => {
+    if (contactId === "__none") {
       setContactPayee("");
       setContactName("");
       return;
     }
-    const peer = d.peers.find((candidate) => candidate.id === peerId);
-    if (!peer) return;
-    const rawPhone = (peer.phone || "").replace(/[^0-9]/g, "");
+    const contact = d.savedContacts.find(
+      (candidate) => candidate.id === contactId,
+    );
+    if (!contact) return;
+    const rawPhone = (contact.phone || "").replace(/[^0-9]/g, "");
     const phone10 = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
-    const handle = phone10 ? `${phone10}@paytm` : peer.name;
+    const handle = phone10 ? `${phone10}@paytm` : contact.name;
     setContactPayee(handle);
-    setContactName(peer.name);
+    setContactName(contact.name);
     const currentNotes = getValues("notes") || "";
     const baseNotes = currentNotes.replace(/\n?Paid to: .*/, "");
     setValue(
       "notes",
       baseNotes
-        ? `${baseNotes}\nPaid to: ${peer.name} (UPI: ${handle})`
-        : `Paid to: ${peer.name} (UPI: ${handle})`,
+        ? `${baseNotes}\nPaid to: ${contact.name} (UPI: ${handle})`
+        : `Paid to: ${contact.name} (UPI: ${handle})`,
       { shouldValidate: true },
     );
     if (!getValues("title"))
-      setValue("title", `Payment to ${peer.name}`, { shouldValidate: true });
+      setValue("title", `Payment to ${contact.name}`, { shouldValidate: true });
   };
   const allocations = () =>
     splitExpense(
@@ -227,19 +223,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             : [],
         destinationId: type === "LOAN" ? borrower || undefined : undefined,
       };
-      const record = savedId
-        ? { id: savedId }
-        : ((await repository.create(d.account.id, input)) as { id: string });
-      setSavedId(record.id);
-      if (photo && isExpense) {
-        try {
-          await saveBillPhoto(d.account.id, record.id, photo);
-        } catch (error) {
-          throw new Error(
-            `Expense saved, but the photo was not attached. ${(error as Error).message} Retry below or open the saved expense.`,
-          );
-        }
-      }
+      await repository.create(d.account.id, input);
     }, "Expense saved. One less thing to keep in your head.");
     saving.current = false;
     if (ok) {
@@ -250,38 +234,9 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   return (
     <YStack gap={14} maxWidth={800} width="100%" alignSelf="center">
       <Heading>A little entry. A clearer picture.</Heading>
-      {savedId ? (
-        <Card>
-          <YStack gap={14}>
-            <PipFeedback
-              mood={action.busy ? "reading" : "help"}
-              message={
-                action.busy
-                  ? "Finishing your entry…"
-                  : "Your expense is safe. The photo needs another try."
-              }
-            />
-            {!!action.error && <Notice error>{action.error}</Notice>}
-            <Button
-              loading={action.busy}
-              disabled={action.busy}
-              onPress={submit}
-            >
-              {action.busy ? "Saving…" : "Retry bill attachment"}
-            </Button>
-            <Button
-              secondary
-              disabled={action.busy}
-              onPress={() => router.replace(`/transaction/${savedId}` as any)}
-            >
-              Open saved expense
-            </Button>
-          </YStack>
-        </Card>
-      ) : null}
       <View
-        pointerEvents={savedId || action.busy ? "none" : "auto"}
-        style={{ opacity: savedId ? 0.5 : 1 }}
+        pointerEvents={action.busy ? "none" : "auto"}
+        style={{ opacity: action.busy ? 0.72 : 1 }}
       >
         <YStack gap={14}>
           <XStack alignItems="center" justifyContent="space-between" gap={12}>
@@ -358,6 +313,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                     </Button>
                   </XStack>
                   <BillEditor
+                    accountId={d.account.id}
                     autoCapture={params.capture === "bill"}
                     onAutoCaptureHandled={() =>
                       router.setParams({ capture: undefined })
@@ -604,7 +560,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                     Phone Book
                   </Button>
                   <Button secondary compact onPress={() => setPicker("payee")}>
-                    {contactName || "Choose saved peer"}
+                    {contactName || "Choose saved contact"}
                   </Button>
                 </XStack>
                 {!!contactPayee && (
@@ -692,7 +648,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
               <Button
                 onPress={submit}
                 loading={action.busy || scanning}
-                disabled={action.busy || scanning || !!savedId}
+                disabled={action.busy || scanning}
               >
                 {action.busy
                   ? "Saving…"
@@ -754,20 +710,20 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
           />
           <SearchPicker
             visible={picker === "payee"}
-            title="Saved peers"
+            title="Saved contacts"
             options={[
               ...(contactName
                 ? [{ id: "__none", label: "Clear selection" }]
                 : []),
-              ...d.peers.map((peer) => ({
-                id: peer.id,
-                label: peer.name,
-                detail: peer.phone,
+              ...d.savedContacts.map((contact) => ({
+                id: contact.id,
+                label: contact.name,
+                detail: contact.phone,
               })),
             ]}
-            selected={d.peers
-              .filter((peer) => peer.name === contactName)
-              .map((peer) => peer.id)}
+            selected={d.savedContacts
+              .filter((contact) => contact.name === contactName)
+              .map((contact) => contact.id)}
             onSelect={choosePayee}
             onClose={() => setPicker(null)}
           />
@@ -861,8 +817,8 @@ export function TransactionScreen() {
                         <Label>
                           {a.userId === d.account.id
                             ? "You"
-                            : (d.peers.find((p) => p.id === a.userId)?.name ??
-                              "Member")}
+                            : (d.savedContacts.find((p) => p.id === a.userId)
+                                ?.name ?? "Member")}
                         </Label>
                         <Label bold>{money(a.amountMinor, t.currency)}</Label>
                       </XStack>
@@ -946,9 +902,8 @@ export function TransactionScreen() {
                 </XStack>
               </YStack>
             </Card>
-            <Receipts transactionId={t.id} accountId={d.account.id} />
             <Card>
-              <SectionTitle title="Activity" />
+              <SectionTitle title="Transactions" />
               {d.activity
                 .filter((a) => a.message.includes(t.title))
                 .map((a) => (
@@ -1024,7 +979,7 @@ export function SettlementScreen() {
               </Card>
               <Button onPress={() => setReceipt(null)}>Back to balances</Button>
               <Button secondary onPress={() => router.push("/activity")}>
-                View activity
+                View transactions
               </Button>
             </YStack>
           );
@@ -1039,7 +994,7 @@ export function SettlementScreen() {
             <Notice>
               Settle up clears what you owe after you pay someone outside the
               app. Choose the person, confirm the amount you paid, and SettleUp
-              will reduce that balance and record the repayment in Activity.
+              will reduce that balance and record the repayment in Transactions.
             </Notice>
             <Card>
               <YStack gap={18}>
@@ -1053,8 +1008,8 @@ export function SettlementScreen() {
                     <Label bold>Choose a balance to repay</Label>
                     {owed.map((o) => {
                       const person =
-                        d.peers.find((p) => p.id === o.creditorId)?.name ??
-                        "Member";
+                        d.savedContacts.find((p) => p.id === o.creditorId)
+                          ?.name ?? "Member";
                       return (
                         <Pressable
                           key={o.id}
@@ -1131,8 +1086,9 @@ export function SettlementScreen() {
                           setReceipt({
                             accountId: d.account.id,
                             name:
-                              d.peers.find((p) => p.id === selected.creditorId)
-                                ?.name ?? "Member",
+                              d.savedContacts.find(
+                                (p) => p.id === selected.creditorId,
+                              )?.name ?? "Member",
                             amountMinor: parseMoney(amount, selected.currency),
                             currency: selected.currency,
                             date: new Date().toISOString(),
@@ -1195,21 +1151,23 @@ export function GroupsScreen() {
                   disabled={action.busy}
                   onPress={() =>
                     action.run(async () => {
-                      const contact = await chooseContact();
-                      if (!contact) return;
-                      const peer = d.peers.find(
-                        (p) => p.phone === contact.phone,
+                      const picked = await chooseContact();
+                      if (!picked) return;
+                      const saved = d.savedContacts.find(
+                        (contact) => contact.phone === picked.phone,
                       );
-                      if (!peer) {
+                      if (!saved) {
                         setContacts((items) =>
-                          items.some((p) => p.phone === contact.phone)
+                          items.some(
+                            (contact) => contact.phone === picked.phone,
+                          )
                             ? items
-                            : [...items, contact],
+                            : [...items, picked],
                         );
                         return;
                       }
                       setMembers((ms) =>
-                        ms.includes(peer.id) ? ms : [...ms, peer.id],
+                        ms.includes(saved.id) ? ms : [...ms, saved.id],
                       );
                     })
                   }
@@ -1221,7 +1179,7 @@ export function GroupsScreen() {
                   compact
                   onPress={() => router.push("/contacts")}
                 >
-                  Manage contacts and invitations
+                  View saved contacts
                 </Button>
                 <XStack gap={8} flexWrap="wrap">
                   {contacts.map((contact) => (
@@ -1237,7 +1195,7 @@ export function GroupsScreen() {
                       {contact.name}
                     </Chip>
                   ))}
-                  {d.peers.map((p) => (
+                  {d.savedContacts.map((p) => (
                     <Chip
                       selected={members.includes(p.id)}
                       key={p.id}
@@ -1380,6 +1338,11 @@ export function GroupScreen() {
               .map((o) => ({ ...o, amountMinor: o.remainingMinor }));
         const name = (id: string) =>
           l.members.find((m) => m.id === id)?.name ?? "Member";
+        const currentMember = l.members.find(
+          (member) => member.id === d.account.id,
+        );
+        const canManageMembers =
+          currentMember?.role === "OWNER" || currentMember?.role === "ADMIN";
         return (
           <YStack gap={22}>
             <Card style={{ backgroundColor: c.soft, borderWidth: 0 }}>
@@ -1405,7 +1368,7 @@ export function GroupScreen() {
                 Split an expense
               </Button>
               <Button secondary onPress={() => router.push("/settle")}>
-                Record repayment
+                Settle debts
               </Button>
               <Button
                 secondary
@@ -1438,8 +1401,65 @@ export function GroupScreen() {
                   <Label muted size={11}>
                     {m.role.toLowerCase()}
                   </Label>
+                  {canManageMembers &&
+                    m.id !== d.account.id &&
+                    m.role !== "OWNER" && (
+                      <Button
+                        secondary
+                        compact
+                        disabled={action.busy}
+                        onPress={() =>
+                          Alert.alert(
+                            "Remove member?",
+                            `${m.name} will lose access to this group. Settle any open balance first; past transactions stay in the ledger.`,
+                            [
+                              { text: "Cancel", style: "cancel" },
+                              {
+                                text: "Remove",
+                                style: "destructive",
+                                onPress: () =>
+                                  void action.run(
+                                    () =>
+                                      extra(
+                                        d.account.id,
+                                        `/groups/${l.groupId}/members/${m.id}`,
+                                        undefined,
+                                        "DELETE",
+                                      ),
+                                    `${m.name} removed from the group`,
+                                  ),
+                              },
+                            ],
+                          )
+                        }
+                      >
+                        Remove
+                      </Button>
+                    )}
                 </XStack>
               ))}
+            </Card>
+            <Card>
+              <SectionTitle title="Group changes" />
+              {d.activity
+                .filter((entry) => entry.ledgerId === id)
+                .slice(0, 8)
+                .map((entry) => (
+                  <XStack
+                    key={entry.id}
+                    justifyContent="space-between"
+                    gap={12}
+                    paddingVertical={9}
+                  >
+                    <Label flex={1}>{entry.message}</Label>
+                    <Label muted size={10}>
+                      {new Date(entry.createdAt).toLocaleDateString("en-IN")}
+                    </Label>
+                  </XStack>
+                ))}
+              {!d.activity.some((entry) => entry.ledgerId === id) && (
+                <Label muted>No group changes yet.</Label>
+              )}
             </Card>
             <Card>
               <SectionTitle title="Who owes whom" />
@@ -1488,129 +1508,5 @@ export function GroupScreen() {
         );
       }}
     </DataScreen>
-  );
-}
-
-function Receipts({
-  transactionId,
-  accountId,
-}: {
-  transactionId: string;
-  accountId: string;
-}) {
-  const action = useAction();
-  const q = useQuery({
-    queryKey: ["account", accountId, "receipts", transactionId],
-    queryFn: () =>
-      DEMO
-        ? getDemoBillPhoto(accountId, transactionId)
-        : extra(accountId, `/transactions/${transactionId}/attachments`),
-  });
-  return (
-    <Card>
-      <YStack gap={14}>
-        <SectionTitle title="Receipts" />
-        <Label muted size={12}>
-          JPEG, PNG or PDF, up to 10 MB. Receipts stay private to authorized
-          ledger viewers.
-        </Label>
-        {DEMO ? (
-          <YStack gap={12}>
-            {q.data ? (
-              <Image
-                source={{ uri: q.data }}
-                accessibilityLabel="Saved bill photo"
-                resizeMode="contain"
-                style={{ width: "100%", height: 280 }}
-              />
-            ) : (
-              <Label muted>No bill photo attached.</Label>
-            )}
-            <Label muted size={11}>
-              Demo bill photos stay on this device, under this account.
-            </Label>
-            <Button
-              secondary
-              onPress={() =>
-                action.run(async () => {
-                  const picked = await DocumentPicker.getDocumentAsync({
-                    type: ["image/jpeg", "image/png"],
-                    copyToCacheDirectory: true,
-                  });
-                  if (picked.canceled) return;
-                  const file = picked.assets[0];
-                  await saveBillPhoto(accountId, transactionId, {
-                    uri: file.uri,
-                    contentType: file.mimeType ?? "image/jpeg",
-                  });
-                  await q.refetch();
-                }, "Bill photo attached.")
-              }
-            >
-              Attach bill photo
-            </Button>
-          </YStack>
-        ) : (
-          <>
-            <Button
-              secondary
-              onPress={() =>
-                action.run(async () => {
-                  const result = await DocumentPicker.getDocumentAsync({
-                    type: ["image/jpeg", "image/png", "application/pdf"],
-                    copyToCacheDirectory: true,
-                  });
-                  if (result.canceled) return;
-                  const file = result.assets[0];
-                  if (!file.size || file.size > 10485760)
-                    throw new Error("Choose a receipt up to 10 MB.");
-                  const upload = await extra(
-                    accountId,
-                    `/transactions/${transactionId}/attachments`,
-                    { contentType: file.mimeType, size: file.size },
-                  );
-                  const blob = await (await fetch(file.uri)).blob();
-                  const response = await fetch(upload.uploadUrl, {
-                    method: "PUT",
-                    headers: { "content-type": file.mimeType! },
-                    body: blob,
-                  });
-                  if (!response.ok)
-                    throw new Error("Upload failed. Please try again.");
-                  await extra(
-                    accountId,
-                    `/attachments/${upload.id}/complete`,
-                    {},
-                  );
-                  await q.refetch();
-                }, "Receipt uploaded")
-              }
-            >
-              Attach receipt
-            </Button>
-            {q.data?.map((a: any) => (
-              <Button
-                key={a.id}
-                secondary
-                disabled={a.state !== "READY"}
-                onPress={() =>
-                  action.run(async () => {
-                    const result = await extra(
-                      accountId,
-                      `/attachments/${a.id}/download`,
-                    );
-                    await Linking.openURL(result.url);
-                  }, "Receipt opened")
-                }
-              >
-                {a.contentType} · {a.state.toLowerCase()}
-              </Button>
-            ))}
-          </>
-        )}
-        {!!action.error && <Notice error>{action.error}</Notice>}
-        {!!action.success && <Notice>{action.success}</Notice>}
-      </YStack>
-    </Card>
   );
 }

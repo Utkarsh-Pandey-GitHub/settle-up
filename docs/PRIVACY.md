@@ -4,7 +4,7 @@ SettleUp helps you record expenses, shared obligations, repayments, and goals. I
 
 ## Information used
 
-The service uses a verified phone number for authentication, optional profile information, financial entries you choose to save, shared-ledger memberships, selected contact peers, notification preferences, and receipts you attach. Only selected contacts are saved; we do not upload the full phonebook. Contact discovery is off by default.
+The service uses a verified phone number for authentication, optional profile information, financial entries you choose to save, shared-ledger memberships, selected contacts, and notification preferences. Only selected contacts are used; we do not upload the full phonebook. Contact discovery is off by default.
 
 Account sessions are stored independently. On native devices, tokens and saved drafts use operating-system secure storage. On the browser, real API tokens are kept in memory. The labeled demo stores fictional sample records locally and sends no financial entries to the API.
 
@@ -25,10 +25,10 @@ Security-relevant shared-link access events record whether access was allowed an
 
 ## Export, deletion, and retention
 
-Export your accessible data from Settings. Deleting an account revokes sessions and links and removes the phone identity, profile identifying details, selected contacts, import records, and notification preferences. Unresolved obligations must first be settled or reversed. Shared financial and audit records are retained under an anonymized account so other participants do not lose their history. Free-text notes or shared receipts can themselves contain personal information; the operator needs a documented erasure/redaction process for such requests and must publish legally appropriate retention limits before launch.
+Export your accessible data from Settings. Deleting an account revokes sessions and links and removes the phone identity, profile identifying details, import records, and notification preferences. Unresolved obligations must first be settled or reversed. Shared financial and audit records are retained under an anonymized account so other participants do not lose their history. Free-text notes can contain personal information; the operator needs a documented erasure/redaction process for such requests and must publish legally appropriate retention limits before launch.
 
-Production databases and receipt storage must use encryption at rest and TLS in transit, restricted operator access, backups, and deletion procedures. No advertising SDK or third-party behavioral analytics is included in this repository.
+Production databases must use encryption at rest and TLS in transit, restricted operator access, backups, and deletion procedures. No advertising SDK or third-party behavioral analytics is included in this repository.
 
-## Bill photos and local recognition
+## Bill photos and itemisation
 
-Selecting or capturing a bill is optional. OCR reads the photo locally and proposes editable values; the browser may download OCR software and English language data, but the bill itself is not sent to an OCR provider. Saving with a photo attaches it to the expense through private storage in API mode. In demo mode it stays in account-scoped device/browser storage until the demo account is cleared or local app data is removed. Drafts include manually reviewed items but not the image. Camera permission is requested only when capture is chosen.
+Selecting or capturing a bill is optional. The app sends the selected image to the authenticated SettleUp API, which forwards it to the configured vision model for one-time itemisation. The result remains editable. SettleUp does not attach the image to the transaction or retain it in its database or object storage. The configured model provider may process the image under its own terms, so the production policy must name that provider and its retention terms. Camera permission is requested only when capture is chosen.

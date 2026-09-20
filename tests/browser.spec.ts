@@ -46,9 +46,7 @@ test("shared expense, account isolation, and accessible responsive home", async 
   await page
     .getByRole("button", { name: "Choose a group", exact: true })
     .click();
-  await page
-    .getByRole("radio", { name: /Goa, here we come/ })
-    .click();
+  await page.getByRole("radio", { name: /Goa, here we come/ }).click();
   await expect(page.getByText("₹25.00", { exact: true })).toHaveCount(4);
   await page
     .getByRole("button", { name: "Save & split expense", exact: true })
@@ -66,7 +64,7 @@ test("shared expense, account isolation, and accessible responsive home", async 
   await expect(
     page.getByText("₹4,669", { exact: true }).filter({ visible: true }).first(),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await page.getByRole("button", { name: "Transactions", exact: true }).click();
   await expect(
     page.getByRole("button", { name: /Design software/ }),
   ).toBeVisible();

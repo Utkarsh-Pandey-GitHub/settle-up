@@ -4,10 +4,11 @@ import { Image, Modal, Platform, StyleSheet, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { XStack, YStack } from "tamagui";
-import { parseReceipt } from "@settleup/domain/src/receipt";
 import { money, parseMoney } from "@settleup/domain";
-import { recognizeReceipt } from "../services/receipt";
-import { extractBillWithOpenRouter } from "../services/aiBillScanner";
+import {
+  extractBillWithOpenRouter,
+  type ExtractedBillResult,
+} from "../services/aiBillScanner";
 import {
   Card,
   Label,
@@ -16,7 +17,6 @@ import {
   Field,
   Notice,
   IconButton,
-  Progress,
   PipFeedback,
   useColors,
 } from "../components/ui";
@@ -24,6 +24,7 @@ import {
 export type BillPhoto = { uri: string; contentType: string };
 export type BillLine = { name: string; quantity: string; amount: string };
 export function BillEditor({
+  accountId,
   currency,
   amount,
   lines,
@@ -36,6 +37,7 @@ export function BillEditor({
   onAutoCaptureHandled,
   autoCamera,
 }: {
+  accountId: string;
   currency: string;
   amount: string;
   lines: BillLine[];
@@ -50,12 +52,9 @@ export function BillEditor({
 }) {
   const c = useColors();
   const [busy, setBusy] = useState(false),
-    [progress, setProgress] = useState(0),
     [error, setError] = useState(""),
     [aiStatus, setAiStatus] = useState("");
-  const [result, setResult] = useState<ReturnType<typeof parseReceipt> | null>(
-    null,
-  );
+  const [result, setResult] = useState<ExtractedBillResult | null>(null);
   const [camera, setCamera] = useState(false),
     [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null),
@@ -320,66 +319,19 @@ export function BillEditor({
                 disabled={busy}
                 onPress={() =>
                   task(async () => {
-                    setProgress(0);
                     setResult(null);
-                    setAiStatus("Connecting to OpenRouter AI...");
-                    try {
-                      const aiResult = await extractBillWithOpenRouter(
-                        photo.uri,
-                        currency,
-                        setAiStatus,
-                      );
-                      if (
-                        aiResult.items.length > 0 ||
-                        aiResult.totalMinor !== undefined
-                      ) {
-                        setResult({
-                          items: aiResult.items,
-                          totalMinor: aiResult.totalMinor,
-                        });
-                        setAiStatus("");
-                        return;
-                      }
-                    } catch (aiErr) {
-                      console.warn(
-                        "OpenRouter AI extraction failed, trying local OCR:",
-                        aiErr,
-                      );
-                    }
-                    setAiStatus("Falling back to local OCR...");
-                    const text = await recognizeReceipt(photo.uri, setProgress);
-                    const parsed = parseReceipt(text, currency);
-                    if (!parsed.items.length && !parsed.totalMinor)
-                      throw new Error(
-                        "No amounts were found. Try a straight, well-lit photo, or add items below.",
-                      );
-                    setResult(parsed);
+                    const extracted = await extractBillWithOpenRouter(
+                      accountId,
+                      photo.uri,
+                      currency,
+                      setAiStatus,
+                    );
+                    setResult(extracted);
                     setAiStatus("");
                   })
                 }
               >
-                {busy ? aiStatus || "Working…" : "Extract with AI (OpenRouter)"}
-              </Button>
-              <Button
-                secondary
-                disabled={busy}
-                onPress={() =>
-                  task(async () => {
-                    setProgress(0);
-                    setResult(null);
-                    setAiStatus("Scanning locally...");
-                    const text = await recognizeReceipt(photo.uri, setProgress);
-                    const parsed = parseReceipt(text, currency);
-                    if (!parsed.items.length && !parsed.totalMinor)
-                      throw new Error(
-                        "No amounts were found. Try a straight, well-lit photo, or add items below.",
-                      );
-                    setResult(parsed);
-                    setAiStatus("");
-                  })
-                }
-              >
-                Local OCR
+                {busy ? aiStatus || "Reading…" : "Extract itemised bill"}
               </Button>
               <Button
                 secondary
@@ -400,10 +352,8 @@ export function BillEditor({
               mood="reading"
               message={aiStatus || "Let’s take a closer look."}
             />
-            {progress > 0 && <Progress value={progress * 100} />}
             <Label muted size={11}>
-              {aiStatus ||
-                "Reading receipt details. AI model extraction in progress..."}
+              {aiStatus || "Reading every visible item, tax and discount…"}
             </Label>
           </>
         )}
@@ -468,6 +418,7 @@ export function BillEditor({
                 if (result.totalMinor !== undefined)
                   onAmount(String(result.totalMinor / factor));
                 setResult(null);
+                onPhoto(null);
               }}
             >
               Use scanned details
@@ -478,9 +429,8 @@ export function BillEditor({
           </YStack>
         )}
         <Label muted size={11}>
-          Free, local text recognition for English bills. Check the total,
-          items, taxes and discounts before saving. The photo is attached when
-          you save.
+          The image is sent once for itemisation and is not stored with the
+          transaction. Check items, taxes, discounts and total before saving.
         </Label>
         <View style={{ height: 1, backgroundColor: c.line }} />
         <XStack alignItems="center" justifyContent="space-between">

@@ -57,6 +57,7 @@ export type IconName =
   | "settings"
   | "bell"
   | "arrow"
+  | "back"
   | "down"
   | "up"
   | "check"
@@ -94,6 +95,7 @@ const paths: Record<string, string> = {
     "M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.2 2.2 M16.2 16.2l2.2 2.2 M5.6 18.4l2.2-2.2 M16.2 7.8l2.2-2.2",
   bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M10 21h4",
   arrow: "M5 12h14 M14 7l5 5-5 5",
+  back: "M19 12H5 M10 7l-5 5 5 5",
   down: "M7 7l10 10 M7 17h10V7",
   up: "M7 17 17 7 M7 7h10v10",
   check: "m5 12 4 4L19 6",
@@ -1009,7 +1011,8 @@ export function FilterDropdownTrigger({
     <Pressable
       onPress={onPress}
       style={{
-        flex: 1,
+        flexGrow: 1,
+        flexBasis: 128,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",

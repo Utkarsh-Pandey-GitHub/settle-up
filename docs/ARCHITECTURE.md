@@ -10,8 +10,8 @@ This repository contains a working Expo/React Native application and a PostgreSQ
 - A posted expense is a durable original record. Reversal records and audit events preserve corrections. Tags, profile settings, and goals are mutable metadata; changes to posted money are not.
 - Equal splits give leftover minor units to participants in stable input order. Percentage values use integer basis points, with largest-remainder reconciliation. Shared spending means the account's own allocated share, not the full amount it paid.
 - An `ADJUSTMENT` created from the manual "Money in" or reviewed credit flow represents personal incoming money. It never silently repays an obligation. Corrections to expenses use reversal plus replacement.
-- Phone contacts are selected individually. Saving a peer does not prove identity. A single-use invitation can be claimed only by a session whose verified phone matches the placeholder. No messages are sent automatically.
-- Demo accounts intentionally use separate fixture copies. They are not a simulation of a synchronized multiplayer backend. API mode is the authority for cross-device activity, concurrency, secure links, receipt storage, and session revocation.
+- Phone contacts are selected individually. A selected number resolves to an existing user or creates an unverified member identity. Verification later claims that same identity; no messages are sent automatically.
+- Demo accounts intentionally use separate fixture copies. They are not a simulation of a synchronized multiplayer backend. API mode is the authority for cross-device activity, concurrency, secure links, and session revocation.
 - Following the request to keep the schema lean, models contain only fields with a concrete use. Join tables use composite primary keys; monetary and expiring resources have the relevant checks and indexes. There are no speculative generic utility layers.
 
 ## Repository layout
@@ -31,7 +31,7 @@ apps/
     auth/                OTP providers, session issuance and rotation
     finance/             expense, obligation, settlement, dispute services
     sharing/             scoped immutable analytics snapshots
-    infra/               Prisma boundary, audit writes, attachment providers
+    infra/               Prisma boundary and audit writes
     app.ts               HTTP validation, metadata CRUD, authorization boundary
     worker.ts            expiry cleanup, recurring goals, notification outbox
 packages/
@@ -120,12 +120,12 @@ flowchart TD
 - `Goal` holds a limit, recurrence, dates and thresholds. `GoalScope` selects a tag or ledger. Its check constraint requires exactly one selector per row.
 - `SmsImportRecord` stores only an account-scoped fingerprint, review decision and expiry. Raw messages are not part of the server schema. Native review also retains salted fingerprints locally.
 - `SharedAnalyticsLink` owns one frozen snapshot and access events. Private-phone bindings and internal IDs never appear in public snapshot projections.
-- Attachments start quarantined; download URLs are issued only after authorization and a ready verdict. Notification preferences and an idempotent outbox are separate from ledger records.
+- Notification preferences and an idempotent outbox are separate from ledger records.
 - `AuditEvent` retains the actor, resource, action, relevant before/after metadata, and time. Financial rows use restrictive foreign keys to prevent cascading destruction of other participants' history.
 
 ## Navigation and design
 
-Home, Activity, Add, Analytics, and Groups form the mobile bottom navigation. Wide screens use a sidebar with Goals and device tools. Detail, authentication, account, sharing, and settings screens are regular Expo Router routes so deep links are reproducible.
+Home, Transactions, Add, Analytics, and Groups form the mobile bottom navigation. Wide screens use a sidebar with Goals and device tools. Detail, authentication, account, sharing, and settings screens are regular Expo Router routes so deep links are reproducible.
 
 The design uses Montserrat, a white canvas, muted violet controls, mint headers and pastel finance action tiles, original wallet artwork, and a geometric mascot called Pip. Controls are at least 44 points. Chart summaries include text. Fonts respect native font scaling. Light and dark themes share semantic roles.
 
@@ -137,6 +137,6 @@ The API dashboard currently returns the account's full accessible dataset for co
 
 `TransactionItem` has just five columns: `transactionId`, `position`, `name`, `quantity`, `amountMinor`. `(transactionId, position)` is the primary key; there is no redundant item UUID, currency, unit price, or timestamp. Currency and date belong to the expense. `amountMinor` is a signed line total including quantity; negative discount lines and positive tax lines reconcile to the expense total. Up to 100 lines are validated and inserted atomically with the parent transaction. Posted lines retain the original audit semantics: reverse and replace to correct them. Item rows do not create additional debts or change the chosen participant split.
 
-`parseReceipt` converts OCR text into provisional total/item suggestions. Browser and native recognition implementations share the same UI and parser. Scanning never saves a financial record. Applying scan results is an explicit replacement of the editor's values. Photo attachment follows successful expense creation and can be retried separately if storage fails. Demo photos are account-keyed local data; API downloads retain the existing member/owner authorization. Shared analytics snapshots continue using their allowlist and do not expose item detail or receipt images.
+The authenticated API sends a selected JPEG/PNG to the configured vision model for one-time structured extraction. Scanning never saves a financial record or bill image. Applying scan results explicitly replaces the editor values; only reviewed item lines are stored when the transaction is created. Shared analytics snapshots continue using their allowlist and do not expose item detail.
 
 Pip has reading, success, help, and wave poses. Feedback is scoped to the active account and clears after 4.5 seconds or on account switch.

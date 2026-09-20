@@ -11,9 +11,8 @@ A friendly expense and shared-ledger application built with Expo, React Native, 
 - One original shared expense, exact allocations, three obligations for a four-person expense, and auditable partial/full repayments. Amounts are integer minor units; database checks reinforce service rules.
 - Scoped, frozen analytics snapshots. Public links use 256-bit random tokens; private links require the intended verified phone. Links are read-only, expiring, revocable, and access-logged.
 - Camera/UPI confirmation with pending records; an Android Kotlin SMS inbox module with on-device parsing, explicit permission, and seven-day salted deduplication. iOS/browser/Expo Go show honest limitations.
-- Bill photos from camera or photo library, free local OCR with editable total/item suggestions, and a separate five-column `TransactionItem` table. Item totals must match the expense; quantities, taxes, and discounts are supported.
+- One-time AI bill itemisation from camera or photo library, with editable items, taxes, discounts and total in a separate five-column `TransactionItem` table. Bill images are not stored.
 - Purple/violet finance illustrations, a central mobile UPI scanner, Pip feedback for reading, saving, and corrections.
-- Receipt upload/download endpoints with authorization, signed URLs, size/type validation, and quarantine. A real storage/scanning gateway plugs into the production adapter.
 - PostgreSQL migrations, idempotent sample seed, domain tests, real-database integration tests, browser test specifications, background expiry cleanup and a notification outbox.
 
 **Release status:** This is a runnable implementation and tested core vertical slice, not an app-store-ready or independently security-certified financial product. See [release gates and feature boundaries](docs/PRODUCTION.md). Native permission flows and delivery through your production providers still require device and staging verification. The dependency audit has unresolved upstream advisories.
@@ -37,7 +36,7 @@ Open [localhost:8081](http://localhost:8081). The demo starts with Utkarsh's per
 
 Demo data is fictional and stored under `settleup.demo.v1.<accountId>` in AsyncStorage. Tokens are never put in browser local storage. Browser API sessions last only as long as the page is open. Native API sessions use SecureStore. Native drafts use separate secure keys per account; browser drafts stay in memory for the current page session.
 
-Demo public shares are in-memory previews for the current page session. Secure private links, durable shares, real authentication, synchronized receipt storage, and multiplayer consistency need API mode. Original seeded demo debt records are intentionally read-only for reversal experiments; create a new expense to test reversal.
+Demo public shares are in-memory previews for the current page session. Secure private links, durable shares, real authentication, and multiplayer consistency need API mode. Original seeded demo debt records are intentionally read-only for reversal experiments; create a new expense to test reversal.
 
 ## Run PostgreSQL and the API
 
@@ -123,11 +122,7 @@ npm run test:e2e
 
 ## Bill scanning and design refresh
 
-No OCR API key or paid OCR provider is required. Choose **Add expense → Take bill photo / Choose bill photo → Read total & items**. Review suggestions, apply them, correct missing taxes/discounts, then save. A line total already includes its quantity. Saving rejects item totals that differ from the expense. Photos are optional; manual items also work.
-
-Web OCR uses Tesseract.js locally and downloads the engine and English language data on first use. Native OCR uses bundled Android ML Kit and Apple Vision via the local `receipt-scanner` Expo module. Native scanning needs a rebuilt development app (`npm run android -w @settleup/mobile` or `npm run ios -w @settleup/mobile`), not Expo Go. Camera capture needs permission and browser HTTPS or localhost. Native hardware OCR and permission flows still need device verification.
-
-Demo photos persist in account-scoped local storage (subject to device/browser quota); clearing demo account data removes them. API photos use the existing private storage adapter. If the expense saves but uploading the photo fails, retry attachment or open the saved expense without creating a duplicate. Drafts keep items but do not retain photo files. OCR is tuned for English/Latin printed bills and can misread complex layouts, blurry images or handwriting; review is required.
+Set server-only `OPENROUTER_API_KEY` and optionally `BILL_VISION_MODEL` (default `openrouter/free`). Choose **Add expense → Take bill photo / Choose bill photo → Extract itemised bill**. The authenticated API sends the image once to the selected vision model and returns editable items, taxes, discounts, and total. SettleUp does not save or attach the image. A line total already includes its quantity, and saving rejects item totals that differ from the expense. Manual items remain available.
 
 The second shared Figma finance kit is the primary visual inspiration: airy surfaces, pastel action tiles, and original outlined wallet illustrations. Pip's interaction feedback draws on the first reference. The finance reference's coin, wallet and privacy illustrations are bundled locally; see `apps/mobile/assets/finance/README.md` for source credits.
 

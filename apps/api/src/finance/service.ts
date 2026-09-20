@@ -57,7 +57,7 @@ export class FinanceService {
       )
         throw new DomainError(
           "PARTICIPANTS",
-          "Personal expenses cannot create peer obligations.",
+          "Personal expenses cannot create shared obligations.",
         );
       for (const id of requestedUsers) {
         if (!input.ledgerId)
@@ -73,8 +73,8 @@ export class FinanceService {
         });
         if (blocked)
           throw new DomainError(
-            "PEER_UNAVAILABLE",
-            "A selected peer is unavailable.",
+            "CONTACT_UNAVAILABLE",
+            "A selected contact is unavailable.",
             403,
           );
       }
@@ -210,6 +210,79 @@ export class FinanceService {
           `${record.title} deleted`,
         );
       return { ok: true, deleted: records.length };
+    });
+  }
+  async assignLedger(userId: string, ids: string[], ledgerId: string) {
+    return atomic(async (tx) => {
+      const uniqueIds = [...new Set(ids)];
+      const membership = await requireMember(tx, ledgerId, userId, true);
+      const records = await tx.transaction.findMany({
+        where: { id: { in: uniqueIds }, sourceId: userId, deletedAt: null },
+        include: { participants: true },
+      });
+      if (records.length !== uniqueIds.length)
+        throw new DomainError(
+          "NOT_FOUND",
+          "You can only assign transactions that you created.",
+          404,
+        );
+      if (
+        records.some((record) =>
+          ["SETTLEMENT", "LOAN_REPAYMENT", "REVERSAL"].includes(record.type),
+        )
+      )
+        throw new DomainError(
+          "GROUP_ASSIGNMENT",
+          "Repayments and reversals keep their original group.",
+          409,
+        );
+      if (
+        records.some(
+          (record) => record.currency !== membership.ledger.currency,
+        )
+      )
+        throw new DomainError(
+          "CURRENCY",
+          "The selected group uses a different currency.",
+        );
+      for (const record of records) {
+        const participantIds = [
+          ...new Set([
+            ...record.participants.map((participant) => participant.userId),
+            record.sourceId,
+            ...(record.destinationId ? [record.destinationId] : []),
+          ]),
+        ];
+        const memberCount = await tx.ledgerMember.count({
+          where: { ledgerId, userId: { in: participantIds }, leftAt: null },
+        });
+        if (memberCount !== participantIds.length)
+          throw new DomainError(
+            "GROUP_MEMBERS",
+            "Every person in the transaction must belong to the group.",
+            409,
+          );
+      }
+      for (const record of records) {
+        await tx.transaction.update({
+          where: { id: record.id },
+          data: { ledgerId, version: { increment: 1 } },
+        });
+        await tx.obligation.updateMany({
+          where: { transactionId: record.id },
+          data: { ledgerId },
+        });
+        await audit(
+          tx,
+          userId,
+          record.id,
+          "TRANSACTION_GROUP_ASSIGNED",
+          { previousLedgerId: record.ledgerId, ledgerId },
+          ledgerId,
+          `${record.title} moved to ${membership.ledger.name}`,
+        );
+      }
+      return { ok: true, assigned: records.length };
     });
   }
   async settle(userId: string, input: CreateSettlement) {
@@ -485,11 +558,12 @@ export class PrismaDashboardRepository implements DashboardRepository {
           where: { id: userId },
           include: { profile: true, phone: true },
         });
-        const [transactions, ledgers, debts, tags, goals, activity, peers] =
+        const [transactions, ledgers, debts, tags, goals, activity] =
           await Promise.all([
             tx.transaction.findMany({
               where: visibleTransaction(userId),
               include: {
+                participants: true,
                 splits: true,
                 items: { orderBy: { position: "asc" } },
                 tags: { where: { tag: { ownerId: userId } } },
@@ -524,8 +598,25 @@ export class PrismaDashboardRepository implements DashboardRepository {
               orderBy: { createdAt: "desc" },
               take: 50,
             }),
-            tx.contactPeer.findMany({ where: { ownerId: userId } }),
           ]);
+        const savedContactIds = new Set<string>();
+        for (const ledger of ledgers)
+          for (const member of ledger.members)
+            if (member.userId !== userId) savedContactIds.add(member.userId);
+        for (const transaction of transactions) {
+          if (transaction.sourceId !== userId)
+            savedContactIds.add(transaction.sourceId);
+          if (transaction.destinationId && transaction.destinationId !== userId)
+            savedContactIds.add(transaction.destinationId);
+          for (const participant of transaction.participants)
+            if (participant.userId !== userId)
+              savedContactIds.add(participant.userId);
+        }
+        const savedContacts = await tx.user.findMany({
+          where: { id: { in: [...savedContactIds] }, deletedAt: null },
+          include: { profile: true, phone: true },
+          orderBy: { profile: { name: "asc" } },
+        });
         const data: Dashboard = json({
           account: {
             id: userId,
@@ -568,10 +659,7 @@ export class PrismaDashboardRepository implements DashboardRepository {
             archived: !!l.archivedAt,
             members: l.members.map((m) => ({
               id: m.userId,
-              name:
-                peers.find((p) => p.linkedUserId === m.userId)?.name ??
-                m.user.profile?.name ??
-                "Former member",
+              name: m.user.profile?.name ?? "Former member",
               role: m.role,
             })),
           })),
@@ -598,10 +686,11 @@ export class PrismaDashboardRepository implements DashboardRepository {
             spentMinor: 0,
           })),
           activity,
-          peers: peers.map((p) => ({
-            id: p.linkedUserId ?? p.id,
-            name: p.name,
-            phone: p.phone,
+          savedContacts: savedContacts.map((contact) => ({
+            id: contact.id,
+            name: contact.profile?.name ?? "Saved contact",
+            phone: contact.phone?.phone,
+            verified: !!contact.phone?.verifiedAt,
           })),
         });
         const { analytics } = await import("@settleup/domain/src/analytics");

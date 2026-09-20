@@ -79,21 +79,15 @@ Analytics query: `start`, `end`, `currency`, optional `zone`, `ledgerId`, `tagId
 | GET `/account/export`    | JSON data, profile, audit                                                | Own accessible data                                                |
 | DELETE `/account`        | `{confirmation:"DELETE MY ACCOUNT"}`                                     | Own account; obligations must be resolved                          |
 
-## Imports, sharing, and receipts
+## Imports, sharing, and bill itemisation
 
 Native SMS review does not upload raw messages. `/imports/handled` supports GET and POST (`{fingerprint,decision}`), is account-scoped, and expires fingerprints after seven days. Local parsing creates no financial record; only acceptance invokes the ordinary idempotent transaction endpoint.
 
 `POST /shares` takes start/end/currency, optional ledger/tag scope arrays, `includeTransactions`, `showDescriptions`, optional `recipientPhone`, and `expiresInHours` (1–168, default 24). It returns `{id,url,expiresAt}`. `GET /shares` lists the owner's links without raw bearer tokens. `DELETE /shares/:id` revokes an owned link. `GET /shared/:token` is public only when the link is public; private links require authentication. The API always checks expiration immediately, independently of worker availability. The link token is never stored or logged in clear text.
 
-Attachments:
+`POST /bill/extract` accepts an authenticated JPEG/PNG data URL and currency, forwards it once to the configured vision model, and returns editable item lines and a total. The request is size- and rate-limited. The image is not written to the database or retained as a transaction attachment.
 
-1. `POST /transactions/:id/attachments` with `{contentType,size}` returns `{id,uploadUrl}`. Only the original author can attach.
-2. PUT the selected bytes to that signed URL, using the declared content type.
-3. `POST /attachments/:id/complete` checks the scanning verdict. Pending files remain quarantined.
-4. `GET /transactions/:id/attachments` lists metadata visible to authorized ledger viewers.
-5. `GET /attachments/:id/download` issues a 60-second read URL only for ready, authorized files.
-
-Development storage accepts JPEG/PNG/PDF magic bytes and writes private local files with exclusive creation. It is a development validation mock, not a malware scanner. The production gateway must validate content independently, scan it, constrain signed upload size/type and prevent object replacement.
+`POST /transactions/assign-group` accepts `{ids,ledgerId}`. The caller must have write access, must have created every selected transaction, and every transaction participant must be an active member of the target ledger. Settlement and reversal records cannot be reassigned.
 
 ## Optional expense items
 
