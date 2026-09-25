@@ -23,6 +23,7 @@
     },
     "android": {
       "package": "app.settleup.mobile",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon-production.png",
         "backgroundColor": "#F3F0FA"

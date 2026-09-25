@@ -1,12 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import {
-  View,
-  ScrollView,
-  Pressable,
-  useWindowDimensions,
-  Platform,
-  KeyboardAvoidingView,
-} from "react-native";
+import { View, ScrollView, Pressable, useWindowDimensions } from "react-native";
 import { useRouter, usePathname } from "expo-router";
 import { XStack, YStack } from "tamagui";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,6 +15,7 @@ import {
   Mascot,
 } from "./ui";
 import { useSession, DEMO } from "../data/session";
+import { KeyboardAwareScreen } from "./KeyboardAwareScreen";
 import {
   WalkthroughTour,
   TourGroup,
@@ -88,12 +82,8 @@ export function Shell({
   );
   if (path === "/auth" || path === "/onboarding")
     return (
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={{ flex: 1, backgroundColor: c.bg }}
-      >
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <KeyboardAwareScreen
           contentContainerStyle={{
             flexGrow: 1,
             paddingHorizontal: 20,
@@ -137,8 +127,8 @@ export function Shell({
             ) : null}
           </XStack>
           {children}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAwareScreen>
+      </View>
     );
   const tabPaths = new Set([
     "/",
@@ -199,10 +189,7 @@ export function Shell({
   return (
     <TourStepContext.Provider value={tourActive ? tourStep : null}>
       <TourMeasureContext.Provider value={setTourRect}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{ flex: 1, backgroundColor: c.bg, flexDirection: "row" }}
-        >
+        <View style={{ flex: 1, backgroundColor: c.bg, flexDirection: "row" }}>
           {desktop && (
             <ScrollView
               style={{
@@ -366,7 +353,10 @@ export function Shell({
                   </View>
                 )}
               </XStack>
-              <XStack alignItems="center" gap={desktop ? 17 : width < 360 ? 4 : 10}>
+              <XStack
+                alignItems="center"
+                gap={desktop ? 17 : width < 360 ? 4 : 10}
+              >
                 {desktop && (
                   <XStack gap={8} alignItems="center">
                     <Icon name="calendar" size={16} />
@@ -412,8 +402,7 @@ export function Shell({
                 </Pressable>
               </XStack>
             </View>
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
+            <KeyboardAwareScreen
               contentContainerStyle={{
                 padding: desktop ? 36 : width < 360 ? 14 : 20,
                 paddingBottom: desktop ? 40 : 110,
@@ -423,7 +412,7 @@ export function Shell({
               }}
             >
               {children}
-            </ScrollView>
+            </KeyboardAwareScreen>
             {feedback && feedback.accountId === account?.id && (
               <View
                 style={{
@@ -553,7 +542,7 @@ export function Shell({
                 />
               )}
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </TourMeasureContext.Provider>
     </TourStepContext.Provider>
   );

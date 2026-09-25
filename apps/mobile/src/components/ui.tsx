@@ -78,6 +78,7 @@ export type IconName =
   | "sun"
   | "download"
   | "more"
+  | "edit"
   | "help";
 const paths: Record<string, string> = {
   camera: "M3 6h5l2-3h4l2 3h5v15H3Z M16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
@@ -117,6 +118,7 @@ const paths: Record<string, string> = {
   sun: "M12 1v2 M12 21v2 M1 12h2 M21 12h2 M4 4l2 2 M18 18l2 2 M4 20l2-2 M18 6l2-2",
   download: "M12 3v12 M7 10l5 5 5-5 M4 16v5h16v-5",
   more: "M5 12h.01 M12 12h.01 M19 12h.01",
+  edit: "M4 20h4L19 9l-4-4L4 16v4Z M13.5 6.5l4 4",
   help: "M9 8a3 3 0 1 1 5 2c-2 1-2 2-2 4 M12 17h.01",
 };
 export function Icon({

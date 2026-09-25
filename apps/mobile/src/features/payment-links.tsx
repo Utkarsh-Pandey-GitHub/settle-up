@@ -39,6 +39,15 @@ function PaymentLinkForm({
   accountId: string;
   name: string;
 }) {
+  type SavedLink = {
+    id: string;
+    payeeName: string;
+    upiId: string;
+    amountMinor: number;
+    createdAt: string;
+    expiresAt: string;
+    revokedAt?: string | null;
+  };
   const [upiId, setUpiId] = useState(""),
     [payeeName, setPayeeName] = useState(name),
     [amount, setAmount] = useState(""),
@@ -46,16 +55,41 @@ function PaymentLinkForm({
       token: string;
       expiresAt: string;
     } | null>(null),
-    [pasted, setPasted] = useState("");
+    [pasted, setPasted] = useState(""),
+    [showLinks, setShowLinks] = useState(false),
+    [links, setLinks] = useState<SavedLink[]>([]),
+    [linksLoading, setLinksLoading] = useState(false);
   const action = useAction(),
     router = useRouter();
   const url = created ? `${API_URL.replace(/\/$/, "")}/p/${created.token}` : "";
+  const loadLinks = async () => {
+    if (DEMO) {
+      setLinks([]);
+      return;
+    }
+    setLinksLoading(true);
+    try {
+      setLinks(await request<SavedLink[]>("/payment-links", { accountId }));
+    } finally {
+      setLinksLoading(false);
+    }
+  };
   return (
     <YStack gap={22} maxWidth={620} width="100%" alignSelf="center">
       <Heading>A little link. An easier payment.</Heading>
       <Label muted>
         Request an amount at any UPI ID. The recipient reviews it in SettleUp.
       </Label>
+      <Button
+        secondary
+        icon="link"
+        onPress={() => {
+          setShowLinks(true);
+          void action.run(loadLinks);
+        }}
+      >
+        My links
+      </Button>
       <Card>
         <YStack gap={16}>
           <Field
@@ -98,6 +132,8 @@ function PaymentLinkForm({
                   body: { upiId, payeeName, amountMinor },
                 });
                 setCreated(result);
+                setShowLinks(true);
+                await loadLinks();
               }, "Payment link created")
             }
           >
@@ -159,6 +195,63 @@ function PaymentLinkForm({
           </Button>
         </YStack>
       </Card>
+      {showLinks && (
+        <YStack gap={10}>
+          <Heading size={20}>My links</Heading>
+          <Label muted>
+            Recent payment requests stay here for easy tracking.
+          </Label>
+          {linksLoading ? (
+            <Skeleton height={120} />
+          ) : links.length ? (
+            links.map((link) => {
+              const inactive =
+                !!link.revokedAt || new Date(link.expiresAt) <= new Date();
+              return (
+                <Card key={link.id} style={{ padding: 14 }}>
+                  <YStack gap={9}>
+                    <YStack gap={2}>
+                      <Label bold>{link.payeeName}</Label>
+                      <Label muted size={11}>
+                        {link.upiId}
+                      </Label>
+                    </YStack>
+                    <Heading size={23}>
+                      {money(link.amountMinor, "INR")}
+                    </Heading>
+                    <Label muted size={11}>
+                      {inactive
+                        ? link.revokedAt
+                          ? "Revoked"
+                          : "Expired"
+                        : `Expires ${new Date(link.expiresAt).toLocaleDateString("en-IN")}`}
+                    </Label>
+                    {!inactive && (
+                      <Button
+                        secondary
+                        compact
+                        onPress={() =>
+                          action.run(async () => {
+                            await request(`/payment-links/${link.id}`, {
+                              accountId,
+                              method: "DELETE",
+                            });
+                            await loadLinks();
+                          }, "Payment link revoked")
+                        }
+                      >
+                        Revoke
+                      </Button>
+                    )}
+                  </YStack>
+                </Card>
+              );
+            })
+          ) : (
+            <Notice>No saved payment links yet.</Notice>
+          )}
+        </YStack>
+      )}
       {!!action.error && <Notice error>{action.error}</Notice>}
     </YStack>
   );

@@ -22,6 +22,7 @@ import {
   Skeleton,
   SearchPicker,
   Icon,
+  IconButton,
 } from "../components/ui";
 import { repository, extra, sharedSnapshot } from "../data/repository";
 import { useAction } from "../data/hooks";
@@ -194,60 +195,77 @@ export function TagsScreen() {
   const [name, setName] = useState(""),
     [color, setColor] = useState("#8252E3"),
     [editing, setEditing] = useState(""),
+    [creating, setCreating] = useState(false),
     action = useAction();
   return (
     <DataScreen>
       {(d) => (
         <YStack gap={22} maxWidth={800} width="100%" alignSelf="center">
-          <Heading>A place for every little thing.</Heading>
-          <Label muted>
-            Use a few meaningful tags to see your spending more clearly.
-          </Label>
-          <Card>
-            <YStack gap={16}>
-              <Field
-                label={editing ? "Rename tag" : "New tag name"}
-                value={name}
-                onChangeText={setName}
-              />
-              <XStack gap={8} flexWrap="wrap">
-                {["#8252E3", "#ECA54C", "#8994D6", "#5EB69B", "#E8898C"].map(
-                  (c) => (
-                    <Chip
-                      key={c}
-                      selected={color === c}
-                      onPress={() => setColor(c)}
-                    >
-                      <Label color={c}>●</Label>
-                    </Chip>
-                  ),
-                )}
-              </XStack>
-              <Button
-                loading={action.busy}
-                disabled={action.busy}
-                onPress={async () => {
-                  if (
-                    await action.run(async () => {
-                      if (!name.trim()) throw new Error("Enter a tag name.");
-                      await extra(
-                        d.account.id,
-                        editing ? `/tags/${editing}` : "/tags",
-                        { name, color },
-                        editing ? "PATCH" : "POST",
-                      );
-                    })
-                  ) {
-                    setName("");
-                    setEditing("");
-                  }
-                }}
-              >
-                {editing ? "Save changes" : "Create tag"}
-              </Button>
-              {!!action.error && <Notice error>{action.error}</Notice>}
+          <XStack justifyContent="space-between" alignItems="center" gap={12}>
+            <YStack flex={1} gap={4}>
+              <Heading>A place for every little thing.</Heading>
+              <Label muted>
+                Use a few meaningful tags to see your spending more clearly.
+              </Label>
             </YStack>
-          </Card>
+            <IconButton
+              name="plus"
+              label="Create tag"
+              onPress={() => {
+                setEditing("");
+                setName("");
+                setCreating((value) => !value);
+              }}
+            />
+          </XStack>
+          {(creating || !!editing) && (
+            <Card>
+              <YStack gap={16}>
+                <Field
+                  label={editing ? "Rename tag" : "New tag name"}
+                  value={name}
+                  onChangeText={setName}
+                />
+                <XStack gap={8} flexWrap="wrap">
+                  {["#8252E3", "#ECA54C", "#8994D6", "#5EB69B", "#E8898C"].map(
+                    (c) => (
+                      <Chip
+                        key={c}
+                        selected={color === c}
+                        onPress={() => setColor(c)}
+                      >
+                        <Label color={c}>●</Label>
+                      </Chip>
+                    ),
+                  )}
+                </XStack>
+                <Button
+                  loading={action.busy}
+                  disabled={action.busy}
+                  onPress={async () => {
+                    if (
+                      await action.run(async () => {
+                        if (!name.trim()) throw new Error("Enter a tag name.");
+                        await extra(
+                          d.account.id,
+                          editing ? `/tags/${editing}` : "/tags",
+                          { name, color },
+                          editing ? "PATCH" : "POST",
+                        );
+                      })
+                    ) {
+                      setName("");
+                      setEditing("");
+                      setCreating(false);
+                    }
+                  }}
+                >
+                  {editing ? "Save changes" : "Create tag"}
+                </Button>
+                {!!action.error && <Notice error>{action.error}</Notice>}
+              </YStack>
+            </Card>
+          )}
           {d.tags.map((t) => (
             <Card key={t.id}>
               <XStack
@@ -266,6 +284,7 @@ export function TagsScreen() {
                     secondary
                     onPress={() => {
                       setEditing(t.id);
+                      setCreating(true);
                       setName(t.name);
                       setColor(t.color);
                     }}

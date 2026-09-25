@@ -491,11 +491,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
           ).map((tile) => (
             <View
               key={tile.label}
-              style={
-                width < 360
-                  ? { width: "48%" }
-                  : { flex: 1, minWidth: 0 }
-              }
+              style={width < 360 ? { width: "48%" } : { flex: 1, minWidth: 0 }}
             >
               <Pressable
                 accessibilityRole="button"
@@ -666,9 +662,7 @@ export function ActivityScreen() {
               return false;
             const related = new Set([
               transaction.sourceId,
-              ...(transaction.destinationId
-                ? [transaction.destinationId]
-                : []),
+              ...(transaction.destinationId ? [transaction.destinationId] : []),
               ...transaction.allocations.map((item) => item.userId),
             ]);
             return [...related].every((memberId) =>
@@ -751,151 +745,153 @@ export function ActivityScreen() {
             {/* Dropdown Filter Triggers */}
             <Card style={{ padding: 10 }}>
               <XStack gap={8} alignItems="center" flexWrap="wrap">
-              <FilterDropdownTrigger
-                label={
-                  tag
-                    ? (d.tags.find((t) => t.id === tag)?.name ?? "Tag")
-                    : "All Tags"
-                }
-                active={!!tag}
-                onPress={() =>
-                  setOpenDropdown(openDropdown === "tag" ? null : "tag")
-                }
-              />
-              <FilterDropdownTrigger
-                label={
-                  ledgerFilter
-                    ? (d.ledgers.find((ledger) => ledger.id === ledgerFilter)
-                        ?.name ?? "Ledger")
-                    : "All ledgers"
-                }
-                active={!!ledgerFilter}
-                onPress={() =>
-                  setOpenDropdown(openDropdown === "ledger" ? null : "ledger")
-                }
-              />
+                <FilterDropdownTrigger
+                  label={
+                    tag
+                      ? (d.tags.find((t) => t.id === tag)?.name ?? "Tag")
+                      : "All Tags"
+                  }
+                  active={!!tag}
+                  onPress={() =>
+                    setOpenDropdown(openDropdown === "tag" ? null : "tag")
+                  }
+                />
+                <FilterDropdownTrigger
+                  label={
+                    ledgerFilter
+                      ? (d.ledgers.find((ledger) => ledger.id === ledgerFilter)
+                          ?.name ?? "Group")
+                      : "All groups"
+                  }
+                  active={!!ledgerFilter}
+                  onPress={() =>
+                    setOpenDropdown(openDropdown === "ledger" ? null : "ledger")
+                  }
+                />
 
-              <Chip
-                selected={showAll}
-                onPress={() => setShowAll((value) => !value)}
-              >
-                {showAll ? "All entries" : "Last 3 per ledger"}
-              </Chip>
-
-              <FilterDropdownTrigger
-                label={
-                  status
-                    ? status.toLowerCase().replace(/_/g, " ")
-                    : "All Statuses"
-                }
-                active={!!status}
-                onPress={() =>
-                  setOpenDropdown(openDropdown === "status" ? null : "status")
-                }
-              />
-
-              {(!!tag || !!status || !!ledgerFilter || !!sinceDate) && (
-                <Pressable
-                  onPress={() => {
-                    setTag("");
-                    setStatus("");
-                    setLedgerFilter("");
-                    setSinceDate("");
-                    setOpenDropdown(null);
-                  }}
-                  style={{
-                    height: 36,
-                    paddingHorizontal: 10,
-                    backgroundColor: "#FCE8E6",
-                    borderRadius: 12,
-                    justifyContent: "center",
-                    alignItems: "center",
-                  }}
+                <Chip
+                  selected={showAll}
+                  onPress={() => setShowAll((value) => !value)}
                 >
-                  <Label size={11} bold color="#D9381E">
-                    Clear
-                  </Label>
-                </Pressable>
-              )}
+                  {showAll ? "All entries" : "Last 3 per group"}
+                </Chip>
+
+                <FilterDropdownTrigger
+                  label={
+                    status
+                      ? status.toLowerCase().replace(/_/g, " ")
+                      : "All Statuses"
+                  }
+                  active={!!status}
+                  onPress={() =>
+                    setOpenDropdown(openDropdown === "status" ? null : "status")
+                  }
+                />
+
+                {(!!tag || !!status || !!ledgerFilter || !!sinceDate) && (
+                  <Pressable
+                    onPress={() => {
+                      setTag("");
+                      setStatus("");
+                      setLedgerFilter("");
+                      setSinceDate("");
+                      setOpenDropdown(null);
+                    }}
+                    style={{
+                      height: 36,
+                      paddingHorizontal: 10,
+                      backgroundColor: "#FCE8E6",
+                      borderRadius: 12,
+                      justifyContent: "center",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Label size={11} bold color="#D9381E">
+                      Clear
+                    </Label>
+                  </Pressable>
+                )}
               </XStack>
 
               {/* Expandable Dropdown Content Panels */}
               {openDropdown === "tag" && (
-              <FilterDropdownPanel title="FILTER BY TAG">
-                <Chip
-                  selected={!tag}
-                  onPress={() => {
-                    setTag("");
-                    setOpenDropdown(null);
-                  }}
-                >
-                  All tags
-                </Chip>
-                {d.tags
-                  .filter((t) => !t.archived)
-                  .map((t) => (
-                    <Chip
-                      key={t.id}
-                      selected={tag === t.id}
-                      onPress={() => {
-                        setTag(t.id);
-                        setOpenDropdown(null);
-                      }}
-                    >
-                      {t.name}
-                    </Chip>
-                  ))}
-              </FilterDropdownPanel>
-              )}
-
-              {openDropdown === "status" && (
-              <FilterDropdownPanel title="FILTER BY STATUS">
-                {["", "PENDING", "SETTLED", "DISPUTED", "PENDING_LOAN"].map(
-                  (s) => (
-                    <Chip
-                      key={s}
-                      selected={status === s}
-                      onPress={() => {
-                        setStatus(s);
-                        setOpenDropdown(null);
-                      }}
-                    >
-                      {s ? s.toLowerCase().replace(/_/g, " ") : "All statuses"}
-                    </Chip>
-                  ),
-                )}
-              </FilterDropdownPanel>
-              )}
-              {openDropdown === "ledger" && (
-              <FilterDropdownPanel title="FILTER BY LEDGER">
-                <Chip
-                  selected={!ledgerFilter}
-                  onPress={() => {
-                    setLedgerFilter("");
-                    setOpenDropdown(null);
-                  }}
-                >
-                  All ledgers
-                </Chip>
-                {d.ledgers.map((ledger) => (
+                <FilterDropdownPanel title="FILTER BY TAG">
                   <Chip
-                    key={ledger.id}
-                    selected={ledgerFilter === ledger.id}
+                    selected={!tag}
                     onPress={() => {
-                      setLedgerFilter(ledger.id);
+                      setTag("");
                       setOpenDropdown(null);
                     }}
                   >
-                    {ledger.name}
+                    All tags
                   </Chip>
-                ))}
-                <Field
-                  label="Since date (optional)"
-                  placeholder="YYYY-MM-DD"
-                  value={sinceDate}
-                  onChangeText={setSinceDate}
-                />
-              </FilterDropdownPanel>
+                  {d.tags
+                    .filter((t) => !t.archived)
+                    .map((t) => (
+                      <Chip
+                        key={t.id}
+                        selected={tag === t.id}
+                        onPress={() => {
+                          setTag(t.id);
+                          setOpenDropdown(null);
+                        }}
+                      >
+                        {t.name}
+                      </Chip>
+                    ))}
+                </FilterDropdownPanel>
+              )}
+
+              {openDropdown === "status" && (
+                <FilterDropdownPanel title="FILTER BY STATUS">
+                  {["", "PENDING", "SETTLED", "DISPUTED", "PENDING_LOAN"].map(
+                    (s) => (
+                      <Chip
+                        key={s}
+                        selected={status === s}
+                        onPress={() => {
+                          setStatus(s);
+                          setOpenDropdown(null);
+                        }}
+                      >
+                        {s
+                          ? s.toLowerCase().replace(/_/g, " ")
+                          : "All statuses"}
+                      </Chip>
+                    ),
+                  )}
+                </FilterDropdownPanel>
+              )}
+              {openDropdown === "ledger" && (
+                <FilterDropdownPanel title="FILTER BY GROUP">
+                  <Chip
+                    selected={!ledgerFilter}
+                    onPress={() => {
+                      setLedgerFilter("");
+                      setOpenDropdown(null);
+                    }}
+                  >
+                    All groups
+                  </Chip>
+                  {d.ledgers.map((ledger) => (
+                    <Chip
+                      key={ledger.id}
+                      selected={ledgerFilter === ledger.id}
+                      onPress={() => {
+                        setLedgerFilter(ledger.id);
+                        setOpenDropdown(null);
+                      }}
+                    >
+                      {ledger.name}
+                    </Chip>
+                  ))}
+                  <Field
+                    label="Since date (optional)"
+                    placeholder="YYYY-MM-DD"
+                    value={sinceDate}
+                    onChangeText={setSinceDate}
+                  />
+                </FilterDropdownPanel>
               )}
             </Card>
 
@@ -952,13 +948,13 @@ export function ActivityScreen() {
             )}
 
             {/* Transaction List */}
-            <Card>
+            <Card style={{ padding: 6 }}>
               {displayed.map((t, index) => (
                 <TransactionRow
                   key={t.id}
                   transaction={t}
                   data={d}
-                  last={index === filtered.length - 1}
+                  last={index === displayed.length - 1}
                   selectable={isSelecting}
                   selected={selectedIds.includes(t.id)}
                   onSelect={() => toggleSelect(t.id)}

@@ -116,7 +116,6 @@ export function demoDashboard(
             description: "Sun, sea & shared memories",
             currency: "INR",
             members: names,
-            archived: false,
           },
           {
             id: ids.home,
@@ -125,7 +124,6 @@ export function demoDashboard(
             description: "Making adulting a team sport",
             currency: "INR",
             members: names.slice(0, 3),
-            archived: false,
           },
           {
             id: ids.dinner,
@@ -134,7 +132,6 @@ export function demoDashboard(
             description: "Good food. Better company.",
             currency: "INR",
             members: names.slice(0, 3),
-            archived: false,
           },
         ],
     obligations: studio

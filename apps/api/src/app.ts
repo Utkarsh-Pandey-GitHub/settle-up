@@ -154,10 +154,16 @@ export async function createApp() {
         verified = await verifyTruecallerAuthorization(proof, clientId);
       } catch (error) {
         // Never log authorization proofs, provider tokens, or profile contents.
-        req.log.warn({
-          code: error instanceof TruecallerVerificationError ? error.code : "TRUECALLER_INVALID_RESPONSE",
-          clientId,
-        }, "Truecaller server verification failed");
+        req.log.warn(
+          {
+            code:
+              error instanceof TruecallerVerificationError
+                ? error.code
+                : "TRUECALLER_INVALID_RESPONSE",
+            clientId,
+          },
+          "Truecaller server verification failed",
+        );
         if (error instanceof TruecallerVerificationError)
           throw new DomainError(error.code, error.message, error.status);
         throw new DomainError(
@@ -307,13 +313,13 @@ export async function createApp() {
       const items = Array.isArray(parsed.items)
         ? parsed.items
             .map((item: any) => ({
-              name: String(item?.name || "").trim().slice(0, 120),
+              name: String(item?.name || "")
+                .trim()
+                .slice(0, 120),
               quantity: Math.max(0.01, Number(item?.quantity) || 1),
               amountMinor: amountMinor(item?.amount),
             }))
-            .filter(
-              (item: any) => item.name && item.amountMinor !== undefined,
-            )
+            .filter((item: any) => item.name && item.amountMinor !== undefined)
             .slice(0, 99)
         : [];
       const tax = amountMinor(parsed.taxAmount ?? parsed.tax);
@@ -333,7 +339,9 @@ export async function createApp() {
         );
       return {
         merchantName:
-          String(parsed.merchantName || "").trim().slice(0, 120) || undefined,
+          String(parsed.merchantName || "")
+            .trim()
+            .slice(0, 120) || undefined,
         items,
         totalMinor:
           detectedTotal ??
@@ -549,26 +557,6 @@ export async function createApp() {
       return json(group);
     });
   });
-  app.patch("/ledgers/:id", async (req) => {
-    const { userId } = await actor(req);
-    const id = pathId(req);
-    const b = z.object({ archived: z.boolean() }).parse(req.body);
-    return atomic(async (tx) => {
-      const m = await requireMember(tx, id, userId);
-      if (!["OWNER", "ADMIN"].includes(m.role))
-        throw new DomainError(
-          "FORBIDDEN",
-          "Only group admins can archive a ledger.",
-          403,
-        );
-      await tx.ledger.update({
-        where: { id },
-        data: { archivedAt: b.archived ? new Date() : null },
-      });
-      await audit(tx, userId, id, "LEDGER_ARCHIVE_CHANGED", b, id);
-      return { ok: true };
-    });
-  });
   app.delete("/groups/:id/members/:memberId", async (req) => {
     const { userId } = await actor(req);
     const groupId = pathId(req);
@@ -777,6 +765,40 @@ export async function createApp() {
     });
     return { token, expiresAt, appUrl: `settleup:///pay/${token}` };
   });
+  app.get("/payment-links", async (req) => {
+    const { userId } = await actor(req);
+    const links = await db.paymentLink.findMany({
+      where: { ownerId: userId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    return links.map((link) => {
+      const payment = parseUpi(link.uri);
+      return {
+        id: link.tokenDigest,
+        payeeName: payment.payeeName,
+        upiId: payment.payeeAddress,
+        amountMinor: payment.amountMinor,
+        createdAt: link.createdAt,
+        expiresAt: link.expiresAt,
+        revokedAt: link.revokedAt,
+      };
+    });
+  });
+  app.delete("/payment-links/:id", async (req) => {
+    const { userId } = await actor(req);
+    const id = z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .parse((req.params as { id: string }).id);
+    const updated = await db.paymentLink.updateMany({
+      where: { tokenDigest: id, ownerId: userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (!updated.count)
+      throw new DomainError("NOT_FOUND", "Payment link unavailable.", 404);
+    return { ok: true };
+  });
   app.get("/payment-links/:token", async (req, reply) => {
     await actor(req);
     const token = z
@@ -786,7 +808,7 @@ export async function createApp() {
     const link = await db.paymentLink.findUnique({
       where: { tokenDigest: digest(token) },
     });
-    if (!link || link.expiresAt <= new Date())
+    if (!link || link.revokedAt || link.expiresAt <= new Date())
       throw new DomainError(
         "NOT_FOUND",
         "This payment link has expired or is unavailable.",
@@ -803,7 +825,7 @@ export async function createApp() {
     const link = await db.paymentLink.findUnique({
       where: { tokenDigest: digest(token) },
     });
-    if (!link || link.expiresAt <= new Date())
+    if (!link || link.revokedAt || link.expiresAt <= new Date())
       return reply
         .code(404)
         .type("text/plain")

@@ -129,7 +129,6 @@ model Group {
   name        String        @db.VarChar(100)
   description String?       @db.VarChar(500)
   createdAt   DateTime      @default(now()) @db.Timestamptz
-  archivedAt  DateTime?     @db.Timestamptz
   members     GroupMember[]
   ledgers     Ledger[]
 }
@@ -153,7 +152,6 @@ model Ledger {
   group        Group            @relation(fields: [groupId], references: [id], onDelete: Restrict)
   name         String           @db.VarChar(100)
   currency     String           @db.Char(3)
-  archivedAt   DateTime?        @db.Timestamptz
   createdAt    DateTime         @default(now()) @db.Timestamptz
   updatedAt    DateTime         @updatedAt @db.Timestamptz
   members      LedgerMember[]
@@ -446,6 +444,9 @@ model PaymentLink {
   owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   uri         String   @db.VarChar(2048)
   expiresAt   DateTime @db.Timestamptz
+  revokedAt   DateTime? @db.Timestamptz
+  createdAt   DateTime @default(now()) @db.Timestamptz
 
+  @@index([ownerId, createdAt])
   @@index([expiresAt])
 }

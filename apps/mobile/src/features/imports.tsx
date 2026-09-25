@@ -1,5 +1,12 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { Platform, View, Pressable, StyleSheet, AppState } from "react-native";
+import {
+  Platform,
+  View,
+  Pressable,
+  StyleSheet,
+  AppState,
+  Animated,
+} from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { YStack, XStack } from "tamagui";
@@ -29,6 +36,7 @@ import {
   Chip,
   Icon,
   Empty,
+  Mascot,
   useColors,
 } from "../components/ui";
 export function ScanScreen() {
@@ -648,6 +656,108 @@ export function SmsScreen() {
     </DataScreen>
   );
 }
+
+function SmsPrivacyExplainer({ onClose }: { onClose(): void }) {
+  const c = useColors();
+  const reveal = React.useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const animation = Animated.spring(reveal, {
+      toValue: 1,
+      friction: 8,
+      tension: 70,
+      useNativeDriver: Platform.OS !== "web",
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [reveal]);
+  return (
+    <Animated.View
+      style={{
+        opacity: reveal,
+        transform: [
+          {
+            translateY: reveal.interpolate({
+              inputRange: [0, 1],
+              outputRange: [-12, 0],
+            }),
+          },
+          {
+            scale: reveal.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.98, 1],
+            }),
+          },
+        ],
+      }}
+    >
+      <View
+        style={{
+          position: "relative",
+          overflow: "hidden",
+          borderRadius: 20,
+          backgroundColor: c.mint,
+          padding: 14,
+          paddingRight: 42,
+        }}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Hide Bank SMS explanation"
+          onPress={onClose}
+          hitSlop={8}
+          style={({ pressed }) => ({
+            position: "absolute",
+            zIndex: 2,
+            right: 10,
+            top: 10,
+            width: 30,
+            height: 30,
+            borderRadius: 15,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: pressed ? c.card : `${c.card}CC`,
+          })}
+        >
+          <Icon name="close" size={14} color={c.muted} />
+        </Pressable>
+        <XStack gap={10} alignItems="center">
+          <Mascot size={78} mood="reading" />
+          <YStack flex={1} gap={7}>
+            <Heading size={16}>Pip checks only bank-like messages</Heading>
+            <Label muted size={11} lineHeight={16}>
+              SettleUp suggests expenses from bank SMS on this phone. Nothing
+              becomes a transaction until you accept it.
+            </Label>
+            <XStack gap={6} flexWrap="wrap">
+              {["Read locally", "7-day window", "You approve each one"].map(
+                (item) => (
+                  <View
+                    key={item}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                      borderRadius: 10,
+                      backgroundColor: `${c.card}B8`,
+                      paddingHorizontal: 8,
+                      paddingVertical: 5,
+                    }}
+                  >
+                    <Icon name="check" size={11} color="#43816E" />
+                    <Label size={10} bold>
+                      {item}
+                    </Label>
+                  </View>
+                ),
+              )}
+            </XStack>
+          </YStack>
+        </XStack>
+      </View>
+    </Animated.View>
+  );
+}
+
 function SmsContent({ accountId }: { accountId: string }) {
   const provider = useMemo(
       () => new AndroidSmsProvider(accountId),
@@ -669,7 +779,8 @@ function SmsContent({ accountId }: { accountId: string }) {
     [history, setHistory] = useState<Record<string, SmsDecision>>({}),
     [editing, setEditing] = useState<string | null>(null),
     [editAmount, setEditAmount] = useState(""),
-    [editTitle, setEditTitle] = useState("");
+    [editTitle, setEditTitle] = useState(""),
+    [showGuide, setShowGuide] = useState(true);
   const keys = useMemo(() => new Map<string, string>(), []);
   const filteredSuggestions = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -741,12 +852,49 @@ function SmsContent({ accountId }: { accountId: string }) {
 
   return (
     <YStack gap={12} maxWidth={760} width="100%" alignSelf="center">
-      <YStack gap={2}>
-        <Heading size={24}>Bank SMS review</Heading>
-        <Label muted size={12}>
-          Confirm or dismiss suggested transactions.
-        </Label>
-      </YStack>
+      <XStack gap={10} alignItems="flex-start" justifyContent="space-between">
+        <YStack gap={2} flex={1}>
+          <Heading size={24}>Bank SMS review</Heading>
+          <Label muted size={12}>
+            Confirm, correct, or dismiss suggested transactions.
+          </Label>
+        </YStack>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="How Bank SMS review works"
+          accessibilityHint="Shows the privacy explanation"
+          onPress={() => setShowGuide(true)}
+          style={({ pressed }) => ({
+            minHeight: 36,
+            paddingHorizontal: 10,
+            borderRadius: 12,
+            backgroundColor: pressed || showGuide ? c.soft : c.card,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+          })}
+        >
+          <View
+            style={{
+              width: 19,
+              height: 19,
+              borderRadius: 10,
+              borderWidth: 1.5,
+              borderColor: "#7770A4",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Label bold size={11} color="#7770A4">
+              i
+            </Label>
+          </View>
+          <Label bold size={11} color={c.muted}>
+            How it works
+          </Label>
+        </Pressable>
+      </XStack>
+      {showGuide && <SmsPrivacyExplainer onClose={() => setShowGuide(false)} />}
       <Card style={{ padding: 14 }}>
         <YStack gap={11}>
           {!provider.available() ? (
@@ -885,17 +1033,14 @@ function SmsContent({ accountId }: { accountId: string }) {
         />
       )}
       {filteredSuggestions.map((s) => (
-        <Card
-          key={s.fingerprint}
-          style={{ padding: 14, paddingRight: 112, minHeight: 154 }}
-        >
+        <Card key={s.fingerprint} style={{ padding: 13 }}>
           <YStack gap={9}>
-            <XStack alignItems="center" gap={10}>
+            <XStack alignItems="center" gap={9}>
               <View
                 style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 12,
+                  width: 34,
+                  height: 34,
+                  borderRadius: 11,
                   backgroundColor: s.direction === "CREDIT" ? c.mint : c.soft,
                   alignItems: "center",
                   justifyContent: "center",
@@ -909,18 +1054,28 @@ function SmsContent({ accountId }: { accountId: string }) {
               </View>
               <YStack flex={1} gap={2}>
                 <Heading size={16}>{s.title}</Heading>
-                <Label
-                  bold
-                  size={15}
-                  color={s.direction === "CREDIT" ? "#218262" : c.text}
-                >
-                  {money(s.amountMinor)} · {s.direction.toLowerCase()}
-                </Label>
                 <Label muted size={10}>
+                  {s.direction.toLowerCase()} ·
                   {new Date(s.occurredAt).toLocaleString()}
                   {s.accountSuffix ? ` · A/c •${s.accountSuffix}` : ""}
                 </Label>
               </YStack>
+              <View
+                style={{
+                  backgroundColor: s.direction === "CREDIT" ? c.mint : c.soft,
+                  borderRadius: 12,
+                  paddingHorizontal: 11,
+                  paddingVertical: 8,
+                }}
+              >
+                <Label
+                  bold
+                  size={16}
+                  color={s.direction === "CREDIT" ? "#218262" : "#514B8F"}
+                >
+                  {money(s.amountMinor)}
+                </Label>
+              </View>
             </XStack>
             {s.direction === "CREDIT" && (
               <Label muted size={11} lineHeight={16}>
@@ -943,20 +1098,15 @@ function SmsContent({ accountId }: { accountId: string }) {
                 />
               </>
             )}
-            <YStack
-              gap={7}
-              position="absolute"
-              top={0}
-              right={-98}
-              width={88}
-            >
+            <XStack gap={7} alignItems="center">
               <Button
                 compact
+                style={{ flex: 1, minHeight: 36, paddingVertical: 7 }}
                 loading={
                   pending?.fingerprint === s.fingerprint &&
                   pending.kind === "accept"
                 }
-                disabled={action.busy}
+                disabled={!!pending && pending.fingerprint !== s.fingerprint}
                 onPress={() =>
                   perform(
                     "accept",
@@ -1012,26 +1162,36 @@ function SmsContent({ accountId }: { accountId: string }) {
               >
                 Accept
               </Button>
-              <Button
-                secondary
-                compact
-                disabled={action.busy}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Edit suggestion"
+                disabled={!!pending}
                 onPress={() => {
                   setEditing(s.fingerprint);
                   setEditAmount(String(s.amountMinor / 100));
                   setEditTitle(s.title);
                 }}
+                style={{
+                  width: 40,
+                  height: 36,
+                  borderRadius: 11,
+                  backgroundColor: c.soft,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: pending ? 0.55 : 1,
+                }}
               >
-                Edit
-              </Button>
+                <Icon name="edit" size={16} color={c.muted} />
+              </Pressable>
               <Button
                 secondary
                 compact
+                style={{ flex: 1, minHeight: 36, paddingVertical: 7 }}
                 loading={
                   pending?.fingerprint === s.fingerprint &&
                   pending.kind === "reject"
                 }
-                disabled={action.busy}
+                disabled={!!pending && pending.fingerprint !== s.fingerprint}
                 onPress={() =>
                   perform(
                     "reject",
@@ -1056,7 +1216,7 @@ function SmsContent({ accountId }: { accountId: string }) {
               >
                 Reject
               </Button>
-            </YStack>
+            </XStack>
           </YStack>
         </Card>
       ))}

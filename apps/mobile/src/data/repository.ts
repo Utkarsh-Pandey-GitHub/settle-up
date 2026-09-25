@@ -61,10 +61,10 @@ export async function request<T>(
     path === "/bill/extract"
       ? 65000
       : path === "/auth/truecaller"
-      ? 30000
-      : path.startsWith("/auth/")
-        ? 90000
-        : 15000;
+        ? 30000
+        : path.startsWith("/auth/")
+          ? 90000
+          : 15000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   let result: any;
@@ -200,7 +200,7 @@ export class DemoRepository implements AppRepository {
       );
     }
     const ledger = input.ledgerId
-      ? d.ledgers.find((l) => l.id === input.ledgerId && !l.archived)
+      ? d.ledgers.find((l) => l.id === input.ledgerId)
       : null;
     if (input.ledgerId && (!ledger || ledger.currency !== input.currency))
       throw new Error("Choose an active ledger with this currency.");
@@ -477,7 +477,6 @@ export class DemoRepository implements AppRepository {
             .filter((p) => selected.has(p.id))
             .map((p) => ({ ...p, role: "MEMBER" })),
         ],
-        archived: false,
       });
     } else if (path === "/transactions/assign-group") {
       const ledger = d.ledgers.find((entry) => entry.id === body.ledgerId);

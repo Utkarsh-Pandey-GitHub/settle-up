@@ -16,3 +16,14 @@ DROP TABLE "ContactPeer";
 
 -- Bill images are processed once and are no longer stored by SettleUp.
 DROP TABLE IF EXISTS "Attachment";
+
+-- Groups stay available while they have shared history. Removing a member is
+-- the explicit access-control action; there is no separate archive state.
+ALTER TABLE "Ledger" DROP COLUMN IF EXISTS "archivedAt";
+ALTER TABLE "Group" DROP COLUMN IF EXISTS "archivedAt";
+
+ALTER TABLE "PaymentLink"
+  ADD COLUMN IF NOT EXISTS "revokedAt" TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+CREATE INDEX IF NOT EXISTS "PaymentLink_ownerId_createdAt_idx"
+  ON "PaymentLink"("ownerId", "createdAt");

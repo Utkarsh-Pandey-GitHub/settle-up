@@ -31,13 +31,13 @@ export async function requireMember(
   tx: Db,
   ledgerId: string,
   userId: string,
-  writing = false,
+  _writing = false,
 ) {
   const member = await tx.ledgerMember.findUnique({
     where: { ledgerId_userId: { ledgerId, userId } },
     include: { ledger: true },
   });
-  if (!member || member.leftAt || (writing && member.ledger.archivedAt))
+  if (!member || member.leftAt)
     throw new DomainError("NOT_FOUND", "Ledger unavailable.", 404);
   return member;
 }

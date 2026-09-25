@@ -199,7 +199,6 @@ export type LedgerView = {
   description: string;
   currency: string;
   members: { id: string; name: string; role: string }[];
-  archived: boolean;
 };
 export type TagView = {
   id: string;

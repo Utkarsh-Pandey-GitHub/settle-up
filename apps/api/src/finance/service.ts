@@ -237,9 +237,7 @@ export class FinanceService {
           409,
         );
       if (
-        records.some(
-          (record) => record.currency !== membership.ledger.currency,
-        )
+        records.some((record) => record.currency !== membership.ledger.currency)
       )
         throw new DomainError(
           "CURRENCY",
@@ -656,7 +654,6 @@ export class PrismaDashboardRepository implements DashboardRepository {
             name: l.name,
             description: l.group.description ?? "",
             currency: l.currency,
-            archived: !!l.archivedAt,
             members: l.members.map((m) => ({
               id: m.userId,
               name: m.user.profile?.name ?? "Former member",
