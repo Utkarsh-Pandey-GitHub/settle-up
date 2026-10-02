@@ -7,6 +7,7 @@ import {
   API_URL,
   repository,
   readCachedDashboard,
+  subscribeCachedDashboard,
   syncPendingMutations,
 } from "./repository";
 import { getTokenSession } from "./session";
@@ -39,6 +40,13 @@ export function useDashboard() {
     enabled: !!id,
     staleTime: 30_000,
   });
+  useEffect(() => {
+    if (!id) return;
+    return subscribeCachedDashboard((accountId, dashboard) => {
+      if (accountId === id)
+        query.setQueryData(["account", id, "dashboard"], dashboard);
+    });
+  }, [id, query]);
   useEffect(() => {
     if (!id) return;
     let current = true;

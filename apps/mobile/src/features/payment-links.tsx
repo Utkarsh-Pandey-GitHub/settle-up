@@ -133,16 +133,44 @@ function PaymentLinkForm({
                     "Sign in to the live app to create a shareable payment link.",
                   );
                 const amountMinor = parseMoney(amount);
-                const result = await request<{
-                  token: string;
-                  expiresAt: string;
-                }>("/payment-links", {
-                  accountId,
-                  body: { upiId, payeeName, amountMinor },
-                });
-                setCreated(result);
+                const localId = `local:${Date.now()}`;
+                const optimistic: SavedLink = {
+                  id: localId,
+                  payeeName,
+                  upiId,
+                  amountMinor,
+                  createdAt: new Date().toISOString(),
+                  expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+                };
                 setShowLinks(true);
-                void loadLinks();
+                setLinks((current) => [optimistic, ...current]);
+                try {
+                  const result = await request<{
+                    id: string;
+                    token: string;
+                    expiresAt: string;
+                  }>("/payment-links", {
+                    accountId,
+                    body: { upiId, payeeName, amountMinor },
+                  });
+                  setCreated(result);
+                  setLinks((current) =>
+                    current.map((link) =>
+                      link.id === localId
+                        ? {
+                            ...optimistic,
+                            id: result.id,
+                            expiresAt: result.expiresAt,
+                          }
+                        : link,
+                    ),
+                  );
+                } catch (error) {
+                  setLinks((current) =>
+                    current.filter((link) => link.id !== localId),
+                  );
+                  throw error;
+                }
               }, "Payment link created")
             }
           >
@@ -236,23 +264,40 @@ function PaymentLinkForm({
                       {money(link.amountMinor, "INR")}
                     </Heading>
                     <Label muted size={11}>
-                      {inactive
-                        ? link.revokedAt
-                          ? "Revoked"
-                          : "Expired"
-                        : `Expires ${new Date(link.expiresAt).toLocaleDateString("en-IN")}`}
+                      {link.id.startsWith("local:")
+                        ? "Creating secure link…"
+                        : inactive
+                          ? link.revokedAt
+                            ? "Revoked"
+                            : "Expired"
+                          : `Expires ${new Date(link.expiresAt).toLocaleDateString("en-IN")}`}
                     </Label>
-                    {!inactive && (
+                    {!inactive && !link.id.startsWith("local:") && (
                       <Button
                         secondary
                         compact
                         onPress={() =>
                           action.run(async () => {
-                            await request(`/payment-links/${link.id}`, {
-                              accountId,
-                              method: "DELETE",
-                            });
-                            await loadLinks();
+                            const previous = links;
+                            setLinks((current) =>
+                              current.map((entry) =>
+                                entry.id === link.id
+                                  ? {
+                                      ...entry,
+                                      revokedAt: new Date().toISOString(),
+                                    }
+                                  : entry,
+                              ),
+                            );
+                            try {
+                              await request(`/payment-links/${link.id}`, {
+                                accountId,
+                                method: "DELETE",
+                              });
+                            } catch (error) {
+                              setLinks(previous);
+                              throw error;
+                            }
                           }, "Payment link revoked")
                         }
                       >

@@ -983,7 +983,12 @@ export async function createApp() {
         expiresAt,
       },
     });
-    return { token, expiresAt, appUrl: `settleup:///pay/${token}` };
+    return {
+      id: digest(token),
+      token,
+      expiresAt,
+      appUrl: `settleup:///pay/${token}`,
+    };
   });
   app.get("/payment-links", async (req) => {
     const { userId } = await actor(req);

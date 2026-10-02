@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { XStack, YStack } from "tamagui";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   money,
   parseMoney,
@@ -332,12 +332,14 @@ export function ShareScreen() {
       expiresAt: string;
     } | null>(null),
     action = useAction(),
-    router = useRouter();
+    router = useRouter(),
+    query = useQueryClient();
   const accountId = useSession((s) => s.activeId);
+  const shareKey = ["account", accountId, "shares"] as const;
   const links = useQuery<
     { id: string; expiresAt: string; revokedAt: string | null }[]
   >({
-    queryKey: ["account", accountId, "shares"],
+    queryKey: shareKey,
     queryFn: () => extra(accountId!, "/shares"),
     enabled: !!accountId,
   });
@@ -437,8 +439,18 @@ export function ShareScreen() {
                 disabled={action.busy}
                 onPress={() =>
                   action.run(async () => {
-                    setResult(
-                      await repository.share(d.account.id, {
+                    const localId = `local:${Date.now()}`;
+                    const optimistic = {
+                      id: localId,
+                      expiresAt: new Date(
+                        Date.now() + Number(hours) * 3600000,
+                      ).toISOString(),
+                      revokedAt: null,
+                    };
+                    const previous = links.data ?? [];
+                    query.setQueryData(shareKey, [optimistic, ...previous]);
+                    try {
+                      const created = await repository.share(d.account.id, {
                         ...periodRange(period, "Asia/Kolkata"),
                         period: period as
                           "DAY" | "WEEK" | "MONTH" | "LAST_30" | "YEAR",
@@ -449,8 +461,20 @@ export function ShareScreen() {
                         showDescriptions: descriptions,
                         recipientPhone: privateLink ? phone : undefined,
                         expiresInHours: Number(hours),
-                      }),
-                    );
+                      });
+                      setResult(created);
+                      query.setQueryData(shareKey, [
+                        {
+                          id: created.id,
+                          expiresAt: created.expiresAt,
+                          revokedAt: null,
+                        },
+                        ...previous,
+                      ]);
+                    } catch (error) {
+                      query.setQueryData(shareKey, previous);
+                      throw error;
+                    }
                   }, "Monitoring link created")
                 }
               >
@@ -497,14 +521,30 @@ export function ShareScreen() {
                     secondary
                     onPress={() =>
                       action.run(async () => {
-                        await extra(
-                          d.account.id,
-                          `/shares/${result.id}`,
-                          undefined,
-                          "DELETE",
-                        );
+                        const previous = links.data ?? [];
+                        const previousResult = result;
+                        const revokedAt = new Date().toISOString();
                         setResult(null);
-                        await links.refetch();
+                        query.setQueryData(
+                          shareKey,
+                          previous.map((link) =>
+                            link.id === result.id
+                              ? { ...link, revokedAt }
+                              : link,
+                          ),
+                        );
+                        try {
+                          await extra(
+                            d.account.id,
+                            `/shares/${result.id}`,
+                            undefined,
+                            "DELETE",
+                          );
+                        } catch (error) {
+                          setResult(previousResult);
+                          query.setQueryData(shareKey, previous);
+                          throw error;
+                        }
                       }, "Monitoring link revoked")
                     }
                   >
@@ -526,35 +566,53 @@ export function ShareScreen() {
               >
                 <YStack flex={1}>
                   <Label>
-                    {link.revokedAt
-                      ? "Revoked"
-                      : Date.parse(link.expiresAt) <= Date.now()
-                        ? "Expired"
-                        : "Active monitoring link"}
+                    {link.id.startsWith("local:")
+                      ? "Creating monitoring link…"
+                      : link.revokedAt
+                        ? "Revoked"
+                        : Date.parse(link.expiresAt) <= Date.now()
+                          ? "Expired"
+                          : "Active monitoring link"}
                   </Label>
                   <Label muted size={11}>
                     Expires {new Date(link.expiresAt).toLocaleString("en-IN")}
                   </Label>
                 </YStack>
-                {!link.revokedAt && Date.parse(link.expiresAt) > Date.now() && (
-                  <Button
-                    secondary
-                    compact
-                    onPress={() =>
-                      action.run(async () => {
-                        await extra(
-                          d.account.id,
-                          `/shares/${link.id}`,
-                          undefined,
-                          "DELETE",
-                        );
-                        await links.refetch();
-                      }, "Monitoring link revoked")
-                    }
-                  >
-                    Revoke
-                  </Button>
-                )}
+                {!link.id.startsWith("local:") &&
+                  !link.revokedAt &&
+                  Date.parse(link.expiresAt) > Date.now() && (
+                    <Button
+                      secondary
+                      compact
+                      onPress={() =>
+                        action.run(async () => {
+                          const previous = links.data ?? [];
+                          const revokedAt = new Date().toISOString();
+                          query.setQueryData(
+                            shareKey,
+                            previous.map((entry) =>
+                              entry.id === link.id
+                                ? { ...entry, revokedAt }
+                                : entry,
+                            ),
+                          );
+                          try {
+                            await extra(
+                              d.account.id,
+                              `/shares/${link.id}`,
+                              undefined,
+                              "DELETE",
+                            );
+                          } catch (error) {
+                            query.setQueryData(shareKey, previous);
+                            throw error;
+                          }
+                        }, "Monitoring link revoked")
+                      }
+                    >
+                      Revoke
+                    </Button>
+                  )}
               </XStack>
             ))}
             {!links.data?.length && (
