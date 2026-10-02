@@ -28,6 +28,7 @@ import { analytics } from "@settleup/domain/src/analytics";
 import { AuthService, validateConfig } from "./auth/service";
 import { FinanceService, PrismaDashboardRepository } from "./finance/service";
 import { privacyPage } from "./pages/privacy";
+import { notFoundPage } from "./pages/not-found";
 import { SharingService } from "./sharing/service";
 import {
   db,
@@ -1034,6 +1035,10 @@ export async function createApp() {
   app.get("/privacy", async (_req, reply) => {
     reply.header("Cache-Control", "public, max-age=86400");
     return reply.type("text/html").send(privacyPage());
+  });
+
+  app.setNotFoundHandler((_req, reply) => {
+    reply.code(404).type("text/html").send(notFoundPage());
   });
 
   return app;
