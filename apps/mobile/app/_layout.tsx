@@ -64,7 +64,9 @@ export default function Layout() {
               animation: "none",
               contentStyle: { backgroundColor: dark ? "#1C1922" : "#F5F4F7" },
             }}
-          />
+          >
+            <Stack.Screen name="+not-found" />
+          </Stack>
         </TamaguiProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

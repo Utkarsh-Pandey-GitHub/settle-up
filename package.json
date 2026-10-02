@@ -20,7 +20,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
-    "build:web": "npm run export -w @settleup/mobile",
+    "build:web": "npm run export -w @settleup/mobile && node scripts/post-build-web.mjs",
     "check": "npm run db:generate && npm run typecheck && npm test",
     "db:local": "node scripts/local-db.mjs",
     "format": "prettier --write apps packages tests scripts docs README.md",

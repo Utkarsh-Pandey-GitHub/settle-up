@@ -9,7 +9,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "export": "expo export --platform web",
-    "build:web": "expo export --platform web"
+    "build:web": "expo export --platform web && node ../../scripts/post-build-web.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.4.2",

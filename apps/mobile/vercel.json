@@ -2,5 +2,12 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build:web",
   "outputDirectory": "dist",
-  "framework": null
+  "framework": null,
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }
