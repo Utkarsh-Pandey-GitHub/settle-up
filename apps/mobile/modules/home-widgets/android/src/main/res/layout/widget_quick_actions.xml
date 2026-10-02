@@ -5,14 +5,28 @@
   android:padding="12dp"
   android:orientation="vertical">
 
-  <TextView
-    android:layout_width="wrap_content"
+  <LinearLayout
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:text="Quick actions"
-    android:textColor="#FFFFFF"
-    android:textSize="14sp"
-    android:textStyle="bold"
-    android:layout_marginBottom="8dp" />
+    android:layout_marginBottom="6dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+    <TextView
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:text="SettleUp"
+      android:textColor="#211D29"
+      android:textSize="14sp"
+      android:textStyle="bold" />
+    <TextView
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:text="QUICK ACTIONS"
+      android:textColor="#6652A3"
+      android:textSize="9sp"
+      android:textStyle="bold" />
+  </LinearLayout>
 
   <LinearLayout
     android:layout_width="match_parent"
@@ -22,23 +36,23 @@
     android:weightSum="4">
 
     <LinearLayout android:id="@+id/action_qr" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:contentDescription="Scan QR">
-      <ImageView android:layout_width="42dp" android:layout_height="42dp" android:src="@drawable/widget_mascot_qr" android:contentDescription="@null" />
-      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Scan QR" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold" />
+      <ImageView android:layout_width="46dp" android:layout_height="46dp" android:padding="3dp" android:background="@drawable/widget_icon_circle" android:backgroundTint="#E8E1F6" android:src="@drawable/widget_mascot_qr" android:contentDescription="@null" />
+      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Scan QR" android:textColor="#211D29" android:textSize="10sp" android:textStyle="bold" />
     </LinearLayout>
 
     <LinearLayout android:id="@+id/action_bill" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:contentDescription="Scan bill">
-      <ImageView android:layout_width="42dp" android:layout_height="42dp" android:src="@drawable/widget_mascot_bill" android:contentDescription="@null" />
-      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Scan bill" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold" />
+      <ImageView android:layout_width="46dp" android:layout_height="46dp" android:padding="3dp" android:background="@drawable/widget_icon_circle" android:backgroundTint="#E2EFF8" android:src="@drawable/widget_mascot_bill" android:contentDescription="@null" />
+      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Scan bill" android:textColor="#211D29" android:textSize="10sp" android:textStyle="bold" />
     </LinearLayout>
 
     <LinearLayout android:id="@+id/action_expense" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:contentDescription="Add expense">
-      <ImageView android:layout_width="42dp" android:layout_height="42dp" android:src="@drawable/widget_mascot_checklist" android:contentDescription="@null" />
-      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Expense" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold" />
+      <ImageView android:layout_width="46dp" android:layout_height="46dp" android:padding="3dp" android:background="@drawable/widget_icon_circle" android:backgroundTint="#F8E6EC" android:src="@drawable/widget_mascot_checklist" android:contentDescription="@null" />
+      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Add expense" android:textColor="#211D29" android:textSize="10sp" android:textStyle="bold" android:maxLines="1" />
     </LinearLayout>
 
     <LinearLayout android:id="@+id/action_payment" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:contentDescription="Create payment link">
-      <ImageView android:layout_width="42dp" android:layout_height="42dp" android:src="@drawable/widget_mascot_payment" android:contentDescription="@null" />
-      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Pay link" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold" />
+      <ImageView android:layout_width="46dp" android:layout_height="46dp" android:padding="3dp" android:background="@drawable/widget_icon_circle" android:backgroundTint="#FFF0D4" android:src="@drawable/widget_mascot_payment" android:contentDescription="@null" />
+      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Payment link" android:textColor="#211D29" android:textSize="10sp" android:textStyle="bold" android:maxLines="1" />
     </LinearLayout>
   </LinearLayout>
 </LinearLayout>

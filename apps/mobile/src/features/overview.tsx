@@ -204,7 +204,7 @@ export function TransactionRow({
         }}
       >
         {storedIcon ? (
-          <Icon name={storedIcon} color={tag?.color ?? "#7760A5"} size={21} />
+          <Icon name={storedIcon} color="#211D29" size={21} />
         ) : t.icon || (!tag && t.type !== "SETTLEMENT") ? (
           <Label bold size={19} color="#7760A5">
             {t.icon || t.title.slice(0, 1).toUpperCase()}
@@ -212,7 +212,7 @@ export function TransactionRow({
         ) : (
           <Icon
             name={t.type === "SETTLEMENT" ? "down" : categoryIcon(tag?.name)}
-            color={tag?.color ?? "#9985C2"}
+            color="#211D29"
             size={21}
           />
         )}

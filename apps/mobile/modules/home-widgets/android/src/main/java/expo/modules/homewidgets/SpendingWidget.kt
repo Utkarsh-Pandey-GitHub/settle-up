@@ -85,9 +85,9 @@ class SpendingWidget : AppWidgetProvider() {
         minimumFractionDigits = digits; maximumFractionDigits = digits
       }.format(minor / 10.0.pow(digits))
     } catch (_: Exception) { "$currency ${minor / 10.0.pow(digits)}" }
-    views.setTextViewText(R.id.widget_title, "${snapshot.optString("name", "Your")} · spending")
+    views.setTextViewText(R.id.widget_title, "SettleUp · ${snapshot.optString("name", "You")}")
     views.setTextViewText(R.id.widget_total, money(values.sum()))
-    views.setTextViewText(R.id.widget_period, if (week) "This week · Mon–Sun · IST" else "This month · daily spending · IST")
+    views.setTextViewText(R.id.widget_period, if (week) "Spent this week · Mon–Sun" else "Spent this month · daily view")
     views.setViewVisibility(R.id.widget_graph, View.VISIBLE)
     views.setImageViewBitmap(R.id.widget_graph, graph(dates, values, week))
     views.setContentDescription(R.id.widget_graph, dates.zip(values).joinToString("; ") { "${it.first}: ${money(it.second)}" })
@@ -110,7 +110,7 @@ class SpendingWidget : AppWidgetProvider() {
       views.setProgressBar(progress, 100, percent.coerceIn(0, 100), false)
     }
     val dateFormat = SimpleDateFormat("d MMM, h:mm a", Locale("en", "IN")).apply { timeZone = WidgetSeries.zone }
-    views.setTextViewText(R.id.widget_updated, "Synced ${dateFormat.format(Date(snapshot.optLong("updatedAt")))} IST · tap to refresh in app")
+    views.setTextViewText(R.id.widget_updated, "Updated ${dateFormat.format(Date(snapshot.optLong("updatedAt")))} · open to refresh")
     return views
   }
   private fun graph(dates: List<String>, values: List<Double>, week: Boolean): Bitmap {
