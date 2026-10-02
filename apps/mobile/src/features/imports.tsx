@@ -783,7 +783,6 @@ function SmsContent({ accountId }: { accountId: string }) {
     } | null>(null),
     [history, setHistory] = useState<Record<string, SmsDecision>>({}),
     [editing, setEditing] = useState<string | null>(null),
-    [editAmount, setEditAmount] = useState(""),
     [editTitle, setEditTitle] = useState(""),
     [showGuide, setShowGuide] = useState(true);
   const keys = useMemo(() => new Map<string, string>(), []);
@@ -1048,19 +1047,40 @@ function SmsContent({ accountId }: { accountId: string }) {
                   width: 34,
                   height: 34,
                   borderRadius: 11,
-                  backgroundColor: s.direction === "CREDIT" ? c.mint : c.soft,
+                  backgroundColor: c.soft,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <Icon
-                  name={s.direction === "CREDIT" ? "down" : "up"}
-                  size={18}
-                  color="#626078"
-                />
+                <Icon name="up" size={18} color="#626078" />
               </View>
               <YStack flex={1} gap={2}>
-                <Heading size={16}>{s.title}</Heading>
+                {editing === s.fingerprint ? (
+                  <Field
+                    label="Transaction title"
+                    value={editTitle}
+                    onChangeText={setEditTitle}
+                    autoFocus
+                    onSubmitEditing={() => setEditing(null)}
+                  />
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${s.title}`}
+                    onPress={() => {
+                      setEditing(s.fingerprint);
+                      setEditTitle(s.title);
+                    }}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <Heading size={16}>{s.title}</Heading>
+                    <Icon name="edit" size={13} color={c.muted} />
+                  </Pressable>
+                )}
                 <Label muted size={10}>
                   {s.direction.toLowerCase()} ·
                   {new Date(s.occurredAt).toLocaleString()}
@@ -1069,127 +1089,18 @@ function SmsContent({ accountId }: { accountId: string }) {
               </YStack>
               <View
                 style={{
-                  backgroundColor: s.direction === "CREDIT" ? c.mint : c.soft,
+                  backgroundColor: c.soft,
                   borderRadius: 12,
                   paddingHorizontal: 11,
                   paddingVertical: 8,
                 }}
               >
-                <Label
-                  bold
-                  size={16}
-                  color={s.direction === "CREDIT" ? "#218262" : "#514B8F"}
-                >
+                <Label bold size={16} color="#514B8F">
                   {money(s.amountMinor)}
                 </Label>
               </View>
             </XStack>
-            {s.direction === "CREDIT" && (
-              <Label muted size={11} lineHeight={16}>
-                Accept as personal money in only. If this is a loan repayment,
-                use Settle debts instead.
-              </Label>
-            )}
-            {editing === s.fingerprint && (
-              <>
-                <Field
-                  label="Corrected title"
-                  value={editTitle}
-                  onChangeText={setEditTitle}
-                />
-                <Field
-                  label="Corrected amount"
-                  value={editAmount}
-                  onChangeText={setEditAmount}
-                  keyboardType="decimal-pad"
-                />
-              </>
-            )}
             <XStack gap={7} alignItems="center">
-              <Button
-                compact
-                style={{ flex: 1, minHeight: 36, paddingVertical: 7 }}
-                loading={
-                  pending?.fingerprint === s.fingerprint &&
-                  pending.kind === "accept"
-                }
-                disabled={!!pending && pending.fingerprint !== s.fingerprint}
-                onPress={() =>
-                  perform(
-                    "accept",
-                    s.fingerprint,
-                    async () => {
-                      if (!keys.has(s.fingerprint))
-                        keys.set(
-                          s.fingerprint,
-                          `${s.fingerprint.slice(0, 8)}-${s.fingerprint.slice(8, 12)}-4${s.fingerprint.slice(13, 16)}-8${s.fingerprint.slice(17, 20)}-${s.fingerprint.slice(20, 32)}`,
-                        );
-                      await repository.create(accountId, {
-                        idempotencyKey: keys.get(s.fingerprint)!,
-                        title: editing === s.fingerprint ? editTitle : s.title,
-                        amountMinor:
-                          editing === s.fingerprint
-                            ? parseMoney(editAmount)
-                            : s.amountMinor,
-                        currency: "INR",
-                        type:
-                          s.direction === "CREDIT"
-                            ? "ADJUSTMENT"
-                            : "PERSONAL_EXPENSE",
-                        status: "SETTLED",
-                        occurredAt: s.occurredAt,
-                        paymentReference: s.reference,
-                        tagIds: [],
-                        participants: [],
-                        splitMethod: "EQUAL",
-                      });
-                      if (!custom) {
-                        await provider.markHandled(
-                          s.fingerprint,
-                          "ACCEPTED",
-                          s.occurredAt,
-                          {
-                            title:
-                              editing === s.fingerprint ? editTitle : s.title,
-                            amountMinor:
-                              editing === s.fingerprint
-                                ? parseMoney(editAmount)
-                                : s.amountMinor,
-                          },
-                        );
-                        setHistory(await provider.handled());
-                      }
-                      setSuggestions((items) =>
-                        items.filter((i) => i.fingerprint !== s.fingerprint),
-                      );
-                    },
-                    "Suggestion accepted",
-                  )
-                }
-              >
-                Accept
-              </Button>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Edit suggestion"
-                disabled={!!pending}
-                onPress={() => {
-                  setEditing(s.fingerprint);
-                  setEditAmount(String(s.amountMinor / 100));
-                  setEditTitle(s.title);
-                }}
-                style={{
-                  width: 40,
-                  height: 36,
-                  borderRadius: 11,
-                  backgroundColor: c.soft,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  opacity: pending ? 0.55 : 1,
-                }}
-              >
-                <Icon name="edit" size={16} color={c.muted} />
-              </Pressable>
               <Button
                 secondary
                 compact
@@ -1222,6 +1133,60 @@ function SmsContent({ accountId }: { accountId: string }) {
                 }
               >
                 Reject
+              </Button>
+              <Button
+                compact
+                style={{ flex: 1, minHeight: 36, paddingVertical: 7 }}
+                loading={
+                  pending?.fingerprint === s.fingerprint &&
+                  pending.kind === "accept"
+                }
+                disabled={!!pending && pending.fingerprint !== s.fingerprint}
+                onPress={() =>
+                  perform(
+                    "accept",
+                    s.fingerprint,
+                    async () => {
+                      if (!keys.has(s.fingerprint))
+                        keys.set(
+                          s.fingerprint,
+                          `${s.fingerprint.slice(0, 8)}-${s.fingerprint.slice(8, 12)}-4${s.fingerprint.slice(13, 16)}-8${s.fingerprint.slice(17, 20)}-${s.fingerprint.slice(20, 32)}`,
+                        );
+                      await repository.create(accountId, {
+                        idempotencyKey: keys.get(s.fingerprint)!,
+                        title: editing === s.fingerprint ? editTitle : s.title,
+                        amountMinor: s.amountMinor,
+                        currency: "INR",
+                        type: "PERSONAL_EXPENSE",
+                        status: "SETTLED",
+                        occurredAt: s.occurredAt,
+                        paymentReference: s.reference,
+                        tagIds: [],
+                        participants: [],
+                        splitMethod: "EQUAL",
+                      });
+                      if (!custom) {
+                        await provider.markHandled(
+                          s.fingerprint,
+                          "ACCEPTED",
+                          s.occurredAt,
+                          {
+                            title:
+                              editing === s.fingerprint ? editTitle : s.title,
+                            amountMinor: s.amountMinor,
+                          },
+                        );
+                        setHistory(await provider.handled());
+                      }
+                      setSuggestions((items) =>
+                        items.filter((i) => i.fingerprint !== s.fingerprint),
+                      );
+                    },
+                    "Suggestion accepted",
+                  )
+                }
+              >
+                Accept
               </Button>
             </XStack>
           </YStack>

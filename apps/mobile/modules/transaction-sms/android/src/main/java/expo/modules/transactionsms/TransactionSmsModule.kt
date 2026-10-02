@@ -15,14 +15,16 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private val financialAction = Regex(
-  "debited|credited|spent|paid|received|transferred|withdrawn|purchase|transaction|txn|upi|imps|neft|rtgs",
+  "debited|spent|paid|withdrawn|purchase|sent|debit",
   RegexOption.IGNORE_CASE
 )
+private val incomingMoney = Regex("credited|received|deposited|money added|credit\\b", RegexOption.IGNORE_CASE)
 private val moneyAmount = Regex("(?:INR|Rs\\.?|₹)\\s*[\\d,]+(?:\\.\\d{1,2})?", RegexOption.IGNORE_CASE)
 private val secret = Regex("\\b(otp|verification code|one.time.password)\\b", RegexOption.IGNORE_CASE)
 private fun looksFinancial(message: String) =
   financialAction.containsMatchIn(message) &&
     moneyAmount.containsMatchIn(message) &&
+    !incomingMoney.containsMatchIn(message) &&
     !secret.containsMatchIn(message)
 
 class TransactionSmsReceiver : BroadcastReceiver() {

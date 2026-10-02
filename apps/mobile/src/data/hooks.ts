@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { AppState } from "react-native";
-import { useSession } from "./session";
+import { DEMO, useSession } from "./session";
 import { syncGoalNotifications } from "../services/device";
 import {
   API_URL,
@@ -168,6 +168,11 @@ export function useAction() {
           ? "Saved on this phone. It will sync automatically when the server is available."
           : message;
         if (id) {
+          const immediate = DEMO
+            ? await repository.dashboard(id)
+            : await readCachedDashboard(id);
+          if (immediate)
+            query.setQueryData(["account", id, "dashboard"], immediate);
           await query.invalidateQueries({
             queryKey: ["account", id],
             refetchType: "none",

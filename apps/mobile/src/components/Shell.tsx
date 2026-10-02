@@ -297,7 +297,11 @@ export function Shell({
                   alignItems: "center",
                 }}
               >
-                <Avatar name={account?.name ?? "Account"} size={38} />
+                <Avatar
+                  name={account?.name ?? "Account"}
+                  avatar={account?.avatar}
+                  size={38}
+                />
                 <YStack flex={1}>
                   <Label bold size={12} numberOfLines={1}>
                     {account?.name ?? "Sign in"}
@@ -397,6 +401,7 @@ export function Shell({
                 >
                   <Avatar
                     name={account?.name ?? "Account"}
+                    avatar={account?.avatar}
                     size={width < 360 ? 32 : 37}
                   />
                 </Pressable>
@@ -482,27 +487,35 @@ export function Shell({
                       minWidth: 0,
                       minHeight: 65,
                       paddingTop: 8,
-                      borderTopWidth: 3,
-                      borderTopColor:
-                        path === n.path ? c.accent : "transparent",
                       alignItems: "center",
                       gap: 3,
                     }}
                   >
                     <View
                       style={{
-                        width: 39,
-                        height: 39,
+                        width: n.path === "/scan" ? 58 : 39,
+                        height: n.path === "/scan" ? 58 : 39,
+                        marginTop: n.path === "/scan" ? -26 : 0,
+                        marginBottom: n.path === "/scan" ? -7 : 0,
                         alignItems: "center",
                         justifyContent: "center",
-                        backgroundColor: n.path === "/scan" ? c.soft : "transparent",
-                        borderRadius: 14,
+                        backgroundColor:
+                          n.path === "/scan" ? c.primary : "transparent",
+                        borderRadius: n.path === "/scan" ? 22 : 14,
+                        borderWidth: n.path === "/scan" ? 4 : 0,
+                        borderColor: c.card,
                       }}
                     >
                       <Icon
                         name={n.icon as IconName}
-                        size={n.path === "/scan" ? 29 : 25}
-                        color={path === n.path || n.path === "/scan" ? c.accent : c.text}
+                        size={n.path === "/scan" ? 32 : 25}
+                        color={
+                          n.path === "/scan"
+                            ? c.onPrimary
+                            : path === n.path
+                              ? c.accent
+                              : c.text
+                        }
                       />
                     </View>
                     <Label

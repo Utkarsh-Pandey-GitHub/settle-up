@@ -313,6 +313,7 @@ export function parseExpenseSms(body: string, timestamp: number) {
     return null;
   const parsed = parseSms(body, timestamp);
   if (!parsed) return null;
+  if (parsed.direction !== "DEBIT") return null;
   // Prefer the amount next to the debit verb, not an available balance elsewhere.
   const amount =
     body.match(

@@ -608,7 +608,40 @@ export class DemoRepository implements AppRepository {
       if (t) Object.assign(t, body);
     } else if (path.startsWith("/goals/"))
       d.goals = d.goals.filter((g) => g.id !== path.split("/")[2]);
-    else if (path.includes("/members/") && method === "DELETE") {
+    else if (path.match(/^\/groups\/[^/]+\/members$/) && method !== "DELETE") {
+      const groupId = path.split("/")[2];
+      const ledger = d.ledgers.find((entry) => entry.groupId === groupId);
+      if (ledger) {
+        const next = [
+          ...(body.memberIds ?? [])
+            .map((memberId: string) =>
+              d.savedContacts.find((item) => item.id === memberId),
+            )
+            .filter(Boolean),
+          ...(body.contacts ?? []).map(
+            (contact: { name: string; phone: string }) => {
+              const existing = d.savedContacts.find(
+                (item) => item.phone === contact.phone,
+              );
+              const saved = existing ?? {
+                ...contact,
+                id: uuid(),
+                verified: false,
+              };
+              if (!existing) d.savedContacts.push(saved);
+              return saved;
+            },
+          ),
+        ];
+        for (const member of next)
+          if (!ledger.members.some((item) => item.id === member.id))
+            ledger.members.push({
+              id: member.id,
+              name: member.name,
+              role: "MEMBER",
+            });
+      }
+    } else if (path.includes("/members/") && method === "DELETE") {
       const [, , groupId, , memberId] = path.split("/");
       const ledger = d.ledgers.find((entry) => entry.groupId === groupId);
       if (ledger) {
@@ -671,61 +704,123 @@ class ApiRepository implements AppRepository {
   };
   create = async (accountId: string, body: CreateTransaction) => {
     const result = await queueWhenOffline(accountId, "/transactions", body);
-    if ((result as { queued?: boolean }).queued)
-      await updateCachedDashboard(accountId, (dashboard) => {
-        if (
-          dashboard.transactions.some(
-            (entry) => entry.id === body.idempotencyKey,
-          )
-        )
-          return;
-        const allocations =
-          body.type === "SHARED_EXPENSE"
-            ? splitExpense(
-                body.amountMinor,
-                body.participants,
-                body.splitMethod,
-              )
-            : [];
-        dashboard.transactions.unshift({
-          ...body,
-          id: body.idempotencyKey,
-          sourceId: accountId,
-          version: 1,
-          allocations,
-        });
+    await updateCachedDashboard(accountId, (dashboard) => {
+      if (
+        dashboard.transactions.some((entry) => entry.id === body.idempotencyKey)
+      )
+        return;
+      const allocations =
+        body.type === "SHARED_EXPENSE"
+          ? splitExpense(body.amountMinor, body.participants, body.splitMethod)
+          : [];
+      dashboard.transactions.unshift({
+        ...body,
+        id: body.idempotencyKey,
+        sourceId: accountId,
+        version: 1,
+        allocations,
       });
+    });
     return result;
   };
-  settle = (accountId: string, body: CreateSettlement) =>
-    queueWhenOffline(accountId, "/settlements", body);
-  action = (
+  settle = async (accountId: string, body: CreateSettlement) => {
+    const result = await queueWhenOffline(accountId, "/settlements", body);
+    await updateCachedDashboard(accountId, (dashboard) => {
+      let payments: ReturnType<typeof applyRepayment> = [];
+      try {
+        payments = applyRepayment(
+          dashboard.obligations.filter(
+            (item) => item.ledgerId === body.ledgerId,
+          ),
+          body.debtorId,
+          body.creditorId,
+          body.amountMinor,
+          body.currency,
+        );
+      } catch {
+        // A stale balance should not turn a successful server settlement into
+        // a client error. The scheduled refresh will replace this snapshot.
+      }
+      for (const payment of payments) {
+        const debt = dashboard.obligations.find(
+          (item) => item.id === payment.obligationId,
+        );
+        if (debt) debt.remainingMinor -= payment.amountMinor;
+      }
+      dashboard.transactions.unshift({
+        id: body.idempotencyKey,
+        title: "Settlement",
+        amountMinor: body.amountMinor,
+        currency: body.currency,
+        type: "SETTLEMENT",
+        status: "SETTLED",
+        occurredAt: new Date().toISOString(),
+        sourceId: body.debtorId,
+        destinationId: body.creditorId,
+        ledgerId: body.ledgerId,
+        tagIds: [],
+        allocations: [],
+        version: 1,
+      });
+    });
+    return result;
+  };
+  action = async (
     accountId: string,
     id: string,
     action: string,
     version: number,
     reason: string,
-  ) =>
-    queueWhenOffline(accountId, `/transactions/${id}/actions`, {
-      action,
-      version,
-      reason,
+  ) => {
+    const result = await queueWhenOffline(
+      accountId,
+      `/transactions/${id}/actions`,
+      {
+        action,
+        version,
+        reason,
+      },
+    );
+    await updateCachedDashboard(accountId, (dashboard) => {
+      const transaction = dashboard.transactions.find((item) => item.id === id);
+      if (!transaction) return;
+      if (action === "complete") transaction.status = "SETTLED";
+      if (action === "dispute") transaction.status = "DISPUTED";
+      if (action === "resolve")
+        transaction.status =
+          transaction.type === "LOAN" ? "PENDING_LOAN" : "SETTLED";
+      if (action === "reverse") transaction.status = "REVERSED";
+      transaction.version += 1;
     });
+    return result;
+  };
   deleteTransactions = async (accountId: string, ids: string[]) => {
     const result = await queueWhenOffline(accountId, "/transactions/delete", {
       ids,
     });
-    if ((result as { queued?: boolean }).queued)
-      await updateCachedDashboard(accountId, (dashboard) => {
-        const selected = new Set(ids);
-        dashboard.transactions = dashboard.transactions.filter(
-          (entry) => !selected.has(entry.id),
-        );
-      });
+    await updateCachedDashboard(accountId, (dashboard) => {
+      const selected = new Set(ids);
+      dashboard.transactions = dashboard.transactions.filter(
+        (entry) => !selected.has(entry.id),
+      );
+    });
     return result;
   };
-  createGoal = (accountId: string, body: CreateGoal) =>
-    queueWhenOffline(accountId, "/goals", body);
+  createGoal = async (accountId: string, body: CreateGoal) => {
+    const result = await queueWhenOffline<{ id?: string }>(
+      accountId,
+      "/goals",
+      body,
+    );
+    await updateCachedDashboard(accountId, (dashboard) => {
+      dashboard.goals.push({
+        ...body,
+        id: "id" in result && result.id ? result.id : uuid(),
+        spentMinor: 0,
+      });
+    });
+    return result;
+  };
   share = (accountId: string, body: CreateShare) =>
     request<{ id: string; url: string; expiresAt: string }>("/shares", {
       accountId,
@@ -750,17 +845,61 @@ export const extra = async (
       )
         ? queueWhenOffline<any>(accountId, path, body, method)
         : request<any>(path, { accountId, body, method }));
-  if (
-    !DEMO &&
-    (result as { queued?: boolean })?.queued &&
-    path === "/transactions/assign-group"
-  )
+  if (!DEMO && path === "/transactions/assign-group")
     await updateCachedDashboard(accountId, (dashboard) => {
       const input = body as { ids: string[]; ledgerId: string };
       const selected = new Set(input.ids);
       dashboard.transactions.forEach((transaction) => {
         if (selected.has(transaction.id)) transaction.ledgerId = input.ledgerId;
       });
+    });
+  if (!DEMO && path === "/profile" && effectiveMethod === "PATCH")
+    await updateCachedDashboard(accountId, (dashboard) => {
+      Object.assign(dashboard.account, body);
+    });
+  const memberMatch = path.match(/^\/groups\/([^/]+)\/members(?:\/([^/]+))?$/);
+  if (!DEMO && memberMatch && effectiveMethod === "POST")
+    await updateCachedDashboard(accountId, (dashboard) => {
+      const ledger = dashboard.ledgers.find(
+        (entry) => entry.groupId === memberMatch[1],
+      );
+      const members = (
+        result as {
+          members?: { id: string; name: string; role: string }[];
+        }
+      ).members ?? [
+        ...(((body as any)?.memberIds ?? []) as string[])
+          .map((id) =>
+            dashboard.savedContacts.find((contact) => contact.id === id),
+          )
+          .filter(Boolean)
+          .map((contact) => ({
+            id: contact!.id,
+            name: contact!.name,
+            role: "MEMBER",
+          })),
+        ...(
+          ((body as any)?.contacts ?? []) as { name: string; phone: string }[]
+        ).map((contact) => ({
+          id: `local:${contact.phone}`,
+          name: contact.name,
+          role: "MEMBER",
+        })),
+      ];
+      if (ledger)
+        for (const member of members)
+          if (!ledger.members.some((entry) => entry.id === member.id))
+            ledger.members.push(member);
+    });
+  if (!DEMO && memberMatch?.[2] && effectiveMethod === "DELETE")
+    await updateCachedDashboard(accountId, (dashboard) => {
+      const ledger = dashboard.ledgers.find(
+        (entry) => entry.groupId === memberMatch[1],
+      );
+      if (ledger)
+        ledger.members = ledger.members.filter(
+          (member) => member.id !== memberMatch[2],
+        );
     });
   if (path === "/account" && method === "DELETE")
     await clearCachedDashboard(accountId);

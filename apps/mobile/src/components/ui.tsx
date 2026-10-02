@@ -475,15 +475,413 @@ export function Progress({
     </View>
   );
 }
+
+export const avatarPresets = [
+  { id: "flower", label: "Flower", bg: "#FFF0F4", ink: "#C15C7A" },
+  { id: "cat", label: "Cat", bg: "#FFF3DE", ink: "#9A653A" },
+  { id: "fox", label: "Fox", bg: "#FFE9DE", ink: "#B75B3D" },
+  { id: "bear", label: "Bear", bg: "#F5E8DE", ink: "#765445" },
+  { id: "bunny", label: "Bunny", bg: "#F4ECFA", ink: "#74578A" },
+  { id: "panda", label: "Panda", bg: "#EEF0F3", ink: "#34343A" },
+  { id: "owl", label: "Owl", bg: "#E8F2FF", ink: "#516985" },
+  { id: "dog", label: "Dog", bg: "#FFF1D8", ink: "#8D603C" },
+  { id: "man", label: "Man", bg: "#E4F1F4", ink: "#416A75" },
+  { id: "boy", label: "Boy", bg: "#E9EEFF", ink: "#53669A" },
+  { id: "lady", label: "Lady", bg: "#FBE8F0", ink: "#95526E" },
+  { id: "girl", label: "Girl", bg: "#FFF0E6", ink: "#9E6251" },
+  { id: "astronaut", label: "Astronaut", bg: "#EAE8FF", ink: "#655D9B" },
+  { id: "artist", label: "Artist", bg: "#FFF0EA", ink: "#A05457" },
+  { id: "reader", label: "Reader", bg: "#E8F3EE", ink: "#4F7463" },
+  { id: "cyclist", label: "Cyclist", bg: "#EAF4FF", ink: "#4E7191" },
+  { id: "sun", label: "Sun", bg: "#FFF4CF", ink: "#A5751D" },
+  { id: "moon", label: "Moon", bg: "#ECEBFF", ink: "#5B5E98" },
+  { id: "leaf", label: "Leaf", bg: "#E5F3E7", ink: "#4E7857" },
+  { id: "cloud", label: "Cloud", bg: "#E8F5FA", ink: "#547586" },
+] as const;
+
+function SketchAvatar({ preset, size }: { preset: string; size: number }) {
+  const id = preset.replace(/^preset:/, "");
+  const item =
+    avatarPresets.find((entry) => entry.id === id) ?? avatarPresets[0];
+  const stroke = item.ink;
+  const common = {
+    fill: "none",
+    stroke,
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  const face = (
+    <>
+      <Circle
+        cx="16"
+        cy="17"
+        r="8.4"
+        fill="#FFF9F5"
+        stroke={stroke}
+        strokeWidth="1.8"
+      />
+      <Path d="M13 17h.1 M19 17h.1 M14 21c1.2.8 2.8.8 4 0" {...common} />
+    </>
+  );
+  let drawing: React.ReactNode;
+  if (["cat", "fox", "bear", "bunny", "panda", "owl", "dog"].includes(id)) {
+    drawing = (
+      <>
+        {id === "bunny" ? (
+          <>
+            <Ellipse
+              cx="12"
+              cy="7"
+              rx="3"
+              ry="6"
+              fill="#FFF9F5"
+              stroke={stroke}
+              strokeWidth="1.8"
+            />
+            <Ellipse
+              cx="20"
+              cy="7"
+              rx="3"
+              ry="6"
+              fill="#FFF9F5"
+              stroke={stroke}
+              strokeWidth="1.8"
+            />
+          </>
+        ) : id === "bear" || id === "panda" ? (
+          <>
+            <Circle
+              cx="10"
+              cy="10"
+              r="3.5"
+              fill={id === "panda" ? stroke : "#FFF9F5"}
+              stroke={stroke}
+              strokeWidth="1.8"
+            />
+            <Circle
+              cx="22"
+              cy="10"
+              r="3.5"
+              fill={id === "panda" ? stroke : "#FFF9F5"}
+              stroke={stroke}
+              strokeWidth="1.8"
+            />
+          </>
+        ) : id === "dog" ? (
+          <>
+            <Path
+              d="M9 10 5 8l1 9 4-2"
+              fill="#FFF9F5"
+              stroke={stroke}
+              strokeWidth="1.8"
+            />
+            <Path
+              d="m23 10 4-2-1 9-4-2"
+              fill="#FFF9F5"
+              stroke={stroke}
+              strokeWidth="1.8"
+            />
+          </>
+        ) : (
+          <>
+            <Path
+              d="m9 12 1-7 6 5"
+              fill="#FFF9F5"
+              stroke={stroke}
+              strokeWidth="1.8"
+            />
+            <Path
+              d="m23 12-1-7-6 5"
+              fill="#FFF9F5"
+              stroke={stroke}
+              strokeWidth="1.8"
+            />
+          </>
+        )}
+        <Circle
+          cx="16"
+          cy="17"
+          r="9"
+          fill="#FFF9F5"
+          stroke={stroke}
+          strokeWidth="1.8"
+        />
+        {id === "owl" ? (
+          <>
+            <Circle cx="12.5" cy="16" r="3.3" {...common} />
+            <Circle cx="19.5" cy="16" r="3.3" {...common} />
+            <Path d="m16 17-1 2h2z M11 23c3 2 7 2 10 0" {...common} />
+          </>
+        ) : (
+          <>
+            <Path
+              d="M12.5 16h.1 M19.5 16h.1 M16 18l-1.2 1.2L16 20l1.2-.8z"
+              {...common}
+            />
+            <Path d="M13 22c2 1 4 1 6 0" {...common} />
+          </>
+        )}
+        {id === "panda" && (
+          <>
+            <Ellipse cx="12" cy="16" rx="2.2" ry="3" fill={stroke} />
+            <Ellipse cx="20" cy="16" rx="2.2" ry="3" fill={stroke} />
+          </>
+        )}
+      </>
+    );
+  } else if (
+    [
+      "man",
+      "boy",
+      "lady",
+      "girl",
+      "artist",
+      "reader",
+      "cyclist",
+      "astronaut",
+    ].includes(id)
+  ) {
+    drawing = (
+      <>
+        {id === "astronaut" && (
+          <Circle
+            cx="16"
+            cy="16"
+            r="13"
+            fill="#FFF9F5"
+            stroke={stroke}
+            strokeWidth="1.8"
+          />
+        )}
+        {face}
+        {id === "man" && (
+          <Path
+            d="M8 15c1-7 5-10 11-8 3 1 5 4 5 8-4-2-8-5-11-1z"
+            fill={stroke}
+            opacity=".9"
+          />
+        )}
+        {id === "boy" && (
+          <Path
+            d="M8 14c2-7 11-9 16-3l-6-1-3 3-3-2z"
+            fill={stroke}
+            opacity=".9"
+          />
+        )}
+        {(id === "lady" || id === "girl") && (
+          <Path
+            d="M8 18C6 9 11 5 16 5s10 4 8 13l-4-7-4 2-4-2z"
+            fill={stroke}
+            opacity=".86"
+          />
+        )}
+        {id === "artist" && (
+          <>
+            <Path d="M8 11c2-6 13-8 17 1-6-2-11-2-17-1z" fill={stroke} />
+            <Path d="M10 7c3-3 9-4 12-1" {...common} />
+          </>
+        )}
+        {id === "reader" && (
+          <>
+            <Path
+              d="M8 16h7v6H8z M17 16h7v6h-7z"
+              fill="#FFF9F5"
+              stroke={stroke}
+              strokeWidth="1.6"
+            />
+            <Path d="M15 17h2" {...common} />
+          </>
+        )}
+        {id === "cyclist" && (
+          <Path d="M8 12c3-6 12-7 17 0l-9-2z" fill={stroke} />
+        )}
+        {id === "astronaut" && (
+          <>
+            <Path d="M9 23c4 3 10 3 14 0" {...common} />
+            <Circle cx="23" cy="8" r="1.2" fill={stroke} />
+          </>
+        )}
+        <Path
+          d="M8 30c1-5 5-7 8-7s7 2 8 7"
+          fill="#FFF9F5"
+          stroke={stroke}
+          strokeWidth="1.8"
+        />
+      </>
+    );
+  } else if (id === "flower") {
+    drawing = (
+      <>
+        <Circle
+          cx="16"
+          cy="16"
+          r="4"
+          fill="#FFF9F5"
+          stroke={stroke}
+          strokeWidth="1.8"
+        />
+        {[
+          [16, 8],
+          [24, 16],
+          [16, 24],
+          [8, 16],
+          [10.5, 10.5],
+          [21.5, 10.5],
+          [21.5, 21.5],
+          [10.5, 21.5],
+        ].map(([cx, cy]) => (
+          <Ellipse
+            key={`${cx}-${cy}`}
+            cx={cx}
+            cy={cy}
+            rx="3"
+            ry="5"
+            fill="#FFF9F5"
+            stroke={stroke}
+            strokeWidth="1.4"
+            transform={`rotate(${(Math.atan2(cy - 16, cx - 16) * 180) / Math.PI + 90} ${cx} ${cy})`}
+          />
+        ))}
+      </>
+    );
+  } else if (id === "sun") {
+    drawing = (
+      <>
+        <Circle
+          cx="16"
+          cy="16"
+          r="7"
+          fill="#FFF9F5"
+          stroke={stroke}
+          strokeWidth="1.8"
+        />
+        <Path
+          d="M16 3v4 M16 25v4 M3 16h4 M25 16h4 M7 7l3 3 M22 22l3 3 M25 7l-3 3 M10 22l-3 3 M13 16h.1 M19 16h.1 M13 20c2 1 4 1 6 0"
+          {...common}
+        />
+      </>
+    );
+  } else if (id === "moon") {
+    drawing = (
+      <>
+        <Path
+          d="M22 5c-8 1-12 8-9 15 2 5 7 7 12 5-3 4-9 5-14 2C4 23 3 13 9 7c4-4 9-4 13-2z"
+          fill="#FFF9F5"
+          stroke={stroke}
+          strokeWidth="1.8"
+        />
+        <Path d="M12 16h.1 M16 19c1 .6 2 .6 3 0" {...common} />
+      </>
+    );
+  } else if (id === "leaf") {
+    drawing = (
+      <>
+        <Path
+          d="M25 6C14 6 7 12 8 23c9 2 16-4 17-17z"
+          fill="#FFF9F5"
+          stroke={stroke}
+          strokeWidth="1.8"
+        />
+        <Path d="M7 27c4-7 9-11 15-16 M13 20l-1-6 M17 16l5 1" {...common} />
+      </>
+    );
+  } else {
+    drawing = (
+      <>
+        <Path
+          d="M8 23h16a5 5 0 0 0 0-10 8 8 0 0 0-15-1 5.5 5.5 0 0 0-1 11z"
+          fill="#FFF9F5"
+          stroke={stroke}
+          strokeWidth="1.8"
+        />
+        <Path d="M12 17h.1 M19 17h.1 M13 20c2 1 4 1 6 0" {...common} />
+      </>
+    );
+  }
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2.6,
+        backgroundColor: item.bg,
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+      }}
+    >
+      <Svg width={size * 0.86} height={size * 0.86} viewBox="0 0 32 32">
+        {drawing}
+      </Svg>
+    </View>
+  );
+}
+
+export function AvatarPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange(value: string): void;
+}) {
+  const c = useColors();
+  return (
+    <YStack gap={8}>
+      <Label bold size={13}>
+        Choose your avatar
+      </Label>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {avatarPresets.map((item) => {
+          const preset = `preset:${item.id}`;
+          const selected = value === preset;
+          return (
+            <Pressable
+              key={item.id}
+              accessibilityRole="button"
+              accessibilityLabel={item.label}
+              accessibilityState={{ selected }}
+              onPress={() => onChange(preset)}
+              style={{
+                width: "18%",
+                minWidth: 48,
+                alignItems: "center",
+                paddingVertical: 4,
+                borderRadius: 14,
+                borderWidth: 2,
+                borderColor: selected ? c.accent : "transparent",
+              }}
+            >
+              <SketchAvatar preset={preset} size={44} />
+            </Pressable>
+          );
+        })}
+      </View>
+    </YStack>
+  );
+}
+
 export function Avatar({
   name,
   size = 36,
   color = "#EEE8F8",
+  avatar,
 }: {
   name: string;
   size?: number;
   color?: string;
+  avatar?: string;
 }) {
+  if (avatar?.startsWith("preset:"))
+    return <SketchAvatar preset={avatar} size={size} />;
+  if (avatar?.startsWith("https://"))
+    return (
+      <Image
+        source={{ uri: avatar }}
+        accessibilityLabel={`${name}'s profile picture`}
+        style={{ width: size, height: size, borderRadius: size / 2.6 }}
+      />
+    );
   return (
     <View
       style={{

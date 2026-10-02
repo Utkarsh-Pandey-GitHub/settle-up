@@ -393,7 +393,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
           paddingVertical: 4,
         })}
       >
-        <Avatar name={d.account.name} size={40} />
+        <Avatar name={d.account.name} avatar={d.account.avatar} size={40} />
         <YStack alignItems="flex-start" flex={1}>
           <Heading size={26}>Hi, {d.account.name.split(" ")[0]}</Heading>
           <Label muted size={12}>
@@ -1059,6 +1059,7 @@ export function AnalyticsScreen() {
             {/* Analytics Dropdown Filter Triggers */}
             <XStack gap={6} alignItems="center">
               <FilterDropdownTrigger
+                compact
                 label={
                   custom ? "Custom" : period.toLowerCase().replace(/_/g, " ")
                 }
@@ -1069,6 +1070,7 @@ export function AnalyticsScreen() {
               />
 
               <FilterDropdownTrigger
+                compact
                 label={
                   tag
                     ? (d.tags.find((t) => t.id === tag)?.name ?? "Category")
@@ -1081,6 +1083,7 @@ export function AnalyticsScreen() {
               />
 
               <FilterDropdownTrigger
+                compact
                 label={
                   ledger
                     ? (d.ledgers.find((l) => l.id === ledger)?.name ?? "Group")
@@ -1102,17 +1105,16 @@ export function AnalyticsScreen() {
                     setOpenFilter(null);
                   }}
                   style={{
-                    height: 36,
-                    paddingHorizontal: 10,
+                    width: 38,
+                    height: 44,
+                    paddingHorizontal: 0,
                     backgroundColor: "#FCE8E6",
                     borderRadius: 12,
                     justifyContent: "center",
                     alignItems: "center",
                   }}
                 >
-                  <Label size={11} bold color="#D9381E">
-                    Clear
-                  </Label>
+                  <Icon name="close" size={16} color="#D9381E" />
                 </Pressable>
               )}
             </XStack>

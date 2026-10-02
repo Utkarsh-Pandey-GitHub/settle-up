@@ -478,7 +478,8 @@ export class AuthService {
       name: user.profile!.name,
       phone: user.phone?.phone ?? "",
       currency: user.profile!.currency,
-      avatar: user.profile!.name.slice(0, 2).toUpperCase(),
+      avatar:
+        user.profile!.avatar ?? user.profile!.name.slice(0, 2).toUpperCase(),
     };
     return { accessToken, refreshToken, account };
   }

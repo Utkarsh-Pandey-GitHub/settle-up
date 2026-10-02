@@ -55,7 +55,7 @@ describe("bank SMS review", () => {
       Settings.defaultZone = zone;
     }
   });
-  it("finds bank debits and credits while ignoring OTPs and failed/promotional messages", () => {
+  it("finds bank debits while ignoring incoming money, OTPs, and failed/promotional messages", () => {
     const now = Date.now();
     expect(
       parseExpenseSms(
@@ -70,8 +70,8 @@ describe("bank SMS review", () => {
       )?.amountMinor,
     ).toBe(45000);
     expect(
-      parseExpenseSms("Your bank account credited INR 500", now)?.direction,
-    ).toBe("CREDIT");
+      parseExpenseSms("Your bank account credited INR 500", now),
+    ).toBeNull();
     for (const text of [
       "OTP 123456 for INR 500 paid by card",
       "UPI payment failed: paid INR 500",

@@ -621,7 +621,7 @@ export class PrismaDashboardRepository implements DashboardRepository {
             name: user.profile!.name,
             phone: user.phone!.phone,
             currency: user.profile!.currency,
-            avatar: user.profile!.name.slice(0, 2),
+            avatar: user.profile!.avatar ?? user.profile!.name.slice(0, 2),
           },
           transactions: transactions.map((t) => ({
             id: t.id,

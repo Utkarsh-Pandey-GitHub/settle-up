@@ -601,6 +601,170 @@ export async function createApp() {
       return json(group);
     });
   });
+  app.post("/groups/:id/members", async (req) => {
+    const { userId } = await actor(req);
+    const groupId = pathId(req);
+    const b = z
+      .object({
+        memberIds: z.array(idSchema).max(20).default([]),
+        contacts: z
+          .array(
+            z.object({
+              name: z.string().trim().min(1).max(100),
+              phone: z.string().max(30),
+            }),
+          )
+          .max(20)
+          .default([]),
+      })
+      .parse(req.body);
+    return atomic(async (tx) => {
+      const actorMembership = await tx.groupMember.findUnique({
+        where: { groupId_userId: { groupId, userId } },
+      });
+      if (
+        !actorMembership ||
+        actorMembership.leftAt ||
+        !["OWNER", "ADMIN"].includes(actorMembership.role)
+      )
+        throw new DomainError(
+          "FORBIDDEN",
+          "Only group admins can add members.",
+          403,
+        );
+      const memberIds = new Set<string>();
+      for (const memberId of b.memberIds) {
+        if (memberId === userId) continue;
+        const savedContact = await tx.user.findFirst({
+          where: {
+            id: memberId,
+            deletedAt: null,
+            OR: [
+              {
+                ledgerMembers: {
+                  some: {
+                    leftAt: null,
+                    ledger: {
+                      members: { some: { userId, leftAt: null } },
+                    },
+                  },
+                },
+              },
+              {
+                participants: {
+                  some: {
+                    transaction: {
+                      deletedAt: null,
+                      participants: { some: { userId } },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        });
+        if (!savedContact)
+          throw new DomainError(
+            "CONTACT",
+            "Choose one of your saved contacts.",
+            403,
+          );
+        memberIds.add(memberId);
+      }
+      for (const contact of b.contacts) {
+        const phone = normalizePhone(contact.phone);
+        let identity = await tx.phoneIdentity.findUnique({
+          where: { phone },
+          include: { user: true },
+        });
+        if (identity?.user.deletedAt)
+          throw new DomainError("CONTACT", "This contact is unavailable.", 403);
+        if (!identity) {
+          const user = await tx.user.create({
+            data: {
+              profile: { create: { name: contact.name } },
+              phone: { create: { phone, verifiedAt: null } },
+            },
+            include: { phone: true },
+          });
+          identity = { ...user.phone!, user };
+        }
+        memberIds.add(identity.userId);
+      }
+      if (!memberIds.size)
+        throw new DomainError("GROUP", "Choose someone to add.");
+      const activeMembers = await tx.groupMember.findMany({
+        where: { groupId, leftAt: null },
+        select: { userId: true },
+      });
+      const activeMemberIds = new Set(
+        activeMembers.map((member) => member.userId),
+      );
+      for (const memberId of activeMemberIds) memberIds.delete(memberId);
+      if (!memberIds.size)
+        throw new DomainError(
+          "GROUP",
+          "Everyone selected is already a member.",
+        );
+      if (activeMembers.length + memberIds.size > 100)
+        throw new DomainError("GROUP", "A group supports up to 100 people.");
+      const ledgers = await tx.ledger.findMany({
+        where: { groupId },
+        select: { id: true },
+      });
+      const addedMembers: { id: string; name: string; role: string }[] = [];
+      for (const memberId of memberIds) {
+        if (
+          await tx.userBlock.findFirst({
+            where: {
+              OR: [
+                { blockerId: userId, blockedId: memberId },
+                { blockerId: memberId, blockedId: userId },
+              ],
+            },
+          })
+        )
+          throw new DomainError(
+            "CONTACT",
+            "This contact cannot be added.",
+            403,
+          );
+        await tx.groupMember.upsert({
+          where: { groupId_userId: { groupId, userId: memberId } },
+          create: { groupId, userId: memberId, role: "MEMBER" },
+          update: { leftAt: null, role: "MEMBER" },
+        });
+        const member = await tx.user.findUniqueOrThrow({
+          where: { id: memberId },
+          include: { profile: true },
+        });
+        addedMembers.push({
+          id: memberId,
+          name: member.profile?.name ?? "Member",
+          role: "MEMBER",
+        });
+        for (const ledger of ledgers) {
+          await tx.ledgerMember.upsert({
+            where: {
+              ledgerId_userId: { ledgerId: ledger.id, userId: memberId },
+            },
+            create: { ledgerId: ledger.id, userId: memberId, role: "MEMBER" },
+            update: { leftAt: null, role: "MEMBER" },
+          });
+          await audit(
+            tx,
+            userId,
+            memberId,
+            "GROUP_MEMBER_ADDED",
+            { groupId, memberId },
+            ledger.id,
+            `${member.profile?.name ?? "A member"} joined the group`,
+          );
+        }
+      }
+      return { added: memberIds.size, members: addedMembers };
+    });
+  });
   app.delete("/groups/:id/members/:memberId", async (req) => {
     const { userId } = await actor(req);
     const groupId = pathId(req);
@@ -923,6 +1087,12 @@ export async function createApp() {
           .optional(),
         discoverable: z.boolean().optional(),
         timezone: z.string().max(64).optional(),
+        avatar: z
+          .string()
+          .regex(
+            /^preset:(flower|cat|fox|bear|bunny|panda|owl|dog|man|boy|lady|girl|astronaut|artist|reader|cyclist|sun|moon|leaf|cloud)$/,
+          )
+          .optional(),
       })
       .parse(req.body);
     return db.userProfile.update({ where: { userId }, data: b });
@@ -1031,4 +1201,3 @@ export async function createApp() {
 
   return app;
 }
-

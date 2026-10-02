@@ -2,7 +2,7 @@
   "expo": {
     "name": "SettleUp",
     "slug": "settleup",
-    "scheme": "settleup",
+    "scheme": ["settleup", "app.settleup.mobile"],
     "version": "1.0.9",
     "runtimeVersion": {
       "policy": "appVersion"

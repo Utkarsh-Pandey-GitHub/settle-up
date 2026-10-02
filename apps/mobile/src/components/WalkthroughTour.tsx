@@ -133,7 +133,8 @@ export function WalkthroughTour({
   const y = Math.max(0, rect?.y ?? 0);
   const right = Math.min(width, x + (rect?.width ?? 0));
   const bottom = Math.min(height, y + (rect?.height ?? 0));
-  const above = y > height / 2;
+  const above = index === 1 || (index !== 2 && y > height / 2);
+  const edgeGap = 7;
   const rows =
     desktop && index === 1
       ? [
@@ -195,13 +196,18 @@ export function WalkthroughTour({
         <View
           style={{
             position: "absolute",
-            left: 16,
-            right: 16,
-            maxWidth: 400,
+            left: width < 360 ? 8 : 16,
+            right: width < 360 ? 8 : 16,
+            maxWidth: 440,
             alignSelf: "center",
             ...(above
-              ? { bottom: height - y + 14 }
-              : { top: Math.max(topInset + 12, bottom + 14) }),
+              ? { bottom: Math.max(bottomInset + 8, height - y + edgeGap) }
+              : {
+                  top: Math.min(
+                    height - bottomInset - 210,
+                    Math.max(topInset + 8, bottom + edgeGap),
+                  ),
+                }),
             padding: 12,
             paddingTop: 18,
             borderRadius: 20,
@@ -238,8 +244,8 @@ export function WalkthroughTour({
               maxHeight: Math.max(
                 90,
                 Math.min(
-                  240,
-                  (above ? y : height - bottom) - 125 - bottomInset,
+                  280,
+                  (above ? y - topInset : height - bottom - bottomInset) - 76,
                 ),
               ),
             }}

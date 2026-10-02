@@ -16,6 +16,7 @@ import {
   Field,
   Notice,
   Avatar,
+  AvatarPicker,
   Chip,
   Mascot,
   ReferenceArt,
@@ -47,15 +48,12 @@ function GoogleSignInButton({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [googleRequest, , promptGoogle] = Google.useIdTokenAuthRequest(
-    {
-      androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-      selectAccount: true,
-    },
-    { scheme: "settleup", path: "auth" },
-  );
+  const [googleRequest, , promptGoogle] = Google.useIdTokenAuthRequest({
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    selectAccount: true,
+  });
   return (
     <YStack gap={8}>
       <Button
@@ -229,7 +227,10 @@ export function AuthScreen() {
     [challenge, setChallenge] = useState(""),
     [devCode, setDevCode] = useState("");
   const [name, setName] = useState(""),
-    [currency, setCurrency] = useState("INR");
+    [currency, setCurrency] = useState("INR"),
+    [avatar, setAvatar] = useState(
+      active?.avatar?.startsWith("preset:") ? active.avatar : "preset:flower",
+    );
   const [verifiedId, setVerifiedId] = useState(
     active?.name === "New friend" ? active.id : "",
   );
@@ -247,6 +248,11 @@ export function AuthScreen() {
       setVerifiedId(session.account.id);
       setName(session.suggestedName?.trim() || session.account.name);
       setCurrency(session.account.currency);
+      setAvatar(
+        session.account.avatar?.startsWith("preset:")
+          ? session.account.avatar
+          : "preset:flower",
+      );
       setStage("profile");
       return;
     }
@@ -259,14 +265,14 @@ export function AuthScreen() {
         await request("/profile", {
           accountId: session.account.id,
           method: "PATCH",
-          body: { name: cleanName, currency: session.account.currency },
+          body: { name: cleanName, currency: session.account.currency, avatar },
         });
         await useSession.getState().add({
           ...session,
           account: {
             ...session.account,
             name: cleanName,
-            avatar: cleanName.slice(0, 2).toUpperCase(),
+            avatar,
           },
         });
         setVerifiedId(session.account.id);
@@ -550,6 +556,7 @@ export function AuthScreen() {
                   textContentType="name"
                   editable={!action.busy}
                 />
+                <AvatarPicker value={avatar} onChange={setAvatar} />
                 <Label size={12} bold>
                   Your everyday currency
                 </Label>
@@ -574,7 +581,7 @@ export function AuthScreen() {
                       await request("/profile", {
                         accountId: verifiedId,
                         method: "PATCH",
-                        body: { name: name.trim(), currency },
+                        body: { name: name.trim(), currency, avatar },
                       });
                       const session = getTokenSession(verifiedId);
                       if (!session) throw new Error("Please sign in again.");
@@ -584,7 +591,7 @@ export function AuthScreen() {
                           ...session.account,
                           name: name.trim(),
                           currency,
-                          avatar: name.trim().slice(0, 2).toUpperCase(),
+                          avatar,
                         },
                       });
                       setName(name.trim());
@@ -733,7 +740,7 @@ export function AccountsScreen() {
         {accounts.map((a) => (
           <Card key={a.id}>
             <XStack alignItems="center" gap={15}>
-              <Avatar name={a.name} size={48} />
+              <Avatar name={a.name} avatar={a.avatar} size={48} />
               <YStack flex={1}>
                 <Label bold>{a.name}</Label>
                 <Label muted size={12}>
@@ -792,6 +799,7 @@ export function AccountsScreen() {
 }
 export function SettingsScreen() {
   const [name, setName] = useState(""),
+    [avatar, setAvatar] = useState(""),
     [deleteText, setDeleteText] = useState(""),
     [exported, setExported] = useState(""),
     [blockSearch, setBlockSearch] = useState(""),
@@ -816,17 +824,36 @@ export function SettingsScreen() {
                 value={name || d.account.name}
                 onChangeText={setName}
               />
+              <AvatarPicker
+                value={avatar || d.account.avatar || "preset:flower"}
+                onChange={setAvatar}
+              />
               <Button
                 secondary
                 onPress={() =>
-                  action.run(() =>
-                    extra(
+                  action.run(async () => {
+                    const nextName = name || d.account.name;
+                    const nextAvatar = avatar || d.account.avatar;
+                    await extra(
                       d.account.id,
                       "/profile",
-                      { name: name || d.account.name },
+                      {
+                        name: nextName,
+                        avatar: nextAvatar,
+                      },
                       "PATCH",
-                    ),
-                  )
+                    );
+                    const session = getTokenSession(d.account.id);
+                    if (session)
+                      await useSession.getState().add({
+                        ...session,
+                        account: {
+                          ...session.account,
+                          name: nextName,
+                          avatar: nextAvatar,
+                        },
+                      });
+                  }, "Profile updated")
                 }
               >
                 Save profile

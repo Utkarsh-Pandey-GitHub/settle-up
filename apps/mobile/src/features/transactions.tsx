@@ -1206,6 +1206,7 @@ export function GroupScreen() {
     [simplified, setSimplified] = useState(false),
     [view, setView] = useState<"records" | "balances">("records"),
     [membersOpen, setMembersOpen] = useState(false),
+    [addingMember, setAddingMember] = useState(false),
     [memberSearch, setMemberSearch] = useState("");
   return (
     <DataScreen>
@@ -1418,13 +1419,66 @@ export function GroupScreen() {
                   <YStack gap={14}>
                     <XStack justifyContent="space-between" alignItems="center">
                       <Heading size={20}>Members</Heading>
-                      <Button
-                        secondary
-                        compact
-                        onPress={() => setMembersOpen(false)}
-                      >
-                        Done
-                      </Button>
+                      <XStack gap={7}>
+                        {canManageMembers && (
+                          <Button
+                            compact
+                            icon="plus"
+                            loading={addingMember}
+                            disabled={action.busy || addingMember}
+                            onPress={async () => {
+                              setAddingMember(true);
+                              try {
+                                const picked = await chooseContact();
+                                if (!picked) return;
+                                const saved = d.savedContacts.find(
+                                  (contact) => contact.phone === picked.phone,
+                                );
+                                if (
+                                  saved &&
+                                  l.members.some(
+                                    (member) => member.id === saved.id,
+                                  )
+                                )
+                                  throw new Error(
+                                    `${saved.name} is already a member.`,
+                                  );
+                                await action.run(
+                                  () =>
+                                    extra(
+                                      d.account.id,
+                                      `/groups/${l.groupId}/members`,
+                                      saved
+                                        ? {
+                                            memberIds: [saved.id],
+                                            contacts: [],
+                                          }
+                                        : { memberIds: [], contacts: [picked] },
+                                    ),
+                                  `${picked.name} added to the group`,
+                                );
+                              } catch (error) {
+                                action.setError(
+                                  error instanceof Error
+                                    ? error.message
+                                    : "Could not add this member.",
+                                );
+                              } finally {
+                                setAddingMember(false);
+                              }
+                            }}
+                          >
+                            Add
+                          </Button>
+                        )}
+                        <Button
+                          secondary
+                          compact
+                          onPress={() => setMembersOpen(false)}
+                        >
+                          Done
+                        </Button>
+                      </XStack>
                     </XStack>
                     <SearchBar
                       value={memberSearch}
