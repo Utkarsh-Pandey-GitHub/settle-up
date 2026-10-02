@@ -660,8 +660,17 @@ export class DemoRepository implements AppRepository {
       const l = d.ledgers.find((l) => l.id === path.split("/")[2]);
       if (l) Object.assign(l, body);
     } else if (path === "/blocks") return { ok: true };
-    else if (path === "/profile") Object.assign(d.account, body);
-    else if (path === "/notifications") {
+    else if (path === "/profile") {
+      Object.assign(d.account, body);
+      for (const ledger of d.ledgers) {
+        const member = ledger.members.find((entry) => entry.id === id);
+        if (member)
+          Object.assign(member, {
+            name: d.account.name,
+            avatar: d.account.avatar,
+          });
+      }
+    } else if (path === "/notifications") {
       if (!body) return d.activity;
     } else if (path === "/shares")
       return [...demoShares.values()]
@@ -856,6 +865,14 @@ export const extra = async (
   if (!DEMO && path === "/profile" && effectiveMethod === "PATCH")
     await updateCachedDashboard(accountId, (dashboard) => {
       Object.assign(dashboard.account, body);
+      for (const ledger of dashboard.ledgers) {
+        const member = ledger.members.find((entry) => entry.id === accountId);
+        if (member)
+          Object.assign(member, {
+            name: dashboard.account.name,
+            avatar: dashboard.account.avatar,
+          });
+      }
     });
   const memberMatch = path.match(/^\/groups\/([^/]+)\/members(?:\/([^/]+))?$/);
   if (!DEMO && memberMatch && effectiveMethod === "POST")
@@ -865,7 +882,12 @@ export const extra = async (
       );
       const members = (
         result as {
-          members?: { id: string; name: string; role: string }[];
+          members?: {
+            id: string;
+            name: string;
+            role: string;
+            avatar?: string;
+          }[];
         }
       ).members ?? [
         ...(((body as any)?.memberIds ?? []) as string[])

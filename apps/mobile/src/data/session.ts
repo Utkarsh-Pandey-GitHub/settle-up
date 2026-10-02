@@ -30,6 +30,7 @@ type State = {
   setDark(value: boolean): void;
   hydrate(): Promise<void>;
   add(session: Session): Promise<void>;
+  updateAccount(account: Account): Promise<void>;
   switchTo(id: string): void;
   remove(id: string): Promise<void>;
 };
@@ -97,6 +98,22 @@ export const useSession = create<State>((set, get) => ({
       activeId: session.account.id,
       tourAccountId: toured ? null : session.account.id,
     });
+  },
+  async updateAccount(account) {
+    const accounts = get().accounts.map((entry) =>
+      entry.id === account.id ? account : entry,
+    );
+    await storage.set("settleup.accounts", JSON.stringify(accounts));
+    const session = tokenMemory.get(account.id);
+    if (session) {
+      const updated = { ...session, account };
+      tokenMemory.set(account.id, updated);
+      await storage.set(
+        `settleup.session.${account.id}`,
+        JSON.stringify(updated),
+      );
+    }
+    set({ accounts });
   },
   switchTo(id) {
     if (get().accounts.some((a) => a.id === id))

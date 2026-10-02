@@ -658,6 +658,7 @@ export class PrismaDashboardRepository implements DashboardRepository {
               id: m.userId,
               name: m.user.profile?.name ?? "Former member",
               role: m.role,
+              avatar: m.user.profile?.avatar ?? undefined,
             })),
           })),
           obligations: debts,
@@ -688,6 +689,7 @@ export class PrismaDashboardRepository implements DashboardRepository {
             name: contact.profile?.name ?? "Saved contact",
             phone: contact.phone?.phone,
             verified: !!contact.phone?.verifiedAt,
+            avatar: contact.profile?.avatar ?? undefined,
           })),
         });
         const { analytics } = await import("@settleup/domain/src/analytics");

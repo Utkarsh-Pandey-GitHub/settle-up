@@ -834,25 +834,29 @@ export function SettingsScreen() {
                   action.run(async () => {
                     const nextName = name || d.account.name;
                     const nextAvatar = avatar || d.account.avatar;
-                    await extra(
-                      d.account.id,
-                      "/profile",
-                      {
-                        name: nextName,
-                        avatar: nextAvatar,
-                      },
-                      "PATCH",
-                    );
-                    const session = getTokenSession(d.account.id);
-                    if (session)
-                      await useSession.getState().add({
-                        ...session,
-                        account: {
-                          ...session.account,
+                    const previousAccount = { ...d.account };
+                    const nextAccount = {
+                      ...d.account,
+                      name: nextName,
+                      avatar: nextAvatar,
+                    };
+                    await useSession.getState().updateAccount(nextAccount);
+                    try {
+                      await extra(
+                        d.account.id,
+                        "/profile",
+                        {
                           name: nextName,
                           avatar: nextAvatar,
                         },
-                      });
+                        "PATCH",
+                      );
+                    } catch (error) {
+                      await useSession
+                        .getState()
+                        .updateAccount(previousAccount);
+                      throw error;
+                    }
                   }, "Profile updated")
                 }
               >
@@ -1124,7 +1128,7 @@ export function ContactsScreen() {
           {d.savedContacts.map((p) => (
             <Card key={p.id}>
               <XStack alignItems="center" gap={12}>
-                <Avatar name={p.name} />
+                <Avatar name={p.name} avatar={p.avatar} />
                 <YStack flex={1}>
                   <Label bold>{p.name}</Label>
                   <Label muted size={12}>

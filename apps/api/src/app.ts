@@ -712,7 +712,12 @@ export async function createApp() {
         where: { groupId },
         select: { id: true },
       });
-      const addedMembers: { id: string; name: string; role: string }[] = [];
+      const addedMembers: {
+        id: string;
+        name: string;
+        role: string;
+        avatar?: string;
+      }[] = [];
       for (const memberId of memberIds) {
         if (
           await tx.userBlock.findFirst({
@@ -742,6 +747,7 @@ export async function createApp() {
           id: memberId,
           name: member.profile?.name ?? "Member",
           role: "MEMBER",
+          avatar: member.profile?.avatar ?? undefined,
         });
         for (const ledger of ledgers) {
           await tx.ledgerMember.upsert({

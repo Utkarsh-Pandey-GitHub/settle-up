@@ -107,6 +107,16 @@ export function useDashboard() {
   }, [id, query]);
   useEffect(() => {
     if (result.data) {
+      const sessionAccount = useSession
+        .getState()
+        .accounts.find((account) => account.id === result.data.account.id);
+      if (
+        sessionAccount &&
+        (sessionAccount.name !== result.data.account.name ||
+          sessionAccount.avatar !== result.data.account.avatar ||
+          sessionAccount.currency !== result.data.account.currency)
+      )
+        void useSession.getState().updateAccount(result.data.account);
       syncGoalNotifications(result.data).catch(() => {});
       syncWidgets(result.data).catch(() => {});
     }

@@ -198,7 +198,7 @@ export type LedgerView = {
   name: string;
   description: string;
   currency: string;
-  members: { id: string; name: string; role: string }[];
+  members: { id: string; name: string; role: string; avatar?: string }[];
 };
 export type TagView = {
   id: string;
@@ -234,6 +234,7 @@ export type Dashboard = {
     name: string;
     phone?: string;
     verified: boolean;
+    avatar?: string;
   }[];
 };
 export type Analytics = {

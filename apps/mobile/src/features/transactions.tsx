@@ -813,6 +813,7 @@ export function SettlementScreen() {
   const [receipt, setReceipt] = useState<{
     accountId: string;
     name: string;
+    avatar?: string;
     amountMinor: number;
     currency: string;
     date: string;
@@ -846,7 +847,11 @@ export function SettlementScreen() {
                   />
                   <Heading size={29}>Repayment recorded</Heading>
                   <Label muted>You confirmed a payment to</Label>
-                  <Avatar name={receipt.name} size={64} />
+                  <Avatar
+                    name={receipt.name}
+                    avatar={receipt.avatar}
+                    size={64}
+                  />
                   <Label bold size={18}>
                     {receipt.name}
                   </Label>
@@ -892,9 +897,10 @@ export function SettlementScreen() {
                   <>
                     <Label bold>Choose a balance to repay</Label>
                     {owed.map((o) => {
-                      const person =
-                        d.savedContacts.find((p) => p.id === o.creditorId)
-                          ?.name ?? "Member";
+                      const contact = d.savedContacts.find(
+                        (p) => p.id === o.creditorId,
+                      );
+                      const person = contact?.name ?? "Member";
                       return (
                         <Pressable
                           key={o.id}
@@ -924,7 +930,11 @@ export function SettlementScreen() {
                           }}
                         >
                           <XStack gap={12} alignItems="center">
-                            <Avatar name={person} size={44} />
+                            <Avatar
+                              name={person}
+                              avatar={contact?.avatar}
+                              size={44}
+                            />
                             <YStack flex={1}>
                               <Label bold>{person}</Label>
                               <Label muted size={11}>
@@ -974,6 +984,9 @@ export function SettlementScreen() {
                               d.savedContacts.find(
                                 (p) => p.id === selected.creditorId,
                               )?.name ?? "Member",
+                            avatar: d.savedContacts.find(
+                              (p) => p.id === selected.creditorId,
+                            )?.avatar,
                             amountMinor: parseMoney(amount, selected.currency),
                             currency: selected.currency,
                             date: new Date().toISOString(),
@@ -1170,7 +1183,12 @@ export function GroupsScreen() {
                     </Label>
                     <XStack gap={-4} alignItems="center">
                       {l.members.slice(0, 5).map((m) => (
-                        <Avatar key={m.id} name={m.name} size={27} />
+                        <Avatar
+                          key={m.id}
+                          name={m.name}
+                          avatar={m.avatar}
+                          size={27}
+                        />
                       ))}
                       {l.members.length > 5 && (
                         <Label muted size={12} marginLeft={8}>
@@ -1493,7 +1511,7 @@ export function GroupScreen() {
                           gap={10}
                           paddingVertical={9}
                         >
-                          <Avatar name={m.name} />
+                          <Avatar name={m.name} avatar={m.avatar} />
                           <YStack flex={1}>
                             <Label bold>{m.name}</Label>
                             <Label muted size={10}>
