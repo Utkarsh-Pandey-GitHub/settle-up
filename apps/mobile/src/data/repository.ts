@@ -46,6 +46,105 @@ export async function readCachedDashboard(accountId: string) {
 export const clearCachedDashboard = (accountId: string) =>
   AsyncStorage.removeItem(dashboardCacheKey(accountId));
 
+type QueuedMutation = {
+  id: string;
+  accountId: string;
+  path: string;
+  method: string;
+  body?: unknown;
+  createdAt: string;
+};
+const mutationQueueKey = (accountId: string) =>
+  `settleup.mutations.v1.${accountId}`;
+const retryable = (error: unknown) =>
+  error instanceof DomainError &&
+  (["NETWORK_ERROR", "TIMEOUT"].includes(error.code) || error.status >= 500);
+async function queuedMutations(accountId: string) {
+  const raw = await AsyncStorage.getItem(mutationQueueKey(accountId));
+  if (!raw) return [] as QueuedMutation[];
+  try {
+    return JSON.parse(raw) as QueuedMutation[];
+  } catch {
+    await AsyncStorage.removeItem(mutationQueueKey(accountId));
+    return [] as QueuedMutation[];
+  }
+}
+async function enqueueMutation(
+  accountId: string,
+  path: string,
+  body?: unknown,
+  method = "POST",
+) {
+  const queue = await queuedMutations(accountId);
+  queue.push({
+    id: uuid(),
+    accountId,
+    path,
+    method,
+    body,
+    createdAt: new Date().toISOString(),
+  });
+  await AsyncStorage.setItem(
+    mutationQueueKey(accountId),
+    JSON.stringify(queue),
+  );
+}
+export async function syncPendingMutations(accountId: string) {
+  const queue = await queuedMutations(accountId);
+  if (!queue.length) return null;
+  const remaining: QueuedMutation[] = [];
+  for (let index = 0; index < queue.length; index++) {
+    const item = queue[index];
+    try {
+      await request(item.path, {
+        accountId: item.accountId,
+        body: item.body,
+        method: item.method,
+      });
+    } catch (error) {
+      if (retryable(error)) {
+        remaining.push(...queue.slice(index));
+        break;
+      }
+      // Invalid/conflicting queued work must not permanently block newer work.
+    }
+  }
+  if (remaining.length)
+    await AsyncStorage.setItem(
+      mutationQueueKey(accountId),
+      JSON.stringify(remaining),
+    );
+  else await AsyncStorage.removeItem(mutationQueueKey(accountId));
+  return remaining.length;
+}
+async function queueWhenOffline<T>(
+  accountId: string,
+  path: string,
+  body?: unknown,
+  method?: string,
+): Promise<T | { queued: true }> {
+  const effectiveMethod = method ?? (body === undefined ? "GET" : "POST");
+  try {
+    return await request<T>(path, { accountId, body, method: effectiveMethod });
+  } catch (error) {
+    if (!retryable(error) || effectiveMethod === "GET") throw error;
+    await enqueueMutation(accountId, path, body, effectiveMethod);
+    return { queued: true };
+  }
+}
+async function updateCachedDashboard(
+  accountId: string,
+  update: (dashboard: Dashboard) => void,
+) {
+  const dashboard = await readCachedDashboard(accountId);
+  if (!dashboard) return;
+  update(dashboard);
+  await AsyncStorage.setItem(
+    dashboardCacheKey(accountId),
+    JSON.stringify(dashboard),
+  );
+}
+
 const refreshing = new Map<string, Promise<Session>>();
 export async function request<T>(
   path: string,
@@ -60,11 +159,13 @@ export async function request<T>(
   const timeoutMs =
     path === "/bill/extract"
       ? 65000
-      : path === "/auth/truecaller"
-        ? 30000
-        : path.startsWith("/auth/")
-          ? 90000
-          : 15000;
+      : path.startsWith("/payment-links")
+        ? 75000
+        : path === "/auth/truecaller"
+          ? 30000
+          : path.startsWith("/auth/")
+            ? 90000
+            : 15000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   let result: any;
@@ -106,6 +207,11 @@ export async function request<T>(
   }
   if (response.status === 401 && session && options.accountId && !retried) {
     const id = options.accountId;
+    const latest = getTokenSession(id);
+    // Another request may already have rotated this refresh token. Retrying
+    // with the newer access token avoids treating a harmless race as replay.
+    if (latest && latest.accessToken !== session.accessToken)
+      return request(path, options, true);
     if (!refreshing.has(id))
       refreshing.set(
         id,
@@ -549,17 +655,50 @@ export class DemoRepository implements AppRepository {
 }
 class ApiRepository implements AppRepository {
   dashboard = async (accountId: string) => {
-    const dashboard = await request<Dashboard>("/dashboard", { accountId });
-    await AsyncStorage.setItem(
-      dashboardCacheKey(accountId),
-      JSON.stringify(dashboard),
-    );
-    return dashboard;
+    try {
+      await syncPendingMutations(accountId);
+      const dashboard = await request<Dashboard>("/dashboard", { accountId });
+      await AsyncStorage.setItem(
+        dashboardCacheKey(accountId),
+        JSON.stringify(dashboard),
+      );
+      return dashboard;
+    } catch (error) {
+      const cached = await readCachedDashboard(accountId);
+      if (cached && retryable(error)) return cached;
+      throw error;
+    }
   };
-  create = (accountId: string, body: CreateTransaction) =>
-    request("/transactions", { accountId, body });
+  create = async (accountId: string, body: CreateTransaction) => {
+    const result = await queueWhenOffline(accountId, "/transactions", body);
+    if ((result as { queued?: boolean }).queued)
+      await updateCachedDashboard(accountId, (dashboard) => {
+        if (
+          dashboard.transactions.some(
+            (entry) => entry.id === body.idempotencyKey,
+          )
+        )
+          return;
+        const allocations =
+          body.type === "SHARED_EXPENSE"
+            ? splitExpense(
+                body.amountMinor,
+                body.participants,
+                body.splitMethod,
+              )
+            : [];
+        dashboard.transactions.unshift({
+          ...body,
+          id: body.idempotencyKey,
+          sourceId: accountId,
+          version: 1,
+          allocations,
+        });
+      });
+    return result;
+  };
   settle = (accountId: string, body: CreateSettlement) =>
-    request("/settlements", { accountId, body });
+    queueWhenOffline(accountId, "/settlements", body);
   action = (
     accountId: string,
     id: string,
@@ -567,18 +706,26 @@ class ApiRepository implements AppRepository {
     version: number,
     reason: string,
   ) =>
-    request(`/transactions/${id}/actions`, {
-      accountId,
-      body: { action, version, reason },
+    queueWhenOffline(accountId, `/transactions/${id}/actions`, {
+      action,
+      version,
+      reason,
     });
-  deleteTransactions = (accountId: string, ids: string[]) =>
-    request("/transactions/delete", {
-      accountId,
-      body: { ids },
-      method: "POST",
+  deleteTransactions = async (accountId: string, ids: string[]) => {
+    const result = await queueWhenOffline(accountId, "/transactions/delete", {
+      ids,
     });
+    if ((result as { queued?: boolean }).queued)
+      await updateCachedDashboard(accountId, (dashboard) => {
+        const selected = new Set(ids);
+        dashboard.transactions = dashboard.transactions.filter(
+          (entry) => !selected.has(entry.id),
+        );
+      });
+    return result;
+  };
   createGoal = (accountId: string, body: CreateGoal) =>
-    request("/goals", { accountId, body });
+    queueWhenOffline(accountId, "/goals", body);
   share = (accountId: string, body: CreateShare) =>
     request<{ id: string; url: string; expiresAt: string }>("/shares", {
       accountId,
@@ -594,9 +741,27 @@ export const extra = async (
   body?: unknown,
   method?: string,
 ) => {
+  const effectiveMethod = method ?? (body === undefined ? "GET" : "POST");
   const result = DEMO
     ? await (repository as DemoRepository).extra(accountId, path, body, method)
-    : await request<any>(path, { accountId, body, method });
+    : await (effectiveMethod !== "GET" &&
+      /^(?:\/transactions\/assign-group|\/groups|\/tags|\/goals|\/profile|\/blocks)/.test(
+        path,
+      )
+        ? queueWhenOffline<any>(accountId, path, body, method)
+        : request<any>(path, { accountId, body, method }));
+  if (
+    !DEMO &&
+    (result as { queued?: boolean })?.queued &&
+    path === "/transactions/assign-group"
+  )
+    await updateCachedDashboard(accountId, (dashboard) => {
+      const input = body as { ids: string[]; ledgerId: string };
+      const selected = new Set(input.ids);
+      dashboard.transactions.forEach((transaction) => {
+        if (selected.has(transaction.id)) transaction.ledgerId = input.ledgerId;
+      });
+    });
   if (path === "/account" && method === "DELETE")
     await clearCachedDashboard(accountId);
   return result;

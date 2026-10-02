@@ -224,7 +224,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   });
   return (
     <YStack gap={14} maxWidth={800} width="100%" alignSelf="center">
-      <Heading>A little entry. A clearer picture.</Heading>
+      <Heading>Add a transaction</Heading>
       <View
         pointerEvents={action.busy ? "none" : "auto"}
         style={{ opacity: action.busy ? 0.72 : 1 }}
@@ -232,7 +232,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
         <YStack gap={14}>
           <XStack alignItems="center" justifyContent="space-between" gap={12}>
             <Label muted flex={1}>
-              Record it once. Keep the maths fair.
+              Add the details or scan a bill.
             </Label>
             {isExpense && (
               <Button
@@ -387,7 +387,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                       <Icon
                         name={name}
                         size={20}
-                        color={transactionIcon === name ? "#5552B4" : undefined}
+                        color={transactionIcon === name ? "#59458F" : undefined}
                       />
                     </Pressable>
                   ))}
@@ -871,7 +871,7 @@ export function SettlementScreen() {
 
         return (
           <YStack gap={22} maxWidth={720} width="100%" alignSelf="center">
-            <Heading>A clean slate feels good.</Heading>
+            <Heading>Settle debts</Heading>
             <Label muted>
               Record a payment you have actually made. SettleUp does not move
               money.
@@ -1010,11 +1010,9 @@ export function GroupsScreen() {
       {(d) => (
         <YStack gap={22}>
           <XStack justifyContent="space-between" flexWrap="wrap" gap={12}>
-            <YStack>
-              <Heading>Good company. Fair shares.</Heading>
-              <Label muted>
-                Less awkward maths. More doing things together.
-              </Label>
+            <YStack maxWidth="100%" flexShrink={1}>
+              <Heading>Your groups</Heading>
+              <Label muted>Shared spending, all in one place.</Label>
             </YStack>
             <Button icon="plus" onPress={() => setCreating(!creating)}>
               Create a group
@@ -1135,55 +1133,57 @@ export function GroupsScreen() {
             >
               <Card
                 style={{
-                  padding: 12,
-                  borderTopWidth: 4,
-                  borderTopColor: ["#B6A2E2", "#90BDB2", "#E4B297"][index % 3],
+                  padding: 10,
+                  borderLeftWidth: 4,
+                  borderLeftColor: ["#6652A3", "#9981BF", "#B9A7D5"][index % 3],
                   backgroundColor: c.card,
                 }}
               >
-                <View
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 16,
-                    backgroundColor: ["#EDE7F9", "#E5F2ED", "#FAEDE4"][
-                      index % 3
-                    ],
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: 8,
-                  }}
-                >
-                  <Icon
-                    name={(["plane", "home", "coffee"] as const)[index % 3]}
-                    color="#555269"
-                    size={25}
-                  />
-                </View>
-                <YStack gap={8}>
-                  <XStack justifyContent="space-between" alignItems="center">
-                    <Heading size={18}>{l.name}</Heading>
-                    <Label muted size={12}>
-                      {l.currency}
-                    </Label>
-                  </XStack>
-                  <Label muted>{l.description}</Label>
-                  <XStack gap={-5}>
-                    {l.members.slice(0, 5).map((m) => (
-                      <Avatar key={m.id} name={m.name} />
-                    ))}
-                    {l.members.length > 5 && (
-                      <Label muted size={12} marginLeft={8}>
-                        +{l.members.length - 5} more
+                <XStack gap={10} alignItems="center">
+                  <View
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 12,
+                      backgroundColor: ["#F0ECF8", "#EEE8F8", "#F2EEF9"][
+                        index % 3
+                      ],
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Icon
+                      name={(["plane", "home", "coffee"] as const)[index % 3]}
+                      color="#555269"
+                      size={20}
+                    />
+                  </View>
+                  <YStack flex={1} gap={3}>
+                    <XStack justifyContent="space-between" alignItems="center">
+                      <Heading size={16}>{l.name}</Heading>
+                      <Label muted size={10}>
+                        {l.currency}
                       </Label>
-                    )}
-                  </XStack>
-                  <XStack justifyContent="space-between" alignItems="center">
-                    <Label muted size={12}>
-                      {l.members.length} members · shared records
+                    </XStack>
+                    <Label muted size={11} numberOfLines={1}>
+                      {l.description}
                     </Label>
-                  </XStack>
-                </YStack>
+                    <XStack gap={-4} alignItems="center">
+                      {l.members.slice(0, 5).map((m) => (
+                        <Avatar key={m.id} name={m.name} size={27} />
+                      ))}
+                      {l.members.length > 5 && (
+                        <Label muted size={12} marginLeft={8}>
+                          +{l.members.length - 5} more
+                        </Label>
+                      )}
+                      <Label muted size={10} marginLeft={8}>
+                        {l.members.length} members
+                      </Label>
+                    </XStack>
+                  </YStack>
+                  <Icon name="chevron" size={15} color={c.muted} />
+                </XStack>
               </Card>
             </Pressable>
           ))}
@@ -1288,7 +1288,7 @@ export function GroupScreen() {
                     size={12}
                     color={view === item ? c.text : c.muted}
                   >
-                    {item === "records" ? "Your records" : "Who owes who"}
+                    {item === "records" ? "All transactions" : "Who owes who"}
                   </Label>
                 </Pressable>
               ))}
@@ -1296,7 +1296,7 @@ export function GroupScreen() {
             {view === "records" ? (
               <YStack gap={8}>
                 <XStack justifyContent="space-between" alignItems="center">
-                  <Heading size={19}>Activity</Heading>
+                  <Heading size={19}>All activity</Heading>
                   <Button
                     secondary
                     compact
@@ -1373,7 +1373,7 @@ export function GroupScreen() {
                 height: 54,
                 paddingHorizontal: 18,
                 borderRadius: 18,
-                backgroundColor: "#5552B4",
+                backgroundColor: "#59458F",
                 flexDirection: "row",
                 alignItems: "center",
                 gap: 8,

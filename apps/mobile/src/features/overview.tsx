@@ -62,13 +62,13 @@ export function DataScreen({
           <Skeleton height={300} radius={22} />
           <Label muted>Loading your account…</Label>
         </YStack>
+      ) : query.data ? (
+        children(query.data)
       ) : query.error ? (
         <YStack gap={15}>
           <Notice error>{query.error.message}</Notice>
           <Button onPress={() => query.refetch()}>Try again</Button>
         </YStack>
-      ) : query.data ? (
-        children(query.data)
       ) : null}
     </Shell>
   );
@@ -95,7 +95,7 @@ export function SectionTitle({
           accessibilityRole="button"
           style={{ minHeight: 44, justifyContent: "center" }}
         >
-          <Label size={12} color="#5552B4" bold>
+          <Label size={12} color="#59458F" bold>
             {action} →
           </Label>
         </Pressable>
@@ -184,8 +184,8 @@ export function TransactionRow({
             height: 22,
             borderRadius: 7,
             borderWidth: selected ? 0 : 2,
-            borderColor: selected ? "#5552B4" : c.muted,
-            backgroundColor: selected ? "#5552B4" : "transparent",
+            borderColor: selected ? "#59458F" : c.muted,
+            backgroundColor: selected ? "#59458F" : "transparent",
             justifyContent: "center",
             alignItems: "center",
           }}
@@ -263,7 +263,7 @@ export function TransactionRow({
             justifyContent: "center",
           }}
         >
-          <Icon name="groups" size={15} color="#5552B4" />
+          <Icon name="groups" size={15} color="#59458F" />
         </Pressable>
       )}
       <YStack alignItems="flex-end" gap={3}>
@@ -328,7 +328,7 @@ export function SpendingChart({
                 width={barWidth}
                 height={h}
                 rx={6}
-                fill={i === days.length - 1 ? "#6C8F83" : "#D0E6DF"}
+                fill={i === days.length - 1 ? "#6652A3" : "#E7DEF7"}
               />
               <SvgText
                 x={x + barWidth / 2}
@@ -380,33 +380,35 @@ function HomeContent({ data: d }: { data: Dashboard }) {
     Math.min(4, Math.floor((height - (width >= 1000 ? 500 : 530)) / 70)),
   );
   return (
-    <YStack gap={14} maxWidth={1050} width="100%" alignSelf="center">
-      <XStack
-        gap={12}
-        alignItems="center"
-        padding={12}
-        backgroundColor={c.mint}
-        borderRadius={18}
+    <YStack gap={20} maxWidth={1050} width="100%" alignSelf="center">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open profile"
+        onPress={() => router.push("/settings")}
+        style={({ pressed }) => ({
+          opacity: pressed ? 0.78 : 1,
+          flexDirection: "row",
+          gap: 12,
+          alignItems: "center",
+          paddingVertical: 4,
+        })}
       >
         <Avatar name={d.account.name} size={40} />
-        <YStack alignItems="flex-start">
-          <Heading size={21}>Hi, {d.account.name.split(" ")[0]}</Heading>
+        <YStack alignItems="flex-start" flex={1}>
+          <Heading size={26}>Hi, {d.account.name.split(" ")[0]}</Heading>
           <Label muted size={12}>
-            Welcome back!
+            Your money at a glance
           </Label>
         </YStack>
-      </XStack>
+        <View style={{ marginLeft: "auto" }}>
+          <Icon name="chevron" size={16} color={c.muted} />
+        </View>
+      </Pressable>
       <Card
         style={{
-          padding: 16,
-          borderWidth: 1,
-          borderColor: "#D6EDE6",
+          padding: 18,
+          borderWidth: 0,
           backgroundColor: c.card,
-          shadowColor: "#1A3B2F",
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.1,
-          shadowRadius: 16,
-          elevation: 6,
         }}
       >
         <XStack alignItems="center" gap={width > 600 ? 24 : 14}>
@@ -421,8 +423,13 @@ function HomeContent({ data: d }: { data: Dashboard }) {
           />
           <YStack flex={1} minWidth={0} alignItems="stretch" gap={8}>
             <YStack alignItems="flex-start" gap={1}>
-              <Label size={11}>Your spending this month</Label>
-              <Label bold size={width > 600 ? 42 : 30} letterSpacing={-1}>
+              <Label size={14} bold>
+                Monthly spending
+              </Label>
+              <Label
+                size={width > 600 ? 42 : width < 360 ? 29 : 34}
+                letterSpacing={-1}
+              >
                 {money(stats.spendingMinor, d.account.currency).replace(
                   ".00",
                   "",
@@ -431,13 +438,13 @@ function HomeContent({ data: d }: { data: Dashboard }) {
             </YStack>
             <XStack
               borderTopWidth={1}
-              borderColor="#A6CFC5"
+              borderColor={c.line}
               paddingTop={8}
               gap={12}
               flexWrap="wrap"
             >
               <YStack flex={1} minWidth={70} alignItems="flex-start" gap={1}>
-                <Label muted size={10}>
+                <Label muted size={12}>
                   Owed to you
                 </Label>
                 <Label bold size={width > 600 ? 18 : 14}>
@@ -448,7 +455,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
                 </Label>
               </YStack>
               <YStack flex={1} minWidth={70} alignItems="flex-start" gap={1}>
-                <Label muted size={10}>
+                <Label muted size={12}>
                   You owe
                 </Label>
                 <Label bold size={width > 600 ? 18 : 14}>
@@ -471,59 +478,56 @@ function HomeContent({ data: d }: { data: Dashboard }) {
                 short: "Add expense",
                 icon: "plus",
                 path: "/add",
-                color: "#DED2F9",
+                color: "#E7DEF7",
               },
               {
                 label: "Settle up",
                 short: "Settle debts",
                 icon: "arrow",
                 path: "/settle",
-                color: "#D3E1FF",
+                color: "#EEE8F8",
               },
               {
                 label: "Scan a bill",
                 short: "Scan bill",
                 icon: "camera",
                 path: "/add?bill=camera",
-                color: "#FDC9D2",
+                color: "#F2EEF9",
               },
             ] as const
           ).map((tile) => (
-            <View
-              key={tile.label}
-              style={width < 360 ? { width: "48%" } : { flex: 1, minWidth: 0 }}
-            >
+            <View key={tile.label} style={{ flex: 1, minWidth: 0 }}>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={tile.label}
                 onPress={() => go(tile.path)}
                 style={{
                   width: "100%",
-                  minHeight: 106,
-                  paddingVertical: 10,
+                  minHeight: 104,
+                  paddingVertical: 12,
                   alignItems: "center",
                   gap: 7,
-                  backgroundColor: tile.color,
-                  borderRadius: 17,
+                  backgroundColor: c.card,
+                  borderRadius: 16,
                 }}
               >
                 <View
                   style={{
-                    padding: 11,
+                    padding: 10,
                     borderRadius: 30,
-                    backgroundColor: "#FFFFFF",
+                    backgroundColor: tile.color,
                   }}
                 >
                   <Icon name={tile.icon} color="#191D21" size={27} />
                 </View>
                 <Label
-                  color="#191D21"
-                  size={width < 390 ? 10 : 12}
+                  color={c.text}
+                  size={width < 360 ? 11 : 13}
                   bold
                   textAlign="center"
                   numberOfLines={2}
                   width="100%"
-                  minHeight={32}
+                  minHeight={20}
                 >
                   {tile.short}
                 </Label>
@@ -533,19 +537,19 @@ function HomeContent({ data: d }: { data: Dashboard }) {
         </XStack>
       </TourGroup>
 
-      <YStack gap={5}>
+      <YStack gap={12}>
         <SectionTitle
           title="Recent transactions"
-          action="All transactions"
+          action="View all"
           onPress={() => go("/activity")}
         />
         {d.transactions.slice(0, visibleRows).map((t) => (
           <View
             key={t.id}
             style={{
-              backgroundColor: c.blue,
-              borderRadius: 10,
-              paddingHorizontal: 12,
+              backgroundColor: c.card,
+              borderRadius: 14,
+              paddingHorizontal: 14,
             }}
           >
             <TransactionRow transaction={t} data={d} last compact />
@@ -554,7 +558,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
         {!d.transactions.length && (
           <Empty
             title="A fresh start"
-            detail="Your first entry is the beginning of a clearer picture."
+            detail="Add a transaction to start tracking your spending."
             action="Add an expense"
             onPress={() => go("/add")}
           />
@@ -567,9 +571,7 @@ export function ActivityScreen() {
   const [search, setSearch] = useState(""),
     [tag, setTag] = useState(""),
     [status, setStatus] = useState(""),
-    [ledgerFilter, setLedgerFilter] = useState(""),
-    [showAll, setShowAll] = useState(false),
-    [sinceDate, setSinceDate] = useState("");
+    [ledgerFilter, setLedgerFilter] = useState("");
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [assignIds, setAssignIds] = useState<string[]>([]);
@@ -600,17 +602,9 @@ export function ActivityScreen() {
             t.title.toLowerCase().includes(search.toLowerCase()) &&
             (!tag || t.tagIds.includes(tag)) &&
             (!status || t.status === status) &&
-            (!ledgerFilter || t.ledgerId === ledgerFilter) &&
-            (!sinceDate || t.occurredAt.slice(0, 10) >= sinceDate),
+            (!ledgerFilter || t.ledgerId === ledgerFilter),
         );
-        const displayed =
-          showAll || ledgerFilter
-            ? filtered
-            : d.ledgers
-                .flatMap((ledger) =>
-                  filtered.filter((t) => t.ledgerId === ledger.id).slice(0, 3),
-                )
-                .concat(filtered.filter((t) => !t.ledgerId).slice(0, 3));
+        const displayed = filtered;
 
         const allFilteredSelected =
           filtered.length > 0 &&
@@ -695,7 +689,7 @@ export function ActivityScreen() {
                         borderRadius: 14,
                       }}
                     >
-                      <Label size={12} color="#5552B4" bold>
+                      <Label size={12} color="#59458F" bold>
                         {allFilteredSelected ? "Deselect All" : "Select All"}
                       </Label>
                     </Pressable>
@@ -727,7 +721,7 @@ export function ActivityScreen() {
                       borderRadius: 14,
                     }}
                   >
-                    <Label size={12} color="#5552B4" bold>
+                    <Label size={12} color="#59458F" bold>
                       Select
                     </Label>
                   </Pressable>
@@ -743,9 +737,10 @@ export function ActivityScreen() {
             />
 
             {/* Dropdown Filter Triggers */}
-            <Card style={{ padding: 10 }}>
-              <XStack gap={8} alignItems="center" flexWrap="wrap">
+            <YStack gap={8}>
+              <XStack gap={6} alignItems="center">
                 <FilterDropdownTrigger
+                  compact
                   label={
                     tag
                       ? (d.tags.find((t) => t.id === tag)?.name ?? "Tag")
@@ -757,6 +752,7 @@ export function ActivityScreen() {
                   }
                 />
                 <FilterDropdownTrigger
+                  compact
                   label={
                     ledgerFilter
                       ? (d.ledgers.find((ledger) => ledger.id === ledgerFilter)
@@ -769,14 +765,8 @@ export function ActivityScreen() {
                   }
                 />
 
-                <Chip
-                  selected={showAll}
-                  onPress={() => setShowAll((value) => !value)}
-                >
-                  {showAll ? "All entries" : "Last 3 per group"}
-                </Chip>
-
                 <FilterDropdownTrigger
+                  compact
                   label={
                     status
                       ? status.toLowerCase().replace(/_/g, " ")
@@ -788,13 +778,12 @@ export function ActivityScreen() {
                   }
                 />
 
-                {(!!tag || !!status || !!ledgerFilter || !!sinceDate) && (
+                {(!!tag || !!status || !!ledgerFilter) && (
                   <Pressable
                     onPress={() => {
                       setTag("");
                       setStatus("");
                       setLedgerFilter("");
-                      setSinceDate("");
                       setOpenDropdown(null);
                     }}
                     style={{
@@ -885,20 +874,14 @@ export function ActivityScreen() {
                       {ledger.name}
                     </Chip>
                   ))}
-                  <Field
-                    label="Since date (optional)"
-                    placeholder="YYYY-MM-DD"
-                    value={sinceDate}
-                    onChangeText={setSinceDate}
-                  />
                 </FilterDropdownPanel>
               )}
-            </Card>
+            </YStack>
 
             {/* Multi-Select Floating Action Bar */}
             {isSelecting && selectedIds.length > 0 && (
               <XStack
-                backgroundColor="#5552B4"
+                backgroundColor="#59458F"
                 borderRadius={16}
                 paddingHorizontal={16}
                 paddingVertical={12}
@@ -1060,9 +1043,9 @@ export function AnalyticsScreen() {
         return (
           <YStack gap={22}>
             <XStack justifyContent="space-between" gap={12} flexWrap="wrap">
-              <YStack>
-                <Heading>The bigger picture.</Heading>
-                <Label muted>Know where it goes. Decide what comes next.</Label>
+              <YStack maxWidth="100%" flexShrink={1}>
+                <Heading>Your spending</Heading>
+                <Label muted>See where your money goes.</Label>
               </YStack>
               <Button
                 secondary

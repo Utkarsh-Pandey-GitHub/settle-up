@@ -36,15 +36,25 @@ export class AndroidSmsProvider implements TransactionImportProvider {
   async hasPermission() {
     return (
       this.available() &&
-      (await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS))
+      (await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.READ_SMS,
+      )) &&
+      (await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+      ))
     );
   }
   async requestPermission() {
     if (!this.available()) return false;
-    return (
-      (await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_SMS,
-      )) === PermissionsAndroid.RESULTS.GRANTED
+    const result = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.READ_SMS,
+      PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+    ]);
+    return [
+      PermissionsAndroid.PERMISSIONS.READ_SMS,
+      PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+    ].every(
+      (permission) => result[permission] === PermissionsAndroid.RESULTS.GRANTED,
     );
   }
   private static changes: Promise<unknown> = Promise.resolve();
@@ -182,14 +192,39 @@ export async function chooseContact() {
   if (!number) throw new Error("This contact has no phone number.");
   return { name: selected.name ?? "Friend", phone: normalizePhone(number) };
 }
+let lastPaymentLaunch: { uri: string; at: number } | undefined;
 export const paymentLauncher = {
   async open(uri: string) {
     const safe = parseUpi(uri);
     if (Platform.OS === "web")
       throw new Error("Open a UPI app from an Android or iOS device.");
+    if (
+      lastPaymentLaunch?.uri === safe.uri &&
+      Date.now() - lastPaymentLaunch.at < 8000
+    )
+      throw new Error(
+        "The UPI app is already opening. Return here before trying again.",
+      );
+    if (!(await Linking.canOpenURL(safe.uri)))
+      throw new Error("No UPI payment app is available on this phone.");
+    lastPaymentLaunch = { uri: safe.uri, at: Date.now() };
     await Linking.openURL(safe.uri);
   },
 };
+
+export function addUpiTransactionReference(uri: string, seed: string) {
+  const payment = new URL(parseUpi(uri).uri);
+  if (!payment.searchParams.has("tr")) {
+    // NPCI caps `tr` at 35 digits. Keep it stable for one payment attempt so
+    // returning to SettleUp never creates a second PSP transaction reference.
+    const numericSeed = seed.replace(/\D/g, "");
+    const reference = numericSeed.slice(0, 35);
+    if (reference.length < 12)
+      throw new Error("Could not create a safe UPI transaction reference.");
+    payment.searchParams.set("tr", reference);
+  }
+  return parseUpi(payment.toString()).uri;
+}
 export async function enableNotifications(accountId: string) {
   if (Platform.OS === "web")
     throw new Error("Notifications are available in the native app.");

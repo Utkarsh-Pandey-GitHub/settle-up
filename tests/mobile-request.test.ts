@@ -7,16 +7,66 @@ vi.mock("../apps/mobile/src/data/session", () => ({
   replaceTokenSession: vi.fn(),
 }));
 import { request } from "../apps/mobile/src/data/repository";
+import {
+  getTokenSession,
+  replaceTokenSession,
+} from "../apps/mobile/src/data/session";
 const timeoutDescriptor = Object.getOwnPropertyDescriptor(
   AbortSignal,
   "timeout",
 );
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.useFakeTimers();
   Object.defineProperty(AbortSignal, "timeout", {
     configurable: true,
     value: undefined,
   });
+});
+it("uses a concurrently refreshed access token without replaying the old refresh token", async () => {
+  const account = {
+    id: "account-1",
+    name: "Test",
+    phone: "+919876543210",
+    currency: "INR",
+    avatar: "T",
+  };
+  const oldSession = {
+    account,
+    accessToken: "old-access",
+    refreshToken: "old-refresh-token-that-is-long-enough-for-validation",
+    accessExpiresAt: Date.now() + 60_000,
+  };
+  const newSession = {
+    account,
+    accessToken: "new-access",
+    refreshToken: "new-refresh-token-that-is-long-enough-for-validation",
+    accessExpiresAt: Date.now() + 60_000,
+  };
+  let current = oldSession;
+  vi.mocked(getTokenSession).mockImplementation(() => current);
+  const fetcher = vi.fn(async (_url: string, options: RequestInit) => {
+    if (
+      (options.headers as Record<string, string>).authorization ===
+      "Bearer old-access"
+    ) {
+      current = newSession;
+      return Response.json({ code: "AUTH" }, { status: 401 });
+    }
+    return Response.json({ ok: true });
+  });
+  vi.stubGlobal("fetch", fetcher);
+
+  await expect(
+    request("/dashboard", { accountId: "account-1" }),
+  ).resolves.toEqual({
+    ok: true,
+  });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(
+    fetcher.mock.calls.some(([url]) => String(url).endsWith("/auth/refresh")),
+  ).toBe(false);
+  expect(replaceTokenSession).not.toHaveBeenCalled();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -59,26 +109,39 @@ it("cleans up when the network fails immediately", async () => {
     "fetch",
     vi.fn().mockRejectedValue(new Error("Network request failed")),
   );
-  await expect(request("/auth/otp")).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+  await expect(request("/auth/otp")).rejects.toMatchObject({
+    code: "NETWORK_ERROR",
+  });
   expect(vi.getTimerCount()).toBe(0);
 });
 
 it("does not display HTML from an incorrect API deployment", async () => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>Cannot POST /auth/otp</html>", { status: 404 })));
-  await expect(request("/auth/otp")).rejects.toThrow("unexpected response (404)");
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response("<html>Cannot POST /auth/otp</html>", { status: 404 }),
+      ),
+  );
+  await expect(request("/auth/otp")).rejects.toThrow(
+    "unexpected response (404)",
+  );
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it.each(["http://127.0.0.1:4000", "http://localhost:4000", "http://10.0.2.2:4000"])(
-  "preserves the configured Android API host %s", async (url) => {
-    vi.resetModules();
-    vi.doMock("react-native", () => ({ Platform: { OS: "android" } }));
-    vi.stubEnv("EXPO_PUBLIC_API_URL", `${url}/`);
-    const fetcher = vi.fn().mockResolvedValue(Response.json({ status: "ok" }));
-    vi.stubGlobal("fetch", fetcher);
-    const client = await import("../apps/mobile/src/data/repository");
-    await client.request("/health");
-    expect(fetcher.mock.calls[0][0]).toBe(`${url}/health`);
-    expect(client.API_URL).toBe(url);
-  },
-);
+it.each([
+  "http://127.0.0.1:4000",
+  "http://localhost:4000",
+  "http://10.0.2.2:4000",
+])("preserves the configured Android API host %s", async (url) => {
+  vi.resetModules();
+  vi.doMock("react-native", () => ({ Platform: { OS: "android" } }));
+  vi.stubEnv("EXPO_PUBLIC_API_URL", `${url}/`);
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ status: "ok" }));
+  vi.stubGlobal("fetch", fetcher);
+  const client = await import("../apps/mobile/src/data/repository");
+  await client.request("/health");
+  expect(fetcher.mock.calls[0][0]).toBe(`${url}/health`);
+  expect(client.API_URL).toBe(url);
+});

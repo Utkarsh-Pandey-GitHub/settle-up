@@ -113,6 +113,10 @@ export const useSession = create<State>((set, get) => ({
       await storage.remove(key);
     await storage.remove(`settleup.session.${id}`);
     await storage.remove(`settleup.draft.${id}`);
+    await AsyncStorage.multiRemove([
+      `settleup.dashboard.v1.${id}`,
+      `settleup.mutations.v1.${id}`,
+    ]);
     await AsyncStorage.removeItem(`settleup.tour.${id}`);
     const accounts = get().accounts.filter((a) => a.id !== id);
     await storage.set("settleup.accounts", JSON.stringify(accounts));

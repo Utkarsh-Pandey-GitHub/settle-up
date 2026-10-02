@@ -19,6 +19,7 @@ import {
 } from "@settleup/domain";
 import {
   AndroidSmsProvider,
+  addUpiTransactionReference,
   type SmsDecision,
   paymentLauncher,
   paymentRequest,
@@ -115,12 +116,12 @@ export function ScanScreen() {
                 width: 90,
                 height: 90,
                 borderRadius: 28,
-                backgroundColor: "#6F6CD920",
+                backgroundColor: "#6652A320",
                 justifyContent: "center",
                 alignItems: "center",
               }}
             >
-              <Icon name="scan" size={44} color="#6F6CD9" />
+              <Icon name="scan" size={44} color="#6652A3" />
             </View>
             <Heading size={22}>Scan a UPI QR code</Heading>
             <Label muted style={{ textAlign: "center" }}>
@@ -207,12 +208,12 @@ export function ScanScreen() {
                       width: 56,
                       height: 56,
                       borderRadius: 18,
-                      backgroundColor: "#6F6CD915",
+                      backgroundColor: "#6652A315",
                       justifyContent: "center",
                       alignItems: "center",
                     }}
                   >
-                    <Label bold size={24} color="#6F6CD9">
+                    <Label bold size={24} color="#6652A3">
                       {payment.payeeName?.charAt(0)?.toUpperCase() || "?"}
                     </Label>
                   </View>
@@ -284,7 +285,7 @@ export function ScanScreen() {
                     style={{
                       width: 24,
                       height: 24,
-                      backgroundColor: track ? "#6F6CD9" : "#E6E1EC",
+                      backgroundColor: track ? "#6652A3" : "#E6E1EC",
                       borderRadius: 6,
                       justifyContent: "center",
                       alignItems: "center",
@@ -320,13 +321,17 @@ export function ScanScreen() {
                         d.account.id,
                         confirmed.toString(),
                       );
+                      const launchUri = addUpiTransactionReference(
+                        confirmed.toString(),
+                        `${trackedRequest.occurredAt}:${trackedRequest.key}`,
+                      );
                       if (track)
                         await repository.create(d.account.id, {
                           title: payment.payeeName,
                           amountMinor: value,
                           currency: "INR",
                           type: "PERSONAL_EXPENSE",
-                          status: "SETTLED",
+                          status: "PENDING",
                           occurredAt: trackedRequest.occurredAt,
                           idempotencyKey: trackedRequest.key,
                           notes: payment.note
@@ -338,8 +343,8 @@ export function ScanScreen() {
                           splitMethod: "EQUAL",
                         });
                       setProcessed(true);
-                      await paymentLauncher.open(confirmed.toString());
-                    }, "Payment app opened. Entry saved as Settled in Transactions.")
+                      await paymentLauncher.open(launchUri);
+                    }, "Payment app opened. Confirm the pending entry after payment succeeds.")
                   }
                 >
                   {amount ? `Pay ₹${amount}` : "Confirm & pay"}
@@ -348,7 +353,7 @@ export function ScanScreen() {
                 {processed && (
                   <Notice>
                     {track
-                      ? "Completed entry saved as Settled in Transactions. "
+                      ? "A pending entry was saved in Transactions. Confirm it only after the UPI app reports success. "
                       : ""}
                     This QR is locked for this review session to prevent
                     duplicate entries.
@@ -583,7 +588,7 @@ export function ScanScreen() {
               width: 24,
               height: 24,
               borderRadius: 6,
-              backgroundColor: track ? "#6F6CD9" : "rgba(255,255,255,0.2)",
+              backgroundColor: track ? "#6652A3" : "rgba(255,255,255,0.2)",
               justifyContent: "center",
               alignItems: "center",
             }}
@@ -839,7 +844,9 @@ function SmsContent({ accountId }: { accountId: string }) {
       }
     };
     void refresh();
-    const timer = setInterval(refresh, 60000);
+    // The native receiver records new financial SMS immediately. Refresh the
+    // visible review list often enough that an incoming message feels live.
+    const timer = setInterval(refresh, 10000);
     const listener = AppState.addEventListener("change", (state) => {
       if (state === "active") void refresh();
     });

@@ -281,26 +281,55 @@ export const SMS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // Calendar days, not a sliding 168-hour duration. End is exclusive.
 export function smsRange(from?: string, through?: string, now = new Date()) {
   const today = DateTime.fromJSDate(now).startOf("day");
-  const start = from ? DateTime.fromISO(from).startOf("day") : today.minus({ days: 6 });
+  const start = from
+    ? DateTime.fromISO(from).startOf("day")
+    : today.minus({ days: 6 });
   const last = through ? DateTime.fromISO(through).startOf("day") : today;
   if (!start.isValid || !last.isValid || start > last || last > today)
-    throw new DomainError("DATE", "Choose valid dates, in order, no later than today.");
-  return { start: start.toMillis(), end: Math.min(last.plus({ days: 1 }).toMillis(), +now + 1) };
+    throw new DomainError(
+      "DATE",
+      "Choose valid dates, in order, no later than today.",
+    );
+  return {
+    start: start.toMillis(),
+    end: Math.min(last.plus({ days: 1 }).toMillis(), +now + 1),
+  };
 }
 export function smsDecisionExpiry(occurredAt: string) {
-  return DateTime.fromISO(occurredAt).startOf("day").plus({ days: 7 }).toMillis();
+  return DateTime.fromISO(occurredAt)
+    .startOf("day")
+    .plus({ days: 7 })
+    .toMillis();
 }
 export function parseExpenseSms(body: string, timestamp: number) {
-  if (!/\b(?:bank|a\/c|acct|account|card|upi|imps|neft|rtgs)\b/i.test(body) ||
-      /\b(?:failed|declined|reversed|refunded|credited|received|due|reminder|offer|cashback|will be|to be)\b/i.test(body)) return null;
+  if (
+    !/\b(?:bank|a\/c|acct|account|card|upi|imps|neft|rtgs|txn|transaction)\b/i.test(
+      body,
+    ) ||
+    /\b(?:failed|declined|reversed|refunded|due|reminder|offer|cashback|will be|to be)\b/i.test(
+      body,
+    )
+  )
+    return null;
   const parsed = parseSms(body, timestamp);
-  if (!parsed || parsed.direction !== "DEBIT") return null;
+  if (!parsed) return null;
   // Prefer the amount next to the debit verb, not an available balance elsewhere.
-  const amount = body.match(/(?:debited|spent|paid|transferred|withdrawn)[^\d₹]{0,24}?(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)/i)?.[1]
-    ?? body.match(/(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)\s*(?:(?:has been|was|is)\s+)?(?:debited|spent|paid|transferred|withdrawn)/i)?.[1];
-  if (!amount && (body.match(/(?:INR|Rs\.?|₹)\s*[\d,]+/gi)?.length ?? 0) > 1) return null;
-  try { return amount ? { ...parsed, amountMinor: parseMoney(amount.replace(/,/g, "")) } : parsed; }
-  catch { return null; }
+  const amount =
+    body.match(
+      /(?:debited|credited|spent|paid|received|transferred|withdrawn|purchase)[^\d₹]{0,24}?(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)/i,
+    )?.[1] ??
+    body.match(
+      /(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)\s*(?:(?:has been|was|is)\s+)?(?:debited|credited|spent|paid|received|transferred|withdrawn|purchase)/i,
+    )?.[1];
+  if (!amount && (body.match(/(?:INR|Rs\.?|₹)\s*[\d,]+/gi)?.length ?? 0) > 1)
+    return null;
+  try {
+    return amount
+      ? { ...parsed, amountMinor: parseMoney(amount.replace(/,/g, "")) }
+      : parsed;
+  } catch {
+    return null;
+  }
 }
 export type ImportSuggestion = {
   fingerprint: string;
@@ -315,14 +344,20 @@ export interface TransactionImportProvider {
   available(): boolean;
   requestPermission(): Promise<boolean>;
   review(): Promise<ImportSuggestion[]>;
-  markHandled(fingerprint: string, decision?: "ACCEPTED" | "REJECTED", occurredAt?: string): Promise<void>;
+  markHandled(
+    fingerprint: string,
+    decision?: "ACCEPTED" | "REJECTED",
+    occurredAt?: string,
+  ): Promise<void>;
 }
 export function parseSms(
   body: string,
   timestamp: number,
 ): Omit<ImportSuggestion, "fingerprint"> | null {
   if (
-    !/(debited|credited|spent|paid|received|transferred|withdrawn)/i.test(body) ||
+    !/(debited|credited|spent|paid|received|transferred|withdrawn|purchase)/i.test(
+      body,
+    ) ||
     /\b(otp|one.time.password|verification code)\b/i.test(body)
   )
     return null;
@@ -332,7 +367,9 @@ export function parseSms(
     return {
       title:
         body
-          .match(/(?:at|to|from)\s+([A-Za-z][A-Za-z0-9 .&-]{1,45})/i)?.[1]
+          .match(
+            /(?:at|to|from|towards|merchant[:\s]+)\s*([A-Za-z][A-Za-z0-9 .&-]{1,45})/i,
+          )?.[1]
           ?.trim() ?? "Bank transaction",
       amountMinor: parseMoney(amount.replace(/,/g, "")),
       occurredAt: new Date(timestamp).toISOString(),

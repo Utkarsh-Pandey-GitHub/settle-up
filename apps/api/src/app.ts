@@ -7,6 +7,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import websocket from "@fastify/websocket";
 import { z, ZodError } from "zod";
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
@@ -62,6 +63,7 @@ export async function createApp() {
   });
   await app.register(helmet);
   await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
+  await app.register(websocket);
   app.setErrorHandler((error, req, reply) => {
     if (error instanceof DomainError)
       return reply
@@ -115,6 +117,40 @@ export async function createApp() {
     auth.authenticate(req.headers.authorization);
   const pathId = (req: { params: unknown }) =>
     idSchema.parse((req.params as { id: string }).id);
+  const liveSockets = new Set<{
+    readyState: number;
+    send(value: string): void;
+    close(code?: number): void;
+    on(event: "close", listener: () => void): void;
+  }>();
+  app.get("/realtime", { websocket: true }, (socket, req) => {
+    const protocols = String(req.headers["sec-websocket-protocol"] ?? "")
+      .split(",")
+      .map((value) => value.trim());
+    const accessToken = protocols[0] === "settleup" ? protocols[1] : undefined;
+    void auth
+      .authenticate(accessToken ? `Bearer ${accessToken}` : undefined)
+      .then(() => {
+        liveSockets.add(socket);
+        socket.on("close", () => liveSockets.delete(socket));
+        socket.send(JSON.stringify({ type: "connected" }));
+      })
+      .catch(() => socket.close(1008));
+  });
+  app.addHook("onResponse", async (req, reply) => {
+    if (
+      !["POST", "PATCH", "DELETE"].includes(req.method) ||
+      reply.statusCode >= 400 ||
+      req.routeOptions.url?.startsWith("/auth/") ||
+      req.routeOptions.url === "/imports/handled"
+    )
+      return;
+    const event = JSON.stringify({ type: "data_changed", at: Date.now() });
+    for (const socket of liveSockets) {
+      if (socket.readyState === 1) socket.send(event);
+      else liveSockets.delete(socket);
+    }
+  });
   app.get("/health", async () => {
     await db.$queryRaw`SELECT 1`;
     return { status: "ok" };
@@ -242,13 +278,21 @@ export async function createApp() {
               model: process.env.BILL_VISION_MODEL || "openrouter/free",
               messages: [
                 {
+                  role: "system",
+                  content:
+                    "You are a receipt-vision extraction engine. Inspect the supplied image pixels directly; do not use outside knowledge and do not invent obscured text. Return one JSON object only. Amounts must be decimal numbers in the receipt currency. An item's amount is the printed full line total, not the unit price. Preserve separate tax, fee, discount and rounding lines. Reconcile the printed grand total against subtotal plus adjustments, but always prefer the clearly printed grand total. If uncertain, omit the uncertain line instead of guessing.",
+                },
+                {
                   role: "user",
                   content: [
                     {
                       type: "text",
-                      text: `Read this receipt carefully. Return only JSON with merchantName, items, taxAmount, and totalAmount. Each item needs name, quantity, and its full line amount. Put GST, VAT, service charge, delivery, packing, tips, and other taxes or fees into separate items. Put discounts in separate items as negative amounts. Preserve decimals and use ${body.currency}. Do not guess unreadable values.`,
+                      text: `Extract this ${body.currency} receipt from the image. Return {"merchantName":string,"items":[{"name":string,"quantity":number,"amount":number}],"taxAmount":number|null,"totalAmount":number|null}. Read every visible purchased item once. Use quantity 1 when no quantity is printed. Put GST, VAT, service charge, delivery, packing, tip, discount and rounding adjustments in their own lines; discounts must be negative. Check that the line amounts are plausible against the printed total before responding.`,
                     },
-                    { type: "image_url", image_url: { url: body.image } },
+                    {
+                      type: "image_url",
+                      image_url: { url: body.image, detail: "high" },
+                    },
                   ],
                 },
               ],
@@ -751,6 +795,12 @@ export async function createApp() {
       pn: b.payeeName,
       am: (b.amountMinor / 100).toFixed(2),
       cu: "INR",
+      // A stable reference avoids PSP apps treating repeated intent handling
+      // as a new payment. UPI references are limited to 35 digits.
+      tr: `${Date.now()}${BigInt(`0x${randomBytes(8).toString("hex")}`).toString()}`.slice(
+        0,
+        35,
+      ),
     });
     const payment = parseUpi(`upi://pay?${params}`);
     const token = randomBytes(18).toString("base64url");

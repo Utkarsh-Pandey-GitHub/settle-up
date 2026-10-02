@@ -55,7 +55,7 @@ describe("bank SMS review", () => {
       Settings.defaultZone = zone;
     }
   });
-  it("ignores credits, OTPs, failures, and promotional reminders", () => {
+  it("finds bank debits and credits while ignoring OTPs and failed/promotional messages", () => {
     const now = Date.now();
     expect(
       parseExpenseSms(
@@ -69,8 +69,10 @@ describe("bank SMS review", () => {
         now,
       )?.amountMinor,
     ).toBe(45000);
+    expect(
+      parseExpenseSms("Your bank account credited INR 500", now)?.direction,
+    ).toBe("CREDIT");
     for (const text of [
-      "Your bank account credited INR 500",
       "OTP 123456 for INR 500 paid by card",
       "UPI payment failed: paid INR 500",
       "Bank reminder: INR 500 due",

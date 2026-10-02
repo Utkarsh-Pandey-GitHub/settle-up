@@ -58,7 +58,8 @@ function PaymentLinkForm({
     [pasted, setPasted] = useState(""),
     [showLinks, setShowLinks] = useState(false),
     [links, setLinks] = useState<SavedLink[]>([]),
-    [linksLoading, setLinksLoading] = useState(false);
+    [linksLoading, setLinksLoading] = useState(false),
+    [linksError, setLinksError] = useState("");
   const action = useAction(),
     router = useRouter();
   const url = created ? `${API_URL.replace(/\/$/, "")}/p/${created.token}` : "";
@@ -68,24 +69,32 @@ function PaymentLinkForm({
       return;
     }
     setLinksLoading(true);
+    setLinksError("");
     try {
       setLinks(await request<SavedLink[]>("/payment-links", { accountId }));
+    } catch (error) {
+      setLinksError(
+        error instanceof Error
+          ? error.message
+          : "Your saved links are temporarily unavailable.",
+      );
     } finally {
       setLinksLoading(false);
     }
   };
   return (
     <YStack gap={22} maxWidth={620} width="100%" alignSelf="center">
-      <Heading>A little link. An easier payment.</Heading>
+      <Heading>Request a payment</Heading>
       <Label muted>
-        Request an amount at any UPI ID. The recipient reviews it in SettleUp.
+        Enter your UPI ID and an amount. Share the link for someone to review
+        and pay.
       </Label>
       <Button
         secondary
         icon="link"
         onPress={() => {
           setShowLinks(true);
-          void action.run(loadLinks);
+          void loadLinks();
         }}
       >
         My links
@@ -133,7 +142,7 @@ function PaymentLinkForm({
                 });
                 setCreated(result);
                 setShowLinks(true);
-                await loadLinks();
+                void loadLinks();
               }, "Payment link created")
             }
           >
@@ -203,6 +212,13 @@ function PaymentLinkForm({
           </Label>
           {linksLoading ? (
             <Skeleton height={120} />
+          ) : linksError ? (
+            <YStack gap={8}>
+              <Notice error>{linksError}</Notice>
+              <Button secondary compact onPress={() => void loadLinks()}>
+                Try loading again
+              </Button>
+            </YStack>
           ) : links.length ? (
             links.map((link) => {
               const inactive =

@@ -113,20 +113,20 @@ export function OnboardingScreen() {
     {
       mood: "wave" as const,
       scene: "coins" as const,
-      title: "Make space for what matters.",
-      text: "See your everyday spending in one clear picture. Small entries, a little more peace of mind.",
+      title: "Your money, made clear.",
+      text: "Track your spending, see what you owe, and keep your records together.",
     },
     {
       mood: "reading" as const,
       scene: "wallet" as const,
-      title: "Every shared moment. A fair share.",
-      text: "From a coffee to a weekend away, keep the split clear and the friendships easy.",
+      title: "Share the cost. Keep it simple.",
+      text: "Add friends to a group, split a bill, and see who owes what.",
     },
     {
       mood: "success" as const,
       scene: "privacy" as const,
-      title: "Your money. Your own space.",
-      text: "Private accounts, thoughtful sharing, and every bill right where you need it.",
+      title: "You're in control.",
+      text: "Choose what you share and which permissions to allow. Change them any time.",
     },
   ];
   return (
@@ -169,7 +169,7 @@ export function OnboardingScreen() {
                     width: step === i ? 28 : 8,
                     height: 8,
                     borderRadius: 4,
-                    backgroundColor: step === i ? "#6F6CD9" : c.line,
+                    backgroundColor: step === i ? "#6652A3" : c.line,
                   }}
                 />
               </Pressable>
@@ -338,8 +338,8 @@ export function AuthScreen() {
         paddingVertical={12}
       >
         <XStack justifyContent="space-between" alignItems="center">
-          <Label bold size={11} letterSpacing={1.5}>
-            YOUR FRESH START
+          <Label muted size={13}>
+            Your SettleUp account
           </Label>
         </XStack>
         <YStack alignItems="center" gap={10} paddingVertical={8}>
@@ -364,8 +364,8 @@ export function AuthScreen() {
               gap={8}
               flex={1}
               padding={16}
-              borderRadius={22}
-              backgroundColor={c.soft}
+              borderRadius={16}
+              backgroundColor={c.card}
             >
               <View
                 pointerEvents="none"
@@ -375,31 +375,31 @@ export function AuthScreen() {
                   top: 36,
                   width: 14,
                   height: 14,
-                  backgroundColor: c.soft,
+                  backgroundColor: c.card,
                   transform: [{ rotate: "45deg" }],
                 }}
               />
               <Heading size={23}>
                 {stage === "phone"
-                  ? "A little more peace of mind."
+                  ? "Let's get you signed in."
                   : stage === "code"
-                    ? "You’re one code away."
+                    ? "Check your messages."
                     : stage === "profile"
-                      ? "Make yourself at home."
+                      ? "A few details about you."
                       : stage === "permissions"
-                        ? "Choose what SettleUp can help with."
+                        ? "Choose your permissions."
                         : `You’re all set, ${name.split(" ")[0]}.`}
               </Heading>
               <Label muted size={13}>
                 {stage === "phone"
-                  ? "One place for your spending, shared plans, and the people in them."
+                  ? "Sign in or create an account to manage your spending and shared bills."
                   : stage === "code"
                     ? `Enter the six-digit code sent to ${phone}.`
                     : stage === "profile"
                       ? "Just the essentials. You can change these later."
                       : stage === "permissions"
                         ? "One clear step now. You can change every permission later in phone settings."
-                        : "Your private space is ready. Start small, make it yours."}
+                        : "You can now add transactions, join groups, and track your spending."}
               </Label>
             </YStack>
           </XStack>
@@ -632,7 +632,7 @@ export function AuthScreen() {
                         backgroundColor: c.soft,
                       }}
                     >
-                      <Icon name={permission.icon} size={20} color="#5552B4" />
+                      <Icon name={permission.icon} size={20} color="#59458F" />
                     </View>
                     <YStack flex={1} gap={2}>
                       <Label bold>{permission.title}</Label>
@@ -726,9 +726,9 @@ export function AccountsScreen() {
   return (
     <Shell>
       <YStack gap={22} maxWidth={700} width="100%" alignSelf="center">
-        <Heading>A space for every account.</Heading>
+        <Heading>Your accounts</Heading>
         <Label muted>
-          Separate sessions. Separate data. Switch without signing everyone out.
+          Switch accounts while keeping each person's records private.
         </Label>
         {accounts.map((a) => (
           <Card key={a.id}>
@@ -1124,8 +1124,8 @@ export function NotificationsScreen() {
     <DataScreen>
       {(d) => (
         <YStack gap={22}>
-          <Heading>A little heads-up.</Heading>
-          <Label muted>Your recent ledger changes.</Label>
+          <Heading>Recent changes</Heading>
+          <Label muted>Updates to your shared groups.</Label>
           <Card>
             {d.activity.length ? (
               d.activity.map((a) => (

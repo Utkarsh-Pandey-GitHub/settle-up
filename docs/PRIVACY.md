@@ -6,16 +6,18 @@ SettleUp helps you record expenses, shared obligations, repayments, and goals. I
 
 The service uses a verified phone number for authentication, optional profile information, financial entries you choose to save, shared-ledger memberships, selected contacts, and notification preferences. Only selected contacts are used; we do not upload the full phonebook. Contact discovery is off by default.
 
-Account sessions are stored independently. On native devices, tokens and saved drafts use operating-system secure storage. On the browser, real API tokens are kept in memory. The labeled demo stores fictional sample records locally and sends no financial entries to the API.
+Account sessions are stored independently. On native devices, tokens use operating-system secure storage. The last synced dashboard and retryable changes are stored in private app storage so the UI remains useful during a temporary outage. Queued changes are sent to the API after connectivity returns and are removed from the device queue after processing or explicit sign-out. On the browser, real API tokens are kept in memory. The labeled demo stores fictional sample records locally and sends no financial entries to the API.
 
 ## Device permissions
 
 - Camera: requested when you enable UPI QR scanning. A payment app opens only after your confirmation.
 - Contacts: requested when you choose a contact. Manual entry remains available if permission is declined.
 - Notifications: optional and requested from Settings.
-- Android SMS: available only in a supported custom build, requested only when you enable review. The app checks a bounded set of recent messages on-device. It never sends raw SMS to the server. iOS cannot read your SMS inbox.
+- Android SMS: available only in a supported custom build, requested only when you enable review. The app checks a bounded set of recent messages on-device and locally captures newly received financial-looking messages for review. It never sends raw SMS to the server. iOS cannot read your SMS inbox.
 
 SMS suggestions can be inaccurate. Accept, edit, or reject each suggestion. Account-specific salted fingerprints retain the handled decision for seven days. Expired native fingerprints are removed when review runs; expired server fingerprints are deleted by the scheduled cleanup worker. Android process scheduling cannot guarantee an exact deletion instant while the device is off or the app is not running.
+
+SettleUp does not read email. Adding bank-email import would require separate mailbox authorization and an updated privacy disclosure.
 
 ## Shared information
 

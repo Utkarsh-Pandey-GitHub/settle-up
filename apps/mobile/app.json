@@ -30,6 +30,7 @@
       },
       "permissions": [
         "android.permission.READ_SMS",
+        "android.permission.RECEIVE_SMS",
         "android.permission.CAMERA",
         "android.permission.READ_CONTACTS"
       ],
@@ -71,6 +72,7 @@
         }
       ],
       "./modules/truecaller/app.plugin.js",
+      "./with-upi-queries.js",
       "expo-web-browser"
     ],
     "experiments": {

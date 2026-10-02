@@ -17,37 +17,45 @@ import {
 import { Text, YStack, XStack } from "tamagui";
 import Svg, { Path, Circle, Rect, Ellipse, G } from "react-native-svg";
 import { useSession } from "../data/session";
+import { bodyFont } from "../theme/config";
 export const useColors = () =>
   useSession((s) => s.dark)
     ? {
-        bg: "#191B19",
-        card: "#222522",
-        text: "#F3F3EE",
-        muted: "#B4B9B0",
-        line: "#383D36",
-        soft: "#2C312A",
-        mint: "#2A302B",
-        peach: "#302E29",
-        blue: "#2B2E2D",
-        butter: "#2F302A",
+        bg: "#1C1922",
+        card: "#26212E",
+        text: "#F6F3FB",
+        muted: "#BAB2C6",
+        line: "#40374C",
+        soft: "#342B43",
+        mint: "#392E4D",
+        peach: "#302839",
+        blue: "#322A40",
+        butter: "#302839",
+        primary: "#C4B3EB",
+        onPrimary: "#221A32",
+        accent: "#C4B3EB",
       }
     : {
-        bg: "#FFFFFF",
+        bg: "#F5F4F7",
         card: "#FFFFFF",
-        text: "#191D21",
-        muted: "#656F77",
-        line: "#E8EDF2",
-        soft: "#F0EDFA",
-        mint: "#D0F1EB",
-        peach: "#F4F7FA",
-        blue: "#F4F7FA",
+        text: "#211D29",
+        muted: "#716B7B",
+        line: "#E1DDE7",
+        soft: "#F0ECF8",
+        mint: "#E7DEF7",
+        peach: "#F2EEF9",
+        blue: "#FFFFFF",
         butter: "#FFFFFF",
+        primary: "#6652A3",
+        onPrimary: "#FFFFFF",
+        accent: "#6652A3",
       };
 export type IconName =
   | "camera"
   | "image"
   | "home"
   | "activity"
+  | "transactions"
   | "plus"
   | "chart"
   | "groups"
@@ -85,6 +93,7 @@ const paths: Record<string, string> = {
   image: "M3 3h18v18H3Z M3 17l6-6 4 4 3-3 5 5 M8 7h.01",
   home: "M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z",
   activity: "M3 12h4l2-7 4 14 2-7h6",
+  transactions: "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01",
   plus: "M12 5v14 M5 12h14",
   chart: "M4 20V11 M10 20V4 M16 20v-7 M22 20V8",
   groups:
@@ -169,7 +178,7 @@ export function Label({
       fontFamily="$body"
       fontWeight={bold ? "700" : "400"}
       fontSize={size}
-      lineHeight={size * 1.5}
+      lineHeight={size * 1.4}
       color={color ?? (muted ? c.muted : c.text)}
       {...props}
     >
@@ -190,7 +199,9 @@ export function Heading({
     <Label
       size={size}
       bold
-      letterSpacing={-0.8}
+      fontFamily="$heading"
+      lineHeight={size * 1.18}
+      letterSpacing={-0.35}
       accessibilityRole="header"
       textAlign={textAlign}
     >
@@ -211,14 +222,10 @@ export function Card({
       style={[
         {
           backgroundColor: c.card,
-          borderWidth: 1,
+          borderWidth: 0,
           borderColor: c.line,
-          borderRadius: 18,
-          shadowColor: "#31224D",
-          shadowOpacity: 0.035,
-          shadowRadius: 14,
-          shadowOffset: { width: 0, height: 4 },
-          padding: 24,
+          borderRadius: 16,
+          padding: 18,
         },
         style,
       ]}
@@ -299,14 +306,14 @@ export function Button({
       onPress={onPress}
       style={({ pressed }) => [
         {
-          minHeight: 46,
+          minHeight: 48,
           paddingHorizontal: compact ? 14 : 20,
           paddingVertical: 11,
           borderRadius: 15,
           borderBottomWidth: 1,
-          backgroundColor: secondary ? c.card : "#6F6CD9",
+          backgroundColor: secondary ? c.card : c.primary,
           borderWidth: 1,
-          borderColor: secondary ? c.line : "#6F6CD9",
+          borderColor: secondary ? c.text : c.primary,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "center",
@@ -320,12 +327,12 @@ export function Button({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={secondary ? c.text : "#FFFFFF"}
+          color={secondary ? c.text : c.onPrimary}
         />
       ) : !!icon ? (
-        <Icon name={icon} size={18} color={secondary ? c.text : "#fff"} />
+        <Icon name={icon} size={20} color={secondary ? c.text : c.onPrimary} />
       ) : null}
-      <Label bold size={13} color={secondary ? c.text : "#FFFFFF"}>
+      <Label bold size={15} color={secondary ? c.text : c.onPrimary}>
         {children}
       </Label>
     </Pressable>
@@ -359,7 +366,7 @@ export function IconButton({
         backgroundColor: pressed ? c.soft : "transparent",
       })}
     >
-      <Icon name={name} />
+      <Icon name={name} color={c.text} />
     </Pressable>
   );
 }
@@ -382,12 +389,12 @@ export function Field({
           {
             minHeight: 49,
             borderWidth: 1,
-            borderColor: error ? "#B42332" : c.line,
-            borderRadius: 12,
+            borderColor: error ? "#B42332" : c.muted,
+            borderRadius: 10,
             padding: 13,
             color: c.text,
             backgroundColor: c.card,
-            fontFamily: "Montserrat",
+            fontFamily: bodyFont,
             fontSize: 15,
           },
           props.style,
@@ -422,13 +429,13 @@ export function Chip({
         paddingHorizontal: 15,
         paddingVertical: 10,
         borderWidth: 1,
-        borderColor: selected ? "#BFC7BA" : c.line,
-        backgroundColor: selected ? c.soft : c.card,
+        borderColor: c.text,
+        backgroundColor: selected ? c.primary : c.card,
         borderRadius: 12,
         justifyContent: "center",
       }}
     >
-      <Label size={12} color={selected ? "#5552B4" : c.muted} bold={selected}>
+      <Label size={13} color={selected ? c.onPrimary : c.text} bold={selected}>
         {children}
       </Label>
     </Pressable>
@@ -436,7 +443,7 @@ export function Chip({
 }
 export function Progress({
   value,
-  color = "#6F6CD9",
+  color = "#6652A3",
 }: {
   value: number;
   color?: string;
@@ -471,7 +478,7 @@ export function Progress({
 export function Avatar({
   name,
   size = 36,
-  color = "#DCCFEF",
+  color = "#EEE8F8",
 }: {
   name: string;
   size?: number;
@@ -490,7 +497,7 @@ export function Avatar({
         borderColor: "#FFFFFF",
       }}
     >
-      <Label size={size * 0.32} bold color="#4B4060">
+      <Label size={size * 0.32} bold color="#493865">
         {name
           .split(" ")
           .map((s) => s[0])
@@ -507,12 +514,13 @@ export function Notice({
   children: React.ReactNode;
   error?: boolean;
 }) {
+  const c = useColors();
   return (
     <View
       accessibilityRole={error ? "alert" : undefined}
       style={{
         padding: 15,
-        backgroundColor: error ? "#FFF0F0" : "#F2EDF8",
+        backgroundColor: error ? "#FFF0F0" : c.soft,
         borderRadius: 12,
         flexDirection: "row",
         alignItems: "center",
@@ -520,7 +528,7 @@ export function Notice({
       }}
     >
       <Mascot size={44} mood={error ? "help" : "wave"} animate={false} />
-      <Label flex={1} size={13} color={error ? "#A12435" : "#5B4980"}>
+      <Label flex={1} size={13} color={error ? "#A12435" : c.text}>
         {children}
       </Label>
     </View>
@@ -589,7 +597,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
       <Mascot size={compact ? 32 : 40} mark animate={false} />
       <Label bold size={compact ? 20 : 24} letterSpacing={-1}>
         settle
-        <Label bold size={compact ? 20 : 24} color="#6F6CD9">
+        <Label bold size={compact ? 20 : 24} color="#6652A3">
           up.
         </Label>
       </Label>
@@ -827,14 +835,16 @@ export function SearchBar({
       style={{
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: c.soft,
-        borderRadius: 12,
+        backgroundColor: c.card,
+        borderWidth: 1,
+        borderColor: c.muted,
+        borderRadius: 10,
         paddingHorizontal: 12,
-        height: 40,
+        height: 46,
         gap: 8,
       }}
     >
-      <Icon name="search" size={16} color={c.muted} />
+      <Icon name="search" size={22} color={c.text} />
       <TextInput
         placeholder={placeholder}
         placeholderTextColor={c.muted}
@@ -951,7 +961,7 @@ export function SearchPicker({
                     paddingVertical: 10,
                     borderRadius: 14,
                     borderWidth: 1,
-                    borderColor: active ? "#8B88DE" : c.line,
+                    borderColor: active ? "#6652A3" : c.line,
                     backgroundColor: active ? c.soft : c.card,
                     flexDirection: "row",
                     alignItems: "center",
@@ -971,7 +981,7 @@ export function SearchPicker({
                   <Icon
                     name={active ? "check" : selectionIcon}
                     size={18}
-                    color={active ? "#5552B4" : c.muted}
+                    color={active ? c.accent : c.muted}
                   />
                 </Pressable>
               );
@@ -1003,38 +1013,46 @@ export function FilterDropdownTrigger({
   label,
   active,
   onPress,
+  compact = false,
 }: {
   label: string;
   active?: boolean;
   onPress: () => void;
+  compact?: boolean;
 }) {
   const c = useColors();
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
       onPress={onPress}
       style={{
         flexGrow: 1,
-        flexBasis: 128,
+        flexBasis: compact ? 0 : 128,
+        minWidth: compact ? 0 : undefined,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        backgroundColor: active ? "#EAE6F8" : c.soft,
-        borderWidth: active ? 1.5 : 0,
-        borderColor: "#5552B4",
+        backgroundColor: active ? c.primary : c.card,
+        borderWidth: 1,
+        borderColor: c.text,
         borderRadius: 12,
-        paddingHorizontal: 10,
-        height: 36,
+        paddingHorizontal: compact ? 8 : 10,
+        height: 44,
       }}
     >
       <Label
-        size={12}
+        size={compact ? 12 : 13}
+        flex={1}
+        minWidth={0}
+        marginRight={4}
         bold
-        color={active ? "#5552B4" : c.text}
+        color={active ? c.onPrimary : c.text}
         numberOfLines={1}
       >
         {label}
       </Label>
-      <Icon name="down" size={14} color={active ? "#5552B4" : c.muted} />
+      <Icon name="down" size={14} color={active ? c.onPrimary : c.text} />
     </Pressable>
   );
 }

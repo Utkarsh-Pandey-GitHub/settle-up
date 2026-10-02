@@ -4,13 +4,14 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "fastify": "^5.6.1",
     "@fastify/cors": "^11.1.0",
     "@fastify/helmet": "^13.0.2",
     "@fastify/rate-limit": "^10.3.0",
-    "jose": "^6.1.0",
-    "dotenv": "^17.2.3",
+    "@fastify/websocket": "^11.3.1",
+    "@settleup/contracts": "*",
     "@settleup/domain": "*",
-    "@settleup/contracts": "*"
+    "dotenv": "^17.2.3",
+    "fastify": "^5.6.1",
+    "jose": "^6.1.0"
   }
 }

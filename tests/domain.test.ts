@@ -175,6 +175,12 @@ describe("imports & UPI security", () => {
     expect(p.payeeName).toBe("Little Cafe");
     expect(p.uri).not.toContain("evil");
   });
+  it("preserves a valid UPI transaction reference", () => {
+    const p = parseUpi(
+      "upi://pay?pa=cafe@okbank&pn=Little%20Cafe&am=120.50&cu=INR&tr=172001234567890",
+    );
+    expect(new URL(p.uri).searchParams.get("tr")).toBe("172001234567890");
+  });
   it.each([
     "https://evil.example",
     "upi://pay?pa=a@b",

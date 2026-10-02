@@ -25,7 +25,7 @@ import {
 } from "./WalkthroughTour";
 const navigation: { label: string; path: string; icon: IconName }[] = [
   { label: "Overview", path: "/", icon: "home" },
-  { label: "Transactions", path: "/activity", icon: "activity" },
+  { label: "Transactions", path: "/activity", icon: "transactions" },
   { label: "Groups", path: "/groups", icon: "groups" },
   { label: "Analytics", path: "/analytics", icon: "chart" },
   { label: "Goals", path: "/goals", icon: "goal" },
@@ -160,16 +160,16 @@ export function Shell({
           height: 49,
           paddingHorizontal: 17,
           borderRadius: 12,
-          backgroundColor: active ? c.soft : pressed ? c.bg : "transparent",
+          backgroundColor: active ? c.primary : pressed ? c.bg : "transparent",
           marginBottom: 6,
         })}
       >
         <Icon
           name={item.icon}
           size={21}
-          color={active ? "#6F6CD9" : "#8E8997"}
+          color={active ? c.onPrimary : c.text}
         />
-        <Label size={14} color={active ? "#5552B4" : c.muted} bold={active}>
+        <Label size={14} color={active ? c.onPrimary : c.text} bold={active}>
           {item.label}
         </Label>
         {active && (
@@ -178,7 +178,7 @@ export function Shell({
               width: 6,
               height: 6,
               borderRadius: 3,
-              backgroundColor: "#6F6CD9",
+              backgroundColor: c.onPrimary,
               marginLeft: "auto",
             }}
           />
@@ -274,7 +274,7 @@ export function Shell({
                   onPress={() => go("/settings")}
                   style={{ minHeight: 36, justifyContent: "center" }}
                 >
-                  <Label size={11} color="#5552B4" bold>
+                  <Label size={11} color="#59458F" bold>
                     Privacy settings →
                   </Label>
                 </Pressable>
@@ -318,9 +318,9 @@ export function Shell({
                 minHeight: desktop ? 80 : 52,
                 paddingTop: desktop ? 0 : insets.top,
                 paddingHorizontal: desktop ? 39 : width < 360 ? 12 : 21,
-                borderBottomWidth: 1,
+                borderBottomWidth: 0,
                 borderColor: c.line,
-                backgroundColor: c.card,
+                backgroundColor: c.bg,
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
@@ -347,7 +347,7 @@ export function Shell({
                       paddingHorizontal: 7,
                     }}
                   >
-                    <Label size={9} bold color="#5552B4">
+                    <Label size={9} bold color="#59458F">
                       DEMO
                     </Label>
                   </View>
@@ -443,16 +443,9 @@ export function Shell({
                   bottom: 0,
                   left: 0,
                   right: 0,
-                  borderTopLeftRadius: 16,
-                  borderTopRightRadius: 16,
-                  borderWidth: 1,
-                  shadowColor: "#392265",
-                  shadowOpacity: 0.12,
-                  shadowRadius: 18,
-                  shadowOffset: { width: 0, height: 6 },
-                  elevation: 8,
+                  borderRadius: 0,
                   paddingBottom: Math.max(insets.bottom, 10),
-                  paddingTop: 10,
+                  paddingTop: 0,
                   flexDirection: "row",
                   justifyContent: "space-around",
                   borderTopWidth: 1,
@@ -472,7 +465,7 @@ export function Shell({
                   {
                     label: "Transactions",
                     path: "/activity",
-                    icon: "activity",
+                    icon: "transactions",
                   },
                   { label: "Scan QR", path: "/scan", icon: "scan" },
                   { label: "Analytics", path: "/analytics", icon: "chart" },
@@ -482,43 +475,40 @@ export function Shell({
                     key={n.path}
                     accessibilityRole="button"
                     accessibilityLabel={n.label}
+                    accessibilityState={{ selected: path === n.path }}
                     onPress={() => go(n.path)}
                     style={{
-                      minWidth: 56,
-                      minHeight: 48,
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: 65,
+                      paddingTop: 8,
+                      borderTopWidth: 3,
+                      borderTopColor:
+                        path === n.path ? c.accent : "transparent",
                       alignItems: "center",
                       gap: 3,
                     }}
                   >
                     <View
-                      style={
-                        n.path === "/scan"
-                          ? {
-                              backgroundColor: "#6F6CD9",
-                              borderRadius: 20,
-                              padding: 17,
-                              marginTop: -20,
-                              borderBottomWidth: 4,
-                              borderColor: "#5552B4",
-                            }
-                          : { padding: 3 }
-                      }
+                      style={{
+                        width: 39,
+                        height: 39,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor: n.path === "/scan" ? c.soft : "transparent",
+                        borderRadius: 14,
+                      }}
                     >
                       <Icon
                         name={n.icon as IconName}
-                        size={n.path === "/scan" ? 29 : 22}
-                        color={
-                          n.path === "/scan"
-                            ? "#FFF"
-                            : path === n.path
-                              ? "#6F6CD9"
-                              : c.muted
-                        }
+                        size={n.path === "/scan" ? 29 : 25}
+                        color={path === n.path || n.path === "/scan" ? c.accent : c.text}
                       />
                     </View>
                     <Label
-                      size={9}
-                      color={path === n.path ? "#6F6CD9" : c.muted}
+                      size={width < 360 ? 10 : 11}
+                      bold={path === n.path}
+                      color={c.text}
                     >
                       {n.label}
                     </Label>
