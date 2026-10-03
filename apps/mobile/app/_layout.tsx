@@ -9,6 +9,7 @@ import { StatusBar } from "expo-status-bar";
 import { AppState, Platform } from "react-native";
 import { AndroidSmsProvider } from "../src/services/device";
 import { setWidgetAccount } from "../modules/home-widgets/client";
+import { useAppSync } from "../src/data/hooks";
 const query = new QueryClient({
   defaultOptions: {
     queries: {
@@ -21,6 +22,10 @@ const query = new QueryClient({
     mutations: { retry: false },
   },
 });
+function AppSync() {
+  useAppSync();
+  return null;
+}
 export default function Layout() {
   const dark = useSession((s) => s.dark);
   useEffect(() => {
@@ -56,6 +61,7 @@ export default function Layout() {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={query}>
+        <AppSync />
         <TamaguiProvider config={config} defaultTheme={dark ? "dark" : "light"}>
           <StatusBar style={dark ? "light" : "dark"} />
           <Stack

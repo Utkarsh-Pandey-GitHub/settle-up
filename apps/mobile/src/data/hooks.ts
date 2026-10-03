@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { DEMO, useSession } from "./session";
 import { syncGoalNotifications } from "../services/device";
 import {
   API_URL,
+  peekCachedDashboard,
   repository,
   readCachedDashboard,
   subscribeCachedDashboard,
@@ -13,6 +14,7 @@ import {
 import { getTokenSession } from "./session";
 import { syncWidgets } from "../../modules/home-widgets/client";
 const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const projectionFingerprints = new Map<string, string>();
 
 function queueAccountRefresh(
   query: ReturnType<typeof useQueryClient>,
@@ -33,12 +35,26 @@ function queueAccountRefresh(
 }
 export function useDashboard() {
   const id = useSession((s) => s.activeId);
+  return useQuery({
+    queryKey: ["account", id, "dashboard"],
+    queryFn: () => repository.dashboard(id!),
+    enabled: !!id,
+    staleTime: 30_000,
+    initialData: id ? peekCachedDashboard(id) : undefined,
+  });
+}
+
+/** One coordinator per app: cache hydration, realtime, background sync and
+ * native projections must never be duplicated by every mounted screen. */
+export function useAppSync() {
+  const id = useSession((s) => s.activeId);
   const query = useQueryClient();
   const result = useQuery({
     queryKey: ["account", id, "dashboard"],
     queryFn: () => repository.dashboard(id!),
     enabled: !!id,
     staleTime: 30_000,
+    initialData: id ? peekCachedDashboard(id) : undefined,
   });
   useEffect(() => {
     if (!id) return;
@@ -85,14 +101,9 @@ export function useDashboard() {
       socket.onmessage = (event) => {
         try {
           if (
-            ["connected", "data_changed"].includes(
-              JSON.parse(String(event.data)).type,
-            )
+            JSON.parse(String(event.data)).type === "data_changed"
           )
-            void query.invalidateQueries({
-              queryKey: ["account", id],
-              refetchType: "active",
-            });
+            queueAccountRefresh(query, id);
         } catch {
           // Ignore malformed keepalive/provider messages.
         }
@@ -125,8 +136,25 @@ export function useDashboard() {
           sessionAccount.currency !== result.data.account.currency)
       )
         void useSession.getState().updateAccount(result.data.account);
-      syncGoalNotifications(result.data).catch(() => {});
-      syncWidgets(result.data).catch(() => {});
+      const fingerprint = [
+        result.data.account.name,
+        result.data.account.avatar,
+        ...result.data.transactions
+          .slice(0, 25)
+          .map((transaction) => `${transaction.id}:${transaction.version}`),
+        ...result.data.obligations.map(
+          (obligation) => `${obligation.id}:${obligation.remainingMinor}`,
+        ),
+        ...result.data.goals.map((goal) => `${goal.id}:${goal.spentMinor}`),
+      ].join("|");
+      if (projectionFingerprints.get(result.data.account.id) !== fingerprint) {
+        projectionFingerprints.set(result.data.account.id, fingerprint);
+        const timer = setTimeout(() => {
+          syncGoalNotifications(result.data!).catch(() => {});
+          syncWidgets(result.data!).catch(() => {});
+        }, 250);
+        return () => clearTimeout(timer);
+      }
     }
   }, [result.data]);
   useEffect(() => {
@@ -148,7 +176,7 @@ export function useDashboard() {
         syncing = false;
       }
     };
-    const timer = setInterval(() => void sync(), 15_000);
+    const timer = setInterval(() => void sync(), 45_000);
     const listener = AppState.addEventListener("change", (state) => {
       if (state === "active") void sync();
     });
@@ -157,12 +185,12 @@ export function useDashboard() {
       listener.remove();
     };
   }, [id, query]);
-  return result;
 }
 export function useAction() {
   const id = useSession((s) => s.activeId);
   const query = useQueryClient();
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   return {
@@ -171,7 +199,8 @@ export function useAction() {
     success,
     setError,
     async run(action: () => Promise<unknown>, message = "Saved successfully") {
-      if (busy) return false;
+      if (running.current) return false;
+      running.current = true;
       setBusy(true);
       setError("");
       setSuccess("");
@@ -211,6 +240,7 @@ export function useAction() {
         );
         return false;
       } finally {
+        running.current = false;
         setBusy(false);
       }
     },

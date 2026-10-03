@@ -1,4 +1,4 @@
-import { chooseContact } from "../services/device";
+import { chooseContact, chooseContacts } from "../services/device";
 import { DateTime } from "luxon";
 import React, { useEffect, useRef, useState } from "react";
 import { View, Alert, Modal, Pressable, ScrollView } from "react-native";
@@ -59,15 +59,27 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
       pending?: string;
       capture?: string;
       bill?: string;
+      edit?: string;
     }>(),
     router = useRouter(),
     action = useAction();
-  const [ledgerId, setLedgerId] = useState(params.ledger ?? ""),
-    [selected, setSelected] = useState<string[]>([]),
+  const editing = params.edit
+    ? d.transactions.find((transaction) => transaction.id === params.edit)
+    : undefined;
+  const [ledgerId, setLedgerId] = useState(
+      params.ledger ?? editing?.ledgerId ?? "",
+    ),
+    [selected, setSelected] = useState<string[]>(
+      editing?.allocations
+        .map((allocation) => allocation.userId)
+        .filter((id) => id !== d.account.id) ?? [],
+    ),
     [method, setMethod] = useState<SplitMethod>("EQUAL"),
     [weights, setWeights] = useState<Record<string, string>>({}),
-    [tagIds, setTagIds] = useState<string[]>([]),
-    [transactionIcon, setTransactionIcon] = useState<IconName>("bag"),
+    [tagIds, setTagIds] = useState<string[]>(editing?.tagIds ?? []),
+    [transactionIcon, setTransactionIcon] = useState<IconName>(
+      (editing?.icon as IconName) ?? "bag",
+    ),
     [billOpen, setBillOpen] = useState(
       params.capture === "bill" ||
         params.bill === "1" ||
@@ -78,7 +90,13 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     ),
     [key, setKey] = useState(uuid());
   const [photo, setPhoto] = useState<BillPhoto | null>(null);
-  const [lines, setLines] = useState<BillLine[]>([]);
+  const [lines, setLines] = useState<BillLine[]>(
+    editing?.items?.map((item) => ({
+      name: item.name,
+      quantity: String(item.quantity),
+      amount: String(item.amountMinor / 100),
+    })) ?? [],
+  );
   const [scanning, setScanning] = useState(false);
   const saving = useRef(false);
   const {
@@ -90,16 +108,19 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   } = useForm({
     resolver: zodResolver(expenseForm),
     defaultValues: {
-      title: params.title ?? "",
-      amount: params.amount ?? "",
-      notes: "",
-      date: DateTime.now().setZone("Asia/Kolkata").toFormat("yyyy-MM-dd HH:mm"),
+      title: params.title ?? editing?.title ?? "",
+      amount: params.amount ?? (editing ? String(editing.amountMinor / 100) : ""),
+      notes: editing?.notes ?? "",
+      date: editing
+        ? DateTime.fromISO(editing.occurredAt).setZone("Asia/Kolkata").toFormat("yyyy-MM-dd HH:mm")
+        : DateTime.now().setZone("Asia/Kolkata").toFormat("yyyy-MM-dd HH:mm"),
     },
   });
   const ledger = d.ledgers.find((l) => l.id === ledgerId);
   const amount = watch("amount");
+  const payerId = editing?.sourceId ?? d.account.id;
   const splitMembers = selected.length
-    ? [d.account.id, ...selected.filter((id) => id !== d.account.id)]
+    ? [payerId, ...selected.filter((id) => id !== payerId)]
     : [];
   const type: CreateTransaction["type"] = selected.length
     ? "SHARED_EXPENSE"
@@ -214,8 +235,15 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
               }))
             : [],
       };
-      await repository.create(d.account.id, input);
-    }, "Expense saved. One less thing to keep in your head.");
+      if (editing)
+        await extra(
+          d.account.id,
+          `/transactions/${editing.id}`,
+          { version: editing.version, transaction: input },
+          "PATCH",
+        );
+      else await repository.create(d.account.id, input);
+    }, editing ? "Transaction updated." : "Expense saved. One less thing to keep in your head.");
     saving.current = false;
     if (ok) {
       setKey(uuid());
@@ -401,9 +429,12 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   <Button
                     secondary
                     icon="groups"
-                    onPress={() => setPicker("ledger")}
+                    disabled={!!params.ledger}
+                    onPress={() => {
+                      if (!params.ledger) setPicker("ledger");
+                    }}
                   >
-                    {ledger?.name ?? "Optional"}
+                    {ledger?.name ?? "Optional"}{params.ledger ? " · fixed" : ""}
                   </Button>
                 </YStack>
                 <YStack flex={1} gap={6}>
@@ -570,8 +601,12 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                 {action.busy
                   ? "Saving…"
                   : type === "SHARED_EXPENSE"
-                    ? "Save & split expense"
-                    : "Save transaction"}
+                    ? editing
+                      ? "Update split transaction"
+                      : "Save & split expense"
+                    : editing
+                      ? "Update transaction"
+                      : "Save transaction"}
               </Button>
             </YStack>
           </Card>
@@ -580,7 +615,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             title="Groups"
             options={[
               { id: "__personal", label: "No group" },
-              ...d.ledgers.map((entry) => ({
+              ...d.ledgers.filter((entry) => !entry.deleted).map((entry) => ({
                 id: entry.id,
                 label: entry.name,
                 detail: `${entry.members.length} members · ${entry.currency}`,
@@ -639,8 +674,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
 }
 export function TransactionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>(),
-    action = useAction(),
-    [reason, setReason] = useState("");
+    action = useAction();
   const router = useRouter();
   return (
     <DataScreen>
@@ -653,12 +687,10 @@ export function TransactionScreen() {
               detail="This entry is not available in the active account."
             />
           );
-        const perform = (name: string) =>
-          action.run(async () => {
-            if (reason.trim().length < 3)
-              throw new Error("Add a short reason for the audit trail.");
-            await repository.action(d.account.id, id, name, t.version, reason);
-          });
+        const perform = () =>
+          action.run(() =>
+            repository.action(d.account.id, id, "complete", t.version, "completed"),
+          );
         return (
           <YStack maxWidth={760} width="100%" alignSelf="center" gap={22}>
             <Heading>{t.title}</Heading>
@@ -714,74 +746,30 @@ export function TransactionScreen() {
             </Card>
             <Card>
               <YStack gap={16}>
-                <Heading size={18}>Keep the story accurate</Heading>
+                <Heading size={18}>Manage transaction</Heading>
                 <Label muted size={12}>
-                  Posted records are preserved. To correct an amount, reverse it
-                  and create a replacement. Repayments must be reversed before
-                  the original expense.
+                  Group members can edit shared transactions. Every change is
+                  recorded in group changes.
                 </Label>
-                <Field
-                  label="Reason or resolution"
-                  placeholder="What changed?"
-                  value={reason}
-                  onChangeText={setReason}
-                />
                 {!!action.error && <Notice error>{action.error}</Notice>}
                 {!!action.success && <Notice>{action.success}</Notice>}
                 <XStack gap={10} flexWrap="wrap">
+                  <Button
+                    secondary
+                    icon="edit"
+                    onPress={() =>
+                      router.push({ pathname: "/add", params: { edit: t.id } })
+                    }
+                  >
+                    Edit transaction
+                  </Button>
                   {t.status === "PENDING" && (
                     <Button
                       loading={action.busy}
                       disabled={action.busy}
-                      onPress={() => perform("complete")}
+                      onPress={perform}
                     >
                       Confirm payment completed
-                    </Button>
-                  )}
-                  {["SETTLED", "PENDING_LOAN"].includes(t.status) &&
-                    t.type !== "REVERSAL" && (
-                      <Button
-                        secondary
-                        disabled={action.busy}
-                        onPress={() => perform("dispute")}
-                      >
-                        Raise dispute
-                      </Button>
-                    )}
-                  {t.status === "DISPUTED" && (
-                    <Button
-                      loading={action.busy}
-                      disabled={action.busy}
-                      onPress={() => perform("resolve")}
-                    >
-                      Resolve dispute
-                    </Button>
-                  )}
-                  {!["REVERSED", "DISPUTED"].includes(t.status) &&
-                    t.type !== "REVERSAL" && (
-                      <Button
-                        secondary
-                        disabled={action.busy}
-                        onPress={() => perform("reverse")}
-                      >
-                        {t.status === "PENDING"
-                          ? "Cancel pending entry"
-                          : "Reverse entry"}
-                      </Button>
-                    )}
-                  {t.status === "REVERSED" && (
-                    <Button
-                      onPress={() =>
-                        router.push({
-                          pathname: "/add",
-                          params: {
-                            title: t.title,
-                            amount: String(t.amountMinor / 100),
-                          },
-                        })
-                      }
-                    >
-                      Create corrected entry
                     </Button>
                   )}
                 </XStack>
@@ -1015,6 +1003,12 @@ export function GroupsScreen() {
     [name, setName] = useState(""),
     [members, setMembers] = useState<string[]>([]),
     [contacts, setContacts] = useState<{ name: string; phone: string }[]>([]),
+    [phoneContacts, setPhoneContacts] = useState<
+      { name: string; phone: string }[]
+    >([]),
+    [contactsOpen, setContactsOpen] = useState(false),
+    [savedContactsOpen, setSavedContactsOpen] = useState(false),
+    [showDeleted, setShowDeleted] = useState(false),
     action = useAction(),
     router = useRouter(),
     c = useColors();
@@ -1047,35 +1041,19 @@ export function GroupsScreen() {
                   disabled={action.busy}
                   onPress={() =>
                     action.run(async () => {
-                      const picked = await chooseContact();
-                      if (!picked) return;
-                      const saved = d.savedContacts.find(
-                        (contact) => contact.phone === picked.phone,
-                      );
-                      if (!saved) {
-                        setContacts((items) =>
-                          items.some(
-                            (contact) => contact.phone === picked.phone,
-                          )
-                            ? items
-                            : [...items, picked],
-                        );
-                        return;
-                      }
-                      setMembers((ms) =>
-                        ms.includes(saved.id) ? ms : [...ms, saved.id],
-                      );
-                    })
+                      setPhoneContacts(await chooseContacts());
+                      setContactsOpen(true);
+                    }, "Choose the contacts to add")
                   }
                 >
-                  Choose a phone contact
+                  Choose multiple phone contacts
                 </Button>
                 <Button
                   secondary
                   compact
-                  onPress={() => router.push("/contacts")}
+                  onPress={() => setSavedContactsOpen(true)}
                 >
-                  View saved contacts
+                  Choose saved contacts{members.length ? ` · ${members.length}` : ""}
                 </Button>
                 <XStack gap={8} flexWrap="wrap">
                   {contacts.map((contact) => (
@@ -1089,21 +1067,6 @@ export function GroupsScreen() {
                       }
                     >
                       {contact.name}
-                    </Chip>
-                  ))}
-                  {d.savedContacts.map((p) => (
-                    <Chip
-                      selected={members.includes(p.id)}
-                      key={p.id}
-                      onPress={() =>
-                        setMembers((ms) =>
-                          ms.includes(p.id)
-                            ? ms.filter((id) => id !== p.id)
-                            : [...ms, p.id],
-                        )
-                      }
-                    >
-                      {p.name}
                     </Chip>
                   ))}
                 </XStack>
@@ -1137,7 +1100,54 @@ export function GroupsScreen() {
               </YStack>
             </Card>
           )}
-          {d.ledgers.map((l, index) => (
+          <SearchPicker
+            visible={contactsOpen}
+            title="Phone contacts"
+            options={phoneContacts.map((contact) => ({
+              id: contact.phone,
+              label: contact.name,
+              detail: contact.phone,
+            }))}
+            selected={contacts.map((contact) => contact.phone)}
+            multiple
+            onSelect={(phone) => {
+              const picked = phoneContacts.find((contact) => contact.phone === phone);
+              if (!picked) return;
+              setContacts((current) =>
+                current.some((contact) => contact.phone === phone)
+                  ? current.filter((contact) => contact.phone !== phone)
+                  : [...current, picked],
+              );
+            }}
+            onClear={() => {
+              setContacts([]);
+              setMembers([]);
+            }}
+            onClose={() => setContactsOpen(false)}
+          />
+          <SearchPicker
+            visible={savedContactsOpen}
+            title="Saved contacts"
+            options={d.savedContacts.map((contact) => ({
+              id: contact.id,
+              label: contact.name,
+              detail: contact.phone,
+            }))}
+            selected={members}
+            multiple
+            onSelect={(id) =>
+              setMembers((current) =>
+                current.includes(id)
+                  ? current.filter((memberId) => memberId !== id)
+                  : [...current, id],
+              )
+            }
+            onClear={() => setMembers([])}
+            onClose={() => setSavedContactsOpen(false)}
+          />
+          {d.ledgers
+            .filter((ledger) => !!ledger.deleted === showDeleted)
+            .map((l, index) => (
             <Pressable
               key={l.id}
               accessibilityRole="button"
@@ -1205,12 +1215,19 @@ export function GroupsScreen() {
               </Card>
             </Pressable>
           ))}
-          {!d.ledgers.length && (
+          {!d.ledgers.some((ledger) => !!ledger.deleted === showDeleted) && (
             <Empty
-              title="Start something together"
-              detail="Create a group for your home, a trip, or the next dinner."
+              title={showDeleted ? "No deleted groups" : "Start something together"}
+              detail={
+                showDeleted
+                  ? "Groups you delete remain safely available as read-only history."
+                  : "Create a group for your home, a trip, or the next dinner."
+              }
             />
           )}
+          <Button secondary onPress={() => setShowDeleted((value) => !value)}>
+            {showDeleted ? "Back to your groups" : "View deleted groups"}
+          </Button>
         </YStack>
       )}
     </DataScreen>
@@ -1225,6 +1242,11 @@ export function GroupScreen() {
     [view, setView] = useState<"records" | "balances">("records"),
     [membersOpen, setMembersOpen] = useState(false),
     [addingMember, setAddingMember] = useState(false),
+    [availableContacts, setAvailableContacts] = useState<
+      { name: string; phone: string }[]
+    >([]),
+    [pendingContacts, setPendingContacts] = useState<string[]>([]),
+    [memberContactsOpen, setMemberContactsOpen] = useState(false),
     [memberSearch, setMemberSearch] = useState("");
   return (
     <DataScreen>
@@ -1243,6 +1265,19 @@ export function GroupScreen() {
           : debts
               .filter((o) => o.remainingMinor > 0)
               .map((o) => ({ ...o, amountMinor: o.remainingMinor }));
+        const personalByMember = [...d.transactions
+          .filter(
+            (transaction) =>
+              transaction.ledgerId === id &&
+              transaction.type === "PERSONAL_EXPENSE",
+          )
+          .reduce((totals, transaction) => {
+            totals.set(
+              transaction.sourceId,
+              (totals.get(transaction.sourceId) ?? 0) + transaction.amountMinor,
+            );
+            return totals;
+          }, new Map<string, number>())];
         const name = (id: string) =>
           l.members.find((m) => m.id === id)?.name ?? "Member";
         const currentMember = l.members.find(
@@ -1286,8 +1321,44 @@ export function GroupScreen() {
                     {l.members.length} members
                   </Label>
                 </Pressable>
+                {currentMember?.role === "OWNER" && !l.deleted && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete ${l.name}`}
+                    onPress={() =>
+                      Alert.alert(
+                        "Delete this group?",
+                        "It will be hidden and become read-only. Its history stays available.",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Delete group",
+                            style: "destructive",
+                            onPress: () =>
+                              void action.run(
+                                () =>
+                                  extra(
+                                    d.account.id,
+                                    `/groups/${l.groupId}`,
+                                    undefined,
+                                    "DELETE",
+                                  ),
+                                "Group moved to deleted groups.",
+                              ),
+                          },
+                        ],
+                      )
+                    }
+                    style={{ padding: 9 }}
+                  >
+                    <Icon name="trash" size={17} color={c.muted} />
+                  </Pressable>
+                )}
               </XStack>
             </YStack>
+            {l.deleted && (
+              <Notice>This group is deleted. Its history is read-only.</Notice>
+            )}
             {!!action.error && <Notice error>{action.error}</Notice>}
             <XStack backgroundColor={c.soft} borderRadius={15} padding={4}>
               {(["records", "balances"] as const).map((item) => (
@@ -1376,9 +1447,28 @@ export function GroupScreen() {
                   {!balances.length && (
                     <Label muted>Everyone is settled up.</Label>
                   )}
+                  {!!personalByMember.length && (
+                    <YStack gap={8} paddingTop={14}>
+                      <Heading size={16}>Personal expenses by member</Heading>
+                      <Label muted size={11}>
+                        These records have no split and do not affect who owes who.
+                      </Label>
+                      {personalByMember.map(([memberId, amountMinor]) => (
+                        <XStack
+                          key={memberId}
+                          justifyContent="space-between"
+                          paddingVertical={8}
+                        >
+                          <Label>{name(memberId)}</Label>
+                          <Label bold>{money(amountMinor, l.currency)}</Label>
+                        </XStack>
+                      ))}
+                    </YStack>
+                  )}
                 </ScrollView>
               </YStack>
             )}
+            {!l.deleted && (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Add transaction"
@@ -1407,6 +1497,7 @@ export function GroupScreen() {
                 Add transaction
               </Label>
             </Pressable>
+            )}
             <Modal
               visible={membersOpen}
               transparent
@@ -1432,13 +1523,14 @@ export function GroupScreen() {
                     maxWidth: 520,
                     alignSelf: "center",
                     maxHeight: "72%",
+                    height: 520,
                   }}
                 >
                   <YStack gap={14}>
                     <XStack justifyContent="space-between" alignItems="center">
                       <Heading size={20}>Members</Heading>
                       <XStack gap={7}>
-                        {canManageMembers && (
+                        {canManageMembers && !l.deleted && (
                           <Button
                             compact
                             icon="plus"
@@ -1447,34 +1539,10 @@ export function GroupScreen() {
                             onPress={async () => {
                               setAddingMember(true);
                               try {
-                                const picked = await chooseContact();
-                                if (!picked) return;
-                                const saved = d.savedContacts.find(
-                                  (contact) => contact.phone === picked.phone,
-                                );
-                                if (
-                                  saved &&
-                                  l.members.some(
-                                    (member) => member.id === saved.id,
-                                  )
-                                )
-                                  throw new Error(
-                                    `${saved.name} is already a member.`,
-                                  );
-                                await action.run(
-                                  () =>
-                                    extra(
-                                      d.account.id,
-                                      `/groups/${l.groupId}/members`,
-                                      saved
-                                        ? {
-                                            memberIds: [saved.id],
-                                            contacts: [],
-                                          }
-                                        : { memberIds: [], contacts: [picked] },
-                                    ),
-                                  `${picked.name} added to the group`,
-                                );
+                                setAvailableContacts(await chooseContacts());
+                                setPendingContacts([]);
+                                setMembersOpen(false);
+                                setMemberContactsOpen(true);
                               } catch (error) {
                                 action.setError(
                                   error instanceof Error
@@ -1518,7 +1586,7 @@ export function GroupScreen() {
                               {m.role.toLowerCase()}
                             </Label>
                           </YStack>
-                          {canManageMembers &&
+                          {canManageMembers && !l.deleted &&
                             m.id !== d.account.id &&
                             m.role !== "OWNER" && (
                               <Button
@@ -1560,6 +1628,41 @@ export function GroupScreen() {
                 </Pressable>
               </Pressable>
             </Modal>
+            <SearchPicker
+              visible={memberContactsOpen}
+              title="Add phone contacts"
+              options={availableContacts.map((contact) => ({
+                id: contact.phone,
+                label: contact.name,
+                detail: contact.phone,
+              }))}
+              selected={pendingContacts}
+              multiple
+              onSelect={(phone) =>
+                setPendingContacts((current) =>
+                  current.includes(phone)
+                    ? current.filter((item) => item !== phone)
+                    : [...current, phone],
+                )
+              }
+              onClear={() => setPendingContacts([])}
+              onClose={() => {
+                setMemberContactsOpen(false);
+                setMembersOpen(true);
+                const selectedContacts = availableContacts.filter((contact) =>
+                  pendingContacts.includes(contact.phone),
+                );
+                if (selectedContacts.length)
+                  void action.run(
+                    () =>
+                      extra(d.account.id, `/groups/${l.groupId}/members`, {
+                        memberIds: [],
+                        contacts: selectedContacts,
+                      }),
+                    `${selectedContacts.length} member${selectedContacts.length === 1 ? "" : "s"} added`,
+                  );
+              }}
+            />
           </YStack>
         );
       }}
@@ -1626,9 +1729,18 @@ export function GroupChangesScreen() {
                   borderBottomColor={c.line}
                 >
                   <Icon name="activity" size={17} color="#7770A4" />
-                  <Label flex={1}>{entry.message}</Label>
-                  <Label muted size={10}>
-                    {new Date(entry.createdAt).toLocaleDateString("en-IN")}
+                  <YStack flex={1} gap={3}>
+                    <Label>{entry.message}</Label>
+                    <Label muted size={10}>
+                      {entry.actorName ?? "A member"} ·{" "}
+                      {entry.event?.toLowerCase().replace(/_/g, " ")}
+                    </Label>
+                  </YStack>
+                  <Label muted size={10} textAlign="right">
+                    {new Date(entry.createdAt).toLocaleString("en-IN", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
                   </Label>
                 </XStack>
               ))}

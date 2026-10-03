@@ -40,13 +40,14 @@ test("shared expense, account isolation, and accessible responsive home", async 
   await page
     .getByLabel("What was it for?", { exact: true })
     .fill("Browser split check");
-  await page
-    .getByRole("button", { name: "Split with friends", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Choose a group", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Optional", exact: true }).click();
   await page.getByRole("radio", { name: /Goa, here we come/ }).click();
+  await page
+    .getByRole("button", { name: "Choose saved friends", exact: true })
+    .click();
+  for (const name of ["Rohan Shah", "Meera Iyer", "Kabir Sethi"])
+    await page.getByRole("checkbox", { name }).click();
+  await page.getByRole("button", { name: "Close", exact: true }).last().click();
   await expect(page.getByText("₹25.00", { exact: true })).toHaveCount(4);
   await page
     .getByRole("button", { name: "Save & split expense", exact: true })
@@ -62,11 +63,17 @@ test("shared expense, account isolation, and accessible responsive home", async 
     .click();
   await page.getByRole("button", { name: "Switch", exact: true }).click();
   await expect(
-    page.getByText("₹4,669", { exact: true }).filter({ visible: true }).first(),
+    page.getByRole("button", {
+      name: "Design software, ₹2,499.00, SETTLED",
+      exact: true,
+    }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Transactions", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: /Design software/ }),
+    page.getByRole("button", {
+      name: "Design software, ₹2,499.00, SETTLED",
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: /Browser split check/ }),
@@ -83,9 +90,7 @@ test("shared expense, account isolation, and accessible responsive home", async 
     fullPage: true,
   });
 });
-test("manual entry survives reload and can be reversed with a reason", async ({
-  page,
-}) => {
+test("manual entry survives reload and can be edited", async ({ page }) => {
   await page.goto("/add");
   await page.getByLabel("Amount · INR", { exact: true }).fill("219.75");
   await page
@@ -102,13 +107,17 @@ test("manual entry survives reload and can be reversed with a reason", async ({
     })
     .click();
   await page
-    .getByLabel("Reason or resolution")
-    .fill("Duplicate personal entry");
+    .getByRole("button", { name: "Edit transaction", exact: true })
+    .click();
+  await page.getByLabel("Amount · INR", { exact: true }).fill("199.50");
   await page
-    .getByRole("button", { name: "Reverse entry", exact: true })
+    .getByRole("button", { name: "Update transaction", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Create corrected entry", exact: true }),
+    page.getByRole("button", {
+      name: "Browser coffee check, ₹199.50, SETTLED",
+      exact: true,
+    }),
   ).toBeVisible();
 });
 test("UPI confirmation never presents app launch as success", async ({

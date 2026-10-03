@@ -35,10 +35,16 @@ export async function requireMember(
 ) {
   const member = await tx.ledgerMember.findUnique({
     where: { ledgerId_userId: { ledgerId, userId } },
-    include: { ledger: true },
+    include: { ledger: { include: { group: true } } },
   });
   if (!member || member.leftAt)
     throw new DomainError("NOT_FOUND", "Ledger unavailable.", 404);
+  if (_writing && member.ledger.group.deletedAt)
+    throw new DomainError(
+      "GROUP_DELETED",
+      "This deleted group is read-only.",
+      409,
+    );
   return member;
 }
 export const visibleTransaction = (

@@ -35,6 +35,10 @@ const dashboardCacheKey = (accountId: string) =>
   `settleup.dashboard.v1.${accountId}`;
 type DashboardListener = (accountId: string, dashboard: Dashboard) => void;
 const dashboardListeners = new Set<DashboardListener>();
+const dashboardMemory = new Map<string, Dashboard>();
+const dashboardReads = new Map<string, Promise<Dashboard | undefined>>();
+const dashboardWrites = new Map<string, Promise<void>>();
+const dashboardRevisions = new Map<string, number>();
 export function subscribeCachedDashboard(listener: DashboardListener) {
   dashboardListeners.add(listener);
   return () => {
@@ -42,24 +46,57 @@ export function subscribeCachedDashboard(listener: DashboardListener) {
   };
 }
 async function writeCachedDashboard(accountId: string, dashboard: Dashboard) {
-  await AsyncStorage.setItem(
-    dashboardCacheKey(accountId),
-    JSON.stringify(dashboard),
+  dashboardMemory.set(accountId, dashboard);
+  dashboardRevisions.set(
+    accountId,
+    (dashboardRevisions.get(accountId) ?? 0) + 1,
   );
   dashboardListeners.forEach((listener) => listener(accountId, dashboard));
+  const previous = dashboardWrites.get(accountId) ?? Promise.resolve();
+  const write = previous
+    .catch(() => {})
+    .then(() =>
+      AsyncStorage.setItem(
+        dashboardCacheKey(accountId),
+        JSON.stringify(dashboard),
+      ),
+    )
+    .finally(() => {
+      if (dashboardWrites.get(accountId) === write)
+        dashboardWrites.delete(accountId);
+    });
+  dashboardWrites.set(accountId, write);
+  await write;
 }
 export async function readCachedDashboard(accountId: string) {
-  const value = await AsyncStorage.getItem(dashboardCacheKey(accountId));
-  if (!value) return undefined;
-  try {
-    return JSON.parse(value) as Dashboard;
-  } catch {
-    await AsyncStorage.removeItem(dashboardCacheKey(accountId));
-    return undefined;
-  }
+  const memory = dashboardMemory.get(accountId);
+  if (memory) return memory;
+  const pending = dashboardReads.get(accountId);
+  if (pending) return pending;
+  const read = AsyncStorage.getItem(dashboardCacheKey(accountId))
+    .then(async (value) => {
+      if (!value) return undefined;
+      try {
+        const dashboard = JSON.parse(value) as Dashboard;
+        dashboardMemory.set(accountId, dashboard);
+        return dashboard;
+      } catch {
+        await AsyncStorage.removeItem(dashboardCacheKey(accountId));
+        return undefined;
+      }
+    })
+    .finally(() => dashboardReads.delete(accountId));
+  dashboardReads.set(accountId, read);
+  return read;
 }
-export const clearCachedDashboard = (accountId: string) =>
-  AsyncStorage.removeItem(dashboardCacheKey(accountId));
+export const peekCachedDashboard = (accountId: string) =>
+  dashboardMemory.get(accountId);
+export const clearCachedDashboard = async (accountId: string) => {
+  dashboardMemory.delete(accountId);
+  dashboardReads.delete(accountId);
+  dashboardRevisions.delete(accountId);
+  await AsyncStorage.removeItem(dashboardCacheKey(accountId));
+};
 
 type QueuedMutation = {
   id: string;
@@ -71,6 +108,7 @@ type QueuedMutation = {
 };
 const mutationQueueKey = (accountId: string) =>
   `settleup.mutations.v1.${accountId}`;
+const queueChanges = new Map<string, Promise<void>>();
 const retryable = (error: unknown) =>
   error instanceof DomainError &&
   (["NETWORK_ERROR", "TIMEOUT"].includes(error.code) || error.status >= 500);
@@ -90,21 +128,41 @@ async function enqueueMutation(
   body?: unknown,
   method = "POST",
 ) {
-  const queue = await queuedMutations(accountId);
-  queue.push({
-    id: uuid(),
-    accountId,
-    path,
-    method,
-    body,
-    createdAt: new Date().toISOString(),
-  });
-  await AsyncStorage.setItem(
-    mutationQueueKey(accountId),
-    JSON.stringify(queue),
-  );
+  const previous = queueChanges.get(accountId) ?? Promise.resolve();
+  const change = previous
+    .catch(() => {})
+    .then(async () => {
+      const queue = await queuedMutations(accountId);
+      queue.push({
+        id: uuid(),
+        accountId,
+        path,
+        method,
+        body,
+        createdAt: new Date().toISOString(),
+      });
+      await AsyncStorage.setItem(
+        mutationQueueKey(accountId),
+        JSON.stringify(queue),
+      );
+    })
+    .finally(() => {
+      if (queueChanges.get(accountId) === change) queueChanges.delete(accountId);
+    });
+  queueChanges.set(accountId, change);
+  await change;
 }
 export async function syncPendingMutations(accountId: string) {
+  const active = queueSyncs.get(accountId);
+  if (active) return active;
+  const sync = drainPendingMutations(accountId).finally(() => {
+    if (queueSyncs.get(accountId) === sync) queueSyncs.delete(accountId);
+  });
+  queueSyncs.set(accountId, sync);
+  return sync;
+}
+const queueSyncs = new Map<string, Promise<number | null>>();
+async function drainPendingMutations(accountId: string) {
   const queue = await queuedMutations(accountId);
   if (!queue.length) return null;
   const remaining: QueuedMutation[] = [];
@@ -162,13 +220,16 @@ export async function optimisticDashboardMutation<T>(
   operation: () => Promise<T>,
 ) {
   const previous = await readCachedDashboard(accountId);
+  let persistence: Promise<void> | undefined;
   if (previous) {
     const optimistic = JSON.parse(JSON.stringify(previous)) as Dashboard;
     update(optimistic);
-    await writeCachedDashboard(accountId, optimistic);
+    persistence = writeCachedDashboard(accountId, optimistic);
   }
   try {
-    return await operation();
+    const result = await operation();
+    await persistence;
+    return result;
   } catch (error) {
     if (previous) await writeCachedDashboard(accountId, previous);
     throw error;
@@ -276,7 +337,7 @@ export interface AppRepository {
     id: string,
     action: string,
     version: number,
-    reason: string,
+    _reason: string,
   ): Promise<unknown>;
   deleteTransactions(accountId: string, ids: string[]): Promise<unknown>;
   createGoal(accountId: string, input: CreateGoal): Promise<unknown>;
@@ -459,64 +520,13 @@ export class DemoRepository implements AppRepository {
     const t = d.transactions.find((t) => t.id === txid);
     if (!t || t.version !== version)
       throw new Error("Refresh this record and try again.");
-    if (action === "complete") {
-      if (t.status !== "PENDING")
-        throw new Error("Only pending payments can be completed.");
-      t.status = "SETTLED";
-    }
-    if (action === "dispute") {
-      if (!["SETTLED", "PENDING_LOAN"].includes(t.status))
-        throw new Error("Only posted entries can be disputed.");
-      t.status = "DISPUTED";
-    }
-    if (action === "resolve") {
-      if (t.status !== "DISPUTED") throw new Error("There is no open dispute.");
-      t.status = t.type === "LOAN" ? "PENDING_LOAN" : "SETTLED";
-    }
-    if (action === "reverse") {
-      if (["REVERSED", "DISPUTED"].includes(t.status) || t.type === "REVERSAL")
-        throw new Error("This entry cannot be reversed.");
-      if (
-        (t.type === "SHARED_EXPENSE" ||
-          t.type === "LOAN" ||
-          t.type === "SETTLEMENT") &&
-        !originalDebts.has(txid)
-      )
-        throw new Error(
-          "Seeded demo financial records are read-only. Create a new entry to try reversals.",
-        );
-      for (const original of originalDebts.get(txid) ?? []) {
-        const debt = d.obligations.find((o) => o.id === original.id)!;
-        if (
-          original.amountMinor > 0 &&
-          debt.remainingMinor !== debt.amountMinor
-        )
-          throw new Error("Reverse repayments first.");
-      }
-      for (const original of originalDebts.get(txid) ?? []) {
-        const debt = d.obligations.find((o) => o.id === original.id)!;
-        debt.remainingMinor =
-          original.amountMinor > 0
-            ? 0
-            : debt.remainingMinor - original.amountMinor;
-      }
-      t.status = "REVERSED";
-      d.transactions.unshift({
-        ...t,
-        id: uuid(),
-        title: `Reversal: ${t.title}`,
-        type: "REVERSAL",
-        status: "SETTLED",
-        notes: reason,
-        occurredAt: new Date().toISOString(),
-        allocations: [],
-        tagIds: [],
-      });
-    }
+    if (action !== "complete" || t.status !== "PENDING")
+      throw new Error("Only pending payments can be completed.");
+    t.status = "SETTLED";
     t.version++;
     d.activity.unshift({
       id: uuid(),
-      message: `${action}: ${t.title} — ${reason}`,
+      message: `${t.title} marked completed`,
       createdAt: new Date().toISOString(),
       ledgerId: t.ledgerId,
     });
@@ -590,7 +600,30 @@ export class DemoRepository implements AppRepository {
     method?: string,
   ): Promise<any> {
     const d = await demoLoad(id);
-    if (path === "/groups") {
+    const transactionMatch = path.match(/^\/transactions\/([^/]+)$/);
+    if (transactionMatch && method === "PATCH") {
+      const transaction = d.transactions.find(
+        (entry) => entry.id === transactionMatch[1],
+      );
+      if (!transaction) throw new Error("Transaction unavailable.");
+      const input = body.transaction as CreateTransaction;
+      Object.assign(transaction, {
+        ...input,
+        id: transaction.id,
+        sourceId: transaction.sourceId,
+        version: transaction.version + 1,
+        allocations:
+          input.type === "SHARED_EXPENSE"
+            ? splitExpense(input.amountMinor, input.participants, input.splitMethod)
+            : [],
+      });
+      d.activity.unshift({
+        id: uuid(),
+        ledgerId: transaction.ledgerId,
+        message: `${transaction.title} was edited`,
+        createdAt: new Date().toISOString(),
+      });
+    } else if (path === "/groups") {
       const selected = new Set<string>(body.memberIds ?? []);
       for (const contact of body.contacts ?? []) {
         const existing = d.savedContacts.find(
@@ -631,6 +664,19 @@ export class DemoRepository implements AppRepository {
             createdAt: new Date().toISOString(),
           })),
       );
+    } else if (path.match(/^\/groups\/[^/]+$/) && method === "DELETE") {
+      const groupId = path.split("/")[2];
+      const ledger = d.ledgers.find((entry) => entry.groupId === groupId);
+      if (ledger) ledger.deleted = true;
+    } else if (path.match(/^\/contacts\/[^/]+$/) && method === "DELETE") {
+      const contactId = path.split("/")[2];
+      d.savedContacts = d.savedContacts.filter(
+        (contact) => contact.id !== contactId,
+      );
+    } else if (path.match(/^\/contacts\/[^/]+$/) && method === "PATCH") {
+      const contactId = path.split("/")[2];
+      const contact = d.savedContacts.find((entry) => entry.id === contactId);
+      if (contact) contact.name = body.name;
     } else if (path === "/tags")
       d.tags.push({ id: uuid(), ...body, archived: false });
     else if (path.startsWith("/tags/")) {
@@ -726,10 +772,24 @@ export class DemoRepository implements AppRepository {
   }
 }
 class ApiRepository implements AppRepository {
-  dashboard = async (accountId: string) => {
+  private dashboardRequests = new Map<string, Promise<Dashboard>>();
+  dashboard = (accountId: string) => {
+    const active = this.dashboardRequests.get(accountId);
+    if (active) return active;
+    const loading = this.loadDashboard(accountId).finally(() => {
+      if (this.dashboardRequests.get(accountId) === loading)
+        this.dashboardRequests.delete(accountId);
+    });
+    this.dashboardRequests.set(accountId, loading);
+    return loading;
+  };
+  private loadDashboard = async (accountId: string) => {
     try {
       await syncPendingMutations(accountId);
+      const revision = dashboardRevisions.get(accountId) ?? 0;
       const dashboard = await request<Dashboard>("/dashboard", { accountId });
+      if ((dashboardRevisions.get(accountId) ?? 0) !== revision)
+        return peekCachedDashboard(accountId) ?? dashboard;
       await writeCachedDashboard(accountId, dashboard);
       return dashboard;
     } catch (error) {
@@ -825,11 +885,6 @@ class ApiRepository implements AppRepository {
         );
         if (!transaction) return;
         if (action === "complete") transaction.status = "SETTLED";
-        if (action === "dispute") transaction.status = "DISPUTED";
-        if (action === "resolve")
-          transaction.status =
-            transaction.type === "LOAN" ? "PENDING_LOAN" : "SETTLED";
-        if (action === "reverse") transaction.status = "REVERSED";
         transaction.version += 1;
       },
       () =>
@@ -890,6 +945,25 @@ function extraDashboardUpdate(
   body: any,
   method: string,
 ) {
+  const transactionMatch = path.match(/^\/transactions\/([^/]+)$/);
+  if (transactionMatch && method === "PATCH")
+    return (dashboard: Dashboard) => {
+      const transaction = dashboard.transactions.find(
+        (entry) => entry.id === transactionMatch[1],
+      );
+      if (!transaction) return;
+      const input = body.transaction as CreateTransaction;
+      Object.assign(transaction, {
+        ...input,
+        id: transaction.id,
+        sourceId: transaction.sourceId,
+        version: transaction.version + 1,
+        allocations:
+          input.type === "SHARED_EXPENSE"
+            ? splitExpense(input.amountMinor, input.participants, input.splitMethod)
+            : [],
+      });
+    };
   if (path === "/transactions/assign-group")
     return (dashboard: Dashboard) => {
       const selected = new Set<string>(body.ids);
@@ -1015,6 +1089,34 @@ function extraDashboardUpdate(
         createdAt: new Date().toISOString(),
       });
     };
+  const groupMatch = path.match(/^\/groups\/([^/]+)$/);
+  if (groupMatch && method === "DELETE")
+    return (dashboard: Dashboard) => {
+      const ledger = dashboard.ledgers.find(
+        (entry) => entry.groupId === groupMatch[1],
+      );
+      if (ledger) ledger.deleted = true;
+    };
+  const contactMatch = path.match(/^\/contacts\/([^/]+)$/);
+  if (contactMatch && method === "DELETE")
+    return (dashboard: Dashboard) => {
+      dashboard.savedContacts = dashboard.savedContacts.filter(
+        (contact) => contact.id !== contactMatch[1],
+      );
+    };
+  if (contactMatch && method === "PATCH")
+    return (dashboard: Dashboard) => {
+      const contact = dashboard.savedContacts.find(
+        (entry) => entry.id === contactMatch[1],
+      );
+      if (contact) contact.name = body.name;
+      for (const ledger of dashboard.ledgers) {
+        const member = ledger.members.find(
+          (entry) => entry.id === contactMatch[1],
+        );
+        if (member) member.name = body.name;
+      }
+    };
   if (path === "/tags" && method === "POST")
     return (dashboard: Dashboard) =>
       dashboard.tags.push({
@@ -1057,7 +1159,7 @@ export const extra = async (
     return (repository as DemoRepository).extra(accountId, path, body, method);
   const operation = () =>
     effectiveMethod !== "GET" &&
-    /^(?:\/transactions\/assign-group|\/groups|\/ledgers|\/tags|\/goals|\/profile|\/blocks)/.test(
+    /^(?:\/transactions|\/groups|\/ledgers|\/tags|\/goals|\/profile|\/blocks|\/contacts)/.test(
       path,
     )
       ? queueWhenOffline<any>(accountId, path, body, method)

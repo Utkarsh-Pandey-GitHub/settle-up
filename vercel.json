@@ -2,5 +2,12 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build:web",
   "outputDirectory": "apps/mobile/dist",
-  "framework": null
+  "framework": null,
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }

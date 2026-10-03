@@ -239,7 +239,7 @@ export function TransactionRow({
           {t.status !== "SETTLED" && (
             <Label
               size={9}
-              color={t.status === "DISPUTED" ? "#B42332" : "#A26D20"}
+              color="#A26D20"
             >
               · {t.status.toLowerCase().replace(/_/g, " ")}
             </Label>
@@ -249,7 +249,7 @@ export function TransactionRow({
       {!!onAssignGroup && !selectable && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Assign ${t.title} to a group`}
+          accessibilityLabel={`Edit ${t.title}`}
           onPress={(event) => {
             event.stopPropagation();
             onAssignGroup();
@@ -263,7 +263,7 @@ export function TransactionRow({
             justifyContent: "center",
           }}
         >
-          <Icon name="groups" size={15} color="#59458F" />
+          <Icon name="edit" size={15} color="#59458F" />
         </Pressable>
       )}
       <YStack alignItems="flex-end" gap={3}>
@@ -580,6 +580,7 @@ export function ActivityScreen() {
   >(null);
   const action = useAction();
   const c = useColors();
+  const router = useRouter();
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -833,7 +834,7 @@ export function ActivityScreen() {
 
               {openDropdown === "status" && (
                 <FilterDropdownPanel title="FILTER BY STATUS">
-                  {["", "PENDING", "SETTLED", "DISPUTED", "PENDING_LOAN"].map(
+                  {["", "PENDING", "SETTLED", "PENDING_LOAN"].map(
                     (s) => (
                       <Chip
                         key={s}
@@ -943,11 +944,15 @@ export function ActivityScreen() {
                   onSelect={() => toggleSelect(t.id)}
                   onLongPress={() => handleLongPress(t.id)}
                   onAssignGroup={
-                    t.sourceId === d.account.id &&
+                    (t.ledgerId || t.sourceId === d.account.id) &&
                     !["SETTLEMENT", "LOAN_REPAYMENT", "REVERSAL"].includes(
                       t.type,
                     )
-                      ? () => setAssignIds([t.id])
+                      ? () =>
+                          router.push({
+                            pathname: "/add",
+                            params: { edit: t.id },
+                          })
                       : undefined
                   }
                 />

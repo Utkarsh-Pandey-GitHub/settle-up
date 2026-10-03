@@ -23,6 +23,7 @@ import {
   useColors,
   Empty,
   Icon,
+  SearchBar,
 } from "../components/ui";
 import {
   authorizeWithTruecaller,
@@ -42,8 +43,12 @@ WebBrowser.maybeCompleteAuthSession();
 function GoogleSignInButton({
   disabled,
   onSession,
+  phone,
+  endpoint = "/auth/google",
 }: {
   disabled: boolean;
+  phone?: string;
+  endpoint?: "/auth/google" | "/profile/google";
   onSession(session: Session & { suggestedName?: string }): Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
@@ -76,8 +81,16 @@ function GoogleSignInButton({
               throw new Error("Google did not return a verifiable identity.");
             await onSession(
               await request<Session & { suggestedName?: string }>(
-                "/auth/google",
-                { body: { idToken } },
+                endpoint,
+                {
+                  ...(endpoint === "/profile/google"
+                    ? { accountId: useSession.getState().activeId ?? undefined }
+                    : {}),
+                  body: {
+                    idToken,
+                    ...(phone ? { phone: normalizePhone(phone) } : {}),
+                  },
+                },
               ),
             );
           } catch (cause) {
@@ -220,12 +233,9 @@ export function AuthScreen() {
     c = useColors();
   const active = useSession((s) => s.accounts.find((a) => a.id === s.activeId));
   const [stage, setStage] = useState<
-    "phone" | "code" | "profile" | "permissions" | "ready"
+    "phone" | "profile" | "permissions" | "ready"
   >(active?.name === "New friend" ? "profile" : "phone");
-  const [phone, setPhone] = useState(""),
-    [code, setCode] = useState(""),
-    [challenge, setChallenge] = useState(""),
-    [devCode, setDevCode] = useState("");
+  const [phone, setPhone] = useState("");
   const [name, setName] = useState(""),
     [currency, setCurrency] = useState("INR"),
     [avatar, setAvatar] = useState(
@@ -310,14 +320,12 @@ export function AuthScreen() {
       // The Truecaller footer is an intentional switch to our phone form.
       if (err?.code === "TRUECALLER_14") {
         setStage("phone");
-        setTruecallerHint(
-          "Enter another mobile number below to receive an SMS code.",
-        );
+        setTruecallerHint("Enter another mobile number, then continue with Google.");
         return;
       }
       setTruecallerHint(
         err?.message ||
-          "Truecaller could not verify this phone. You can use an SMS code instead.",
+          "Truecaller could not verify this phone. Enter the number and continue with Google.",
       );
     } finally {
       setTruecallerBusy(false);
@@ -358,7 +366,7 @@ export function AuthScreen() {
               mood={
                 action.error
                   ? "help"
-                  : action.busy || stage === "code"
+                  : action.busy
                     ? "reading"
                     : stage === "ready"
                       ? "success"
@@ -388,9 +396,7 @@ export function AuthScreen() {
               <Heading size={23}>
                 {stage === "phone"
                   ? "Let's get you signed in."
-                  : stage === "code"
-                    ? "Check your messages."
-                    : stage === "profile"
+                  : stage === "profile"
                       ? "A few details about you."
                       : stage === "permissions"
                         ? "Choose your permissions."
@@ -399,9 +405,7 @@ export function AuthScreen() {
               <Label muted size={13}>
                 {stage === "phone"
                   ? "Sign in or create an account to manage your spending and shared bills."
-                  : stage === "code"
-                    ? `Enter the six-digit code sent to ${phone}.`
-                    : stage === "profile"
+                  : stage === "profile"
                       ? "Just the essentials. You can change these later."
                       : stage === "permissions"
                         ? "One clear step now. You can change every permission later in phone settings."
@@ -429,28 +433,6 @@ export function AuthScreen() {
                   onChangeText={setPhone}
                   editable={!action.busy && !truecallerBusy}
                 />
-                <Button
-                  loading={action.busy}
-                  disabled={
-                    action.busy || truecallerBusy || DEMO || !phone.trim()
-                  }
-                  onPress={() =>
-                    action.run(async () => {
-                      setTruecallerHint("");
-                      const normalized = normalizePhone(phone);
-                      const result = await request<{
-                        challengeId: string;
-                        developmentCode?: string;
-                      }>("/auth/otp", { body: { phone: normalized } });
-                      setPhone(normalized);
-                      setChallenge(result.challengeId);
-                      setDevCode(result.developmentCode ?? "");
-                      setStage("code");
-                    }, "Code sent")
-                  }
-                >
-                  {action.busy ? "Sending code…" : "Continue with phone"}
-                </Button>
                 {truecallerAvailable && !DEMO && (
                   <>
                     <XStack alignItems="center" gap={12}>
@@ -483,65 +465,15 @@ export function AuthScreen() {
                       ? process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
                       : process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID) && (
                     <GoogleSignInButton
-                      disabled={action.busy || truecallerBusy}
+                      disabled={action.busy || truecallerBusy || !phone.trim()}
+                      phone={phone}
                       onSession={acceptSession}
                     />
                   )}
                 {!!truecallerHint && <Notice>{truecallerHint}</Notice>}
                 <Label muted size={11}>
-                  We use your number to verify your account. Your address book
-                  is not required.
-                </Label>
-              </>
-            )}
-            {stage === "code" && (
-              <>
-                <Field
-                  label="Six-digit verification code"
-                  placeholder="000000"
-                  value={code}
-                  onChangeText={(value) => setCode(value.replace(/\D/g, ""))}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  textContentType="oneTimeCode"
-                  editable={!action.busy}
-                />
-                {!!devCode && (
-                  <Notice>
-                    Development provider code: {devCode}. Never displayed in
-                    production.
-                  </Notice>
-                )}
-                <Button
-                  loading={action.busy}
-                  disabled={action.busy || code.length !== 6}
-                  onPress={() =>
-                    action.run(async () => {
-                      await acceptSession(
-                        await request<Session>("/auth/verify", {
-                          body: { challengeId: challenge, code },
-                        }),
-                      );
-                    }, "Phone verified")
-                  }
-                >
-                  {action.busy ? "Checking…" : "Verify & continue"}
-                </Button>
-                <Button
-                  secondary
-                  disabled={action.busy}
-                  onPress={() => {
-                    setStage("phone");
-                    setCode("");
-                    setChallenge("");
-                    setDevCode("");
-                    action.setError("");
-                  }}
-                >
-                  Use a different number
-                </Button>
-                <Label muted size={11}>
-                  Code expired? Go back and request a new one.
+                  Truecaller verifies your number. With Google, the number is
+                  tied to that Google account and can only be changed once.
                 </Label>
               </>
             )}
@@ -799,6 +731,7 @@ export function AccountsScreen() {
 }
 export function SettingsScreen() {
   const [name, setName] = useState(""),
+    [phone, setPhone] = useState(""),
     [avatar, setAvatar] = useState(""),
     [deleteText, setDeleteText] = useState(""),
     [exported, setExported] = useState(""),
@@ -824,6 +757,40 @@ export function SettingsScreen() {
                 value={name || d.account.name}
                 onChangeText={setName}
               />
+              <Field
+                label="Phone number"
+                value={phone || d.account.phone}
+                keyboardType="phone-pad"
+                onChangeText={setPhone}
+              />
+              <Label muted size={11}>
+                You can change the phone number once. A changed number remains
+                unverified until you verify it with Truecaller.
+              </Label>
+              <Button
+                secondary
+                disabled={!phone || phone === d.account.phone || action.busy}
+                onPress={() =>
+                  action.run(async () => {
+                    const normalized = normalizePhone(phone);
+                    const previous = { ...d.account };
+                    const next = { ...d.account, phone: normalized };
+                    await useSession.getState().updateAccount(next);
+                    try {
+                      await request("/profile/phone", {
+                        accountId: d.account.id,
+                        method: "PATCH",
+                        body: { phone: normalized },
+                      });
+                    } catch (error) {
+                      await useSession.getState().updateAccount(previous);
+                      throw error;
+                    }
+                  }, "Phone number updated")
+                }
+              >
+                Use my one-time phone change
+              </Button>
               <AvatarPicker
                 value={avatar || d.account.avatar || "preset:flower"}
                 onChange={setAvatar}
@@ -865,6 +832,13 @@ export function SettingsScreen() {
               <Button secondary onPress={() => router.push("/accounts")}>
                 Manage saved accounts
               </Button>
+              <GoogleSignInButton
+                endpoint="/profile/google"
+                disabled={action.busy}
+                onSession={async (session) => {
+                  await useSession.getState().add(session);
+                }}
+              />
             </YStack>
           </Card>
           <Card style={{ borderRadius: 20, padding: 18 }}>
@@ -918,6 +892,14 @@ export function SettingsScreen() {
               <Button secondary onPress={() => router.push("/contacts")}>
                 Saved contacts
               </Button>
+              <XStack gap={8}>
+                <Button secondary style={{ flex: 1 }} onPress={() => router.push("/privacy")}>
+                  Privacy
+                </Button>
+                <Button secondary style={{ flex: 1 }} onPress={() => router.push("/terms")}>
+                  Terms
+                </Button>
+              </XStack>
               <Button secondary onPress={() => setBlockOpen((open) => !open)}>
                 {blockOpen ? "Hide saved contacts" : "Block a saved contact"}
               </Button>
@@ -1115,18 +1097,32 @@ export function SettingsScreen() {
   );
 }
 export function ContactsScreen() {
+  const [search, setSearch] = useState("");
+  const action = useAction();
   return (
     <DataScreen>
-      {(d) => (
-        <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
+      {(d) => {
+        const contacts = d.savedContacts.filter((contact) =>
+          `${contact.name} ${contact.phone ?? ""}`
+            .toLowerCase()
+            .includes(search.trim().toLowerCase()),
+        );
+        return (
+        <YStack gap={14} maxWidth={760} width="100%" alignSelf="center">
           <Heading>Saved contacts</Heading>
           <Notice>
             These are people who share a group or transaction with you. Add a
             phone contact while creating a group; SettleUp creates an unverified
             account for them until they sign in with that number.
           </Notice>
-          {d.savedContacts.map((p) => (
-            <Card key={p.id}>
+          <SearchBar
+            value={search}
+            onChangeText={setSearch}
+            placeholder={`Search ${d.savedContacts.length} saved contacts`}
+          />
+          {!!action.error && <Notice error>{action.error}</Notice>}
+          {contacts.map((p) => (
+            <Card key={p.id} style={{ padding: 12 }}>
               <XStack alignItems="center" gap={12}>
                 <Avatar name={p.name} avatar={p.avatar} />
                 <YStack flex={1}>
@@ -1136,17 +1132,32 @@ export function ContactsScreen() {
                     {p.verified ? "Verified" : "Not verified yet"}
                   </Label>
                 </YStack>
+                <Button
+                  secondary
+                  compact
+                  icon="trash"
+                  disabled={action.busy}
+                  onPress={() =>
+                    void action.run(
+                      () => extra(d.account.id, `/contacts/${p.id}`, undefined, "DELETE"),
+                      `${p.name} removed from saved contacts.`,
+                    )
+                  }
+                >
+                  Remove
+                </Button>
               </XStack>
             </Card>
           ))}
-          {!d.savedContacts.length && (
+          {!contacts.length && (
             <Empty
               title="No saved contacts yet"
               detail="Create a group and choose a phone contact to add someone."
             />
           )}
         </YStack>
-      )}
+        );
+      }}
     </DataScreen>
   );
 }

@@ -8,6 +8,7 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
+import compress from "@fastify/compress";
 import { z, ZodError } from "zod";
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
@@ -64,6 +65,11 @@ export async function createApp() {
   await app.register(helmet);
   await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
   await app.register(websocket);
+  await app.register(compress, {
+    global: true,
+    threshold: 1024,
+    encodings: ["gzip", "deflate"],
+  });
   app.setErrorHandler((error, req, reply) => {
     if (error instanceof DomainError)
       return reply
@@ -117,12 +123,13 @@ export async function createApp() {
     auth.authenticate(req.headers.authorization);
   const pathId = (req: { params: unknown }) =>
     idSchema.parse((req.params as { id: string }).id);
-  const liveSockets = new Set<{
+  type LiveSocket = {
     readyState: number;
     send(value: string): void;
     close(code?: number): void;
     on(event: "close", listener: () => void): void;
-  }>();
+  };
+  const liveSockets = new Map<LiveSocket, string>();
   app.get("/realtime", { websocket: true }, (socket, req) => {
     const protocols = String(req.headers["sec-websocket-protocol"] ?? "")
       .split(",")
@@ -130,8 +137,8 @@ export async function createApp() {
     const accessToken = protocols[0] === "settleup" ? protocols[1] : undefined;
     void auth
       .authenticate(accessToken ? `Bearer ${accessToken}` : undefined)
-      .then(() => {
-        liveSockets.add(socket);
+      .then(({ userId }) => {
+        liveSockets.set(socket, userId);
         socket.on("close", () => liveSockets.delete(socket));
         socket.send(JSON.stringify({ type: "connected" }));
       })
@@ -145,34 +152,32 @@ export async function createApp() {
       req.routeOptions.url === "/imports/handled"
     )
       return;
+    let userId: string;
+    try {
+      userId = (await actor(req)).userId;
+    } catch {
+      return;
+    }
+    const memberships = await db.ledgerMember.findMany({
+      where: { userId, leftAt: null, ledger: { group: { is: { deletedAt: null } } } },
+      select: { ledger: { select: { members: { where: { leftAt: null }, select: { userId: true } } } } },
+    });
+    const recipients = new Set([
+      userId,
+      ...memberships.flatMap((membership) =>
+        membership.ledger.members.map((member) => member.userId),
+      ),
+    ]);
     const event = JSON.stringify({ type: "data_changed", at: Date.now() });
-    for (const socket of liveSockets) {
-      if (socket.readyState === 1) socket.send(event);
-      else liveSockets.delete(socket);
+    for (const [socket, accountId] of liveSockets) {
+      if (socket.readyState !== 1) liveSockets.delete(socket);
+      else if (recipients.has(accountId)) socket.send(event);
     }
   });
   app.get("/health", async () => {
     await db.$queryRaw`SELECT 1`;
     return { status: "ok" };
   });
-  app.post(
-    "/auth/otp",
-    { config: { rateLimit: { max: 6, timeWindow: "15 minutes" } } },
-    (req) =>
-      auth.requestOtp(
-        z.object({ phone: z.string().max(30) }).parse(req.body).phone,
-      ),
-  );
-  app.post(
-    "/auth/verify",
-    { config: { rateLimit: { max: 15, timeWindow: "15 minutes" } } },
-    (req) => {
-      const b = z
-        .object({ challengeId: idSchema, code: z.string().regex(/^\d{6}$/) })
-        .parse(req.body);
-      return auth.verifyOtp(b.challengeId, b.code);
-    },
-  );
   app.post(
     "/auth/truecaller",
     { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
@@ -204,7 +209,7 @@ export async function createApp() {
           throw new DomainError(error.code, error.message, error.status);
         throw new DomainError(
           "TRUECALLER_FAILED",
-          "Truecaller verification failed. Please try again or use a phone code.",
+          "Truecaller verification failed. Please try again or continue with Google.",
           401,
         );
       }
@@ -215,11 +220,15 @@ export async function createApp() {
   app.post(
     "/auth/google",
     { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
-    (req) =>
-      auth.signInWithGoogle(
-        z.object({ idToken: z.string().min(100).max(4096) }).parse(req.body)
-          .idToken,
-      ),
+    (req) => {
+      const body = z
+        .object({
+          idToken: z.string().min(100).max(4096),
+          phone: z.string().max(30).optional(),
+        })
+        .parse(req.body);
+      return auth.signInWithGoogle(body.idToken, body.phone);
+    },
   );
   app.post("/auth/refresh", async (req) =>
     auth.refresh(
@@ -427,6 +436,16 @@ export async function createApp() {
       .parse(req.body);
     return finance.remove(userId, ids);
   });
+  app.patch("/transactions/:id", async (req) => {
+    const { userId } = await actor(req);
+    const body = z
+      .object({
+        version: z.number().int().positive(),
+        transaction: createTransactionSchema,
+      })
+      .parse(req.body);
+    return finance.update(userId, pathId(req), body.transaction, body.version);
+  });
   app.post("/transactions/assign-group", async (req) => {
     const { userId } = await actor(req);
     const body = z
@@ -441,7 +460,7 @@ export async function createApp() {
     const a = await actor(req);
     const b = z
       .object({
-        action: z.enum(["complete", "reverse", "dispute", "resolve"]),
+        action: z.literal("complete"),
         version: z.number().int().positive(),
         reason: z.string().trim().min(3).max(1000),
       })
@@ -545,6 +564,11 @@ export async function createApp() {
         }
         const id = identity.userId;
         if (id === userId) continue;
+        await tx.contactPreference.upsert({
+          where: { ownerId_contactId: { ownerId: userId, contactId: id } },
+          create: { ownerId: userId, contactId: id, alias: contact.name },
+          update: { alias: contact.name, hiddenAt: null },
+        });
         if (
           await tx.userBlock.findFirst({
             where: {
@@ -621,6 +645,7 @@ export async function createApp() {
     return atomic(async (tx) => {
       const actorMembership = await tx.groupMember.findUnique({
         where: { groupId_userId: { groupId, userId } },
+        include: { group: true },
       });
       if (
         !actorMembership ||
@@ -632,6 +657,8 @@ export async function createApp() {
           "Only group admins can add members.",
           403,
         );
+      if (actorMembership.group.deletedAt)
+        throw new DomainError("GROUP_DELETED", "This deleted group is read-only.", 409);
       const memberIds = new Set<string>();
       for (const memberId of b.memberIds) {
         if (memberId === userId) continue;
@@ -689,6 +716,21 @@ export async function createApp() {
           });
           identity = { ...user.phone!, user };
         }
+        if (identity.userId !== userId)
+          await tx.contactPreference.upsert({
+            where: {
+              ownerId_contactId: {
+                ownerId: userId,
+                contactId: identity.userId,
+              },
+            },
+            create: {
+              ownerId: userId,
+              contactId: identity.userId,
+              alias: contact.name,
+            },
+            update: { alias: contact.name, hiddenAt: null },
+          });
         memberIds.add(identity.userId);
       }
       if (!memberIds.size)
@@ -780,6 +822,7 @@ export async function createApp() {
     return atomic(async (tx) => {
       const actorMembership = await tx.groupMember.findUnique({
         where: { groupId_userId: { groupId, userId } },
+        include: { group: true },
       });
       if (
         !actorMembership ||
@@ -791,6 +834,8 @@ export async function createApp() {
           "Only active group admins can remove members.",
           403,
         );
+      if (actorMembership.group.deletedAt)
+        throw new DomainError("GROUP_DELETED", "This deleted group is read-only.", 409);
       if (memberId === userId)
         throw new DomainError(
           "OWNER",
@@ -847,6 +892,40 @@ export async function createApp() {
           { groupId, memberId },
           ledger.id,
           `${name} was removed from the group`,
+        );
+      return { ok: true };
+    });
+  });
+  app.delete("/groups/:id", async (req) => {
+    const { userId } = await actor(req);
+    const groupId = pathId(req);
+    return atomic(async (tx) => {
+      const membership = await tx.groupMember.findUnique({
+        where: { groupId_userId: { groupId, userId } },
+        include: { group: true },
+      });
+      if (!membership || membership.leftAt || membership.role !== "OWNER")
+        throw new DomainError(
+          "FORBIDDEN",
+          "Only the group owner can delete this group.",
+          403,
+        );
+      if (membership.group.deletedAt) return { ok: true };
+      const deletedAt = new Date();
+      await tx.group.update({ where: { id: groupId }, data: { deletedAt } });
+      const ledgers = await tx.ledger.findMany({
+        where: { groupId },
+        select: { id: true, name: true },
+      });
+      for (const ledger of ledgers)
+        await audit(
+          tx,
+          userId,
+          groupId,
+          "GROUP_DELETED",
+          { deletedAt: deletedAt.toISOString() },
+          ledger.id,
+          `${ledger.name} was deleted and made read-only`,
         );
       return { ok: true };
     });
@@ -1107,6 +1186,73 @@ export async function createApp() {
       })
       .parse(req.body);
     return db.userProfile.update({ where: { userId }, data: b });
+  });
+  app.post(
+    "/profile/google",
+    { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
+    async (req) => {
+      const { userId } = await actor(req);
+      const { idToken } = z
+        .object({ idToken: z.string().min(100).max(4096) })
+        .parse(req.body);
+      return auth.signInWithGoogle(idToken, undefined, userId);
+    },
+  );
+  app.patch("/profile/phone", async (req) => {
+    const { userId } = await actor(req);
+    const phone = normalizePhone(
+      z.object({ phone: z.string().max(30) }).parse(req.body).phone,
+    );
+    return atomic(async (tx) => {
+      const identity = await tx.phoneIdentity.findUnique({ where: { userId } });
+      if (!identity)
+        throw new DomainError("PHONE", "This account has no phone number.", 404);
+      if (identity.phone === phone) return { phone };
+      if (identity.changedAt)
+        throw new DomainError(
+          "PHONE_LOCKED",
+          "The one-time phone number change has already been used.",
+          409,
+        );
+      if (await tx.phoneIdentity.findUnique({ where: { phone } }))
+        throw new DomainError(
+          "PHONE_IN_USE",
+          "This phone number already belongs to another account.",
+          409,
+        );
+      await tx.phoneIdentity.update({
+        where: { userId },
+        data: { phone, verifiedAt: null, changedAt: new Date() },
+      });
+      return { phone };
+    });
+  });
+  app.patch("/contacts/:id", async (req) => {
+    const { userId } = await actor(req);
+    const contactId = pathId(req);
+    const { name } = z
+      .object({ name: z.string().trim().min(1).max(100) })
+      .parse(req.body);
+    if (contactId === userId)
+      throw new DomainError("SELF", "Choose another contact.");
+    await db.contactPreference.upsert({
+      where: { ownerId_contactId: { ownerId: userId, contactId } },
+      create: { ownerId: userId, contactId, alias: name },
+      update: { alias: name, hiddenAt: null },
+    });
+    return { ok: true };
+  });
+  app.delete("/contacts/:id", async (req) => {
+    const { userId } = await actor(req);
+    const contactId = pathId(req);
+    if (contactId === userId)
+      throw new DomainError("SELF", "Choose another contact.");
+    await db.contactPreference.upsert({
+      where: { ownerId_contactId: { ownerId: userId, contactId } },
+      create: { ownerId: userId, contactId, hiddenAt: new Date() },
+      update: { hiddenAt: new Date() },
+    });
+    return { ok: true };
   });
   app.post("/blocks", async (req) => {
     const { userId } = await actor(req);

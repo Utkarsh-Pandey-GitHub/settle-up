@@ -16,14 +16,6 @@ services:
         value: 10000
       - key: JWT_SECRET
         generateValue: true
-      - key: OTP_PEPPER
-        generateValue: true
-      - key: OTP_PROVIDER
-        value: stytch
-      - key: STYTCH_PROJECT_ID
-        sync: false
-      - key: STYTCH_SECRET
-        sync: false
       - key: TRUECALLER_CLIENT_ID
         value: f6ydr8pehvg_69vacnh7z4alfzdzpywyremiruuuegg
       - key: OPENROUTER_API_KEY

@@ -189,7 +189,7 @@ const privacyHtml = `<!DOCTYPE html>
     </header>
 
     <main class="card">
-      <h2>📋 Overview</h2>
+      <h2>Overview</h2>
       <p>
         SettleUp (&quot;we&quot;, &quot;our&quot;, or &quot;the app&quot;) is a personal finance tool that
         helps you record shared expenses, track debts, settle balances with friends,
@@ -200,10 +200,10 @@ const privacyHtml = `<!DOCTYPE html>
         Key principle: SettleUp is designed to minimise data collection. We collect only what is necessary. We do not sell your personal data. We do not include advertising SDKs or third-party behavioural analytics.
       </div>
 
-      <h2>📦 Information We Collect</h2>
+      <h2>Information We Collect</h2>
       <h3>Information you provide</h3>
       <ul>
-        <li>Phone number — used for OTP or Truecaller verification.</li>
+        <li>Phone number — used with Truecaller or Google sign-in to identify your account.</li>
         <li>Profile information — optional name, email, avatar, currency, and timezone.</li>
         <li>Financial entries — expenses, splits, repayments, goals, tags, and notes you create.</li>
         <li>Selected contacts — phone numbers of people you choose to split with. We do not upload your full address book.</li>
@@ -227,7 +227,7 @@ const privacyHtml = `<!DOCTYPE html>
         <li>Full contact list (only contacts you explicitly select)</li>
       </ul>
 
-      <h2>⚙️ How We Use Your Information</h2>
+      <h2>How We Use Your Information</h2>
       <ul>
         <li>Authentication — verify your phone number.</li>
         <li>Core functionality — manage expenses, splits, repayments, goals, and analytics.</li>
@@ -237,7 +237,7 @@ const privacyHtml = `<!DOCTYPE html>
         <li>Analytics snapshots — spending analytics you can share via time-limited links.</li>
       </ul>
 
-      <h2>🔐 Device Permissions</h2>
+      <h2>Device Permissions</h2>
       <p>
         Permissions are requested only when you initiate a specific feature. Each can be declined — the app continues to function.
       </p>
@@ -249,7 +249,7 @@ const privacyHtml = `<!DOCTYPE html>
         <li>SMS (Android only) — see below.</li>
       </ul>
 
-      <h2>💬 Bank SMS Review (Android Only)</h2>
+      <h2>Bank SMS Review (Android Only)</h2>
       <div class="highlight">
         Raw SMS messages never leave your device. All parsing and matching happen entirely on-device.
       </div>
@@ -260,34 +260,34 @@ const privacyHtml = `<!DOCTYPE html>
         <li>SMS permission is requested only after an on-screen explanation and your tap.</li>
       </ul>
 
-      <h2>📸 Bill Scanning</h2>
+      <h2>Bill Scanning</h2>
       <p>
         When you scan a bill, the image is forwarded to a configured AI vision model for one-time itemisation. SettleUp does not store, attach, or retain the bill image. The provider may process images under its own terms.
       </p>
 
-      <h2>🤝 How Information Is Shared</h2>
+      <h2>How Information Is Shared</h2>
       <ul>
         <li>With other users — ledger members see shared records only. Your personal entries are not visible.</li>
         <li>Public analytics links — frozen snapshots viewable by anyone with the token.</li>
         <li>Private analytics links — require the recipient's verified phone.</li>
         <li>AI vision model provider — receives bill images only during scanning.</li>
-        <li>Truecaller — optional; OTP verification is always available.</li>
+        <li>Truecaller — optional; Google sign-in remains available.</li>
         <li>Infrastructure providers — process data under standard agreements.</li>
       </ul>
       <div class="highlight">
         We do not sell, rent, or trade your personal information. No advertising network, analytics SDK, or data broker receives your data.
       </div>
 
-      <h2>🛡️ Data Storage & Security</h2>
+      <h2>Data Storage & Security</h2>
       <ul>
         <li>PostgreSQL with encryption at rest and TLS in transit.</li>
-        <li>No passwords — authentication via expiring OTP with rate limits.</li>
+        <li>No app passwords — authentication uses Truecaller or Google identity tokens.</li>
         <li>JWT tokens with short expiry, refresh rotation, and replay revocation.</li>
         <li>On-device tokens use OS secure storage.</li>
         <li>API logging redacts sensitive headers, bodies, and tokens.</li>
       </ul>
 
-      <h2>🗑️ Data Retention & Deletion</h2>
+      <h2>Data Retention & Deletion</h2>
       <ul>
         <li>Export your data from Settings at any time.</li>
         <li>Account deletion revokes sessions and links, removes your identity, profile, and preferences.</li>
@@ -295,13 +295,13 @@ const privacyHtml = `<!DOCTYPE html>
         <li>Unresolved obligations must be settled before deletion.</li>
       </ul>
 
-      <h2>🔗 Third-Party Services</h2>
+      <h2>Third-Party Services</h2>
       <ul>
         <li>Truecaller (optional verification) — truecaller.com/privacy-policy</li>
         <li>Expo / EAS Update (OTA updates) — expo.dev/privacy</li>
       </ul>
 
-      <h2>👶 Children's Privacy</h2>
+      <h2>Children's Privacy</h2>
       <p>
         SettleUp is not directed at children under 13. We do not knowingly collect personal information from children.
       </p>
@@ -311,7 +311,7 @@ const privacyHtml = `<!DOCTYPE html>
         We may update this policy from time to time. Changes are reflected on this page with an updated date. Continued use constitutes acceptance.
       </p>
 
-      <h2>✉️ Contact Us</h2>
+      <h2>Contact Us</h2>
       <p>Questions about this policy or your data? Reach out:</p>
       <ul>
         <li>Email: theutkarshmail@gmail.com</li>
@@ -330,6 +330,44 @@ const privacyHtml = `<!DOCTYPE html>
 // Write to both /privacy.html and /privacy/index.html so all URLs work
 fs.writeFileSync(path.join(distDir, "privacy.html"), privacyHtml);
 fs.writeFileSync(path.join(privacyDir, "index.html"), privacyHtml);
+
+const termsDir = path.join(distDir, "terms");
+fs.mkdirSync(termsDir, { recursive: true });
+const termsSections = [
+  [
+    "Using SettleUp",
+    "You must provide accurate account information and use the service only for lawful personal expense tracking and payment requests.",
+  ],
+  [
+    "Financial records",
+    "SettleUp records information you enter. It is not a bank, wallet, lender, payment processor, or financial adviser. Confirm amounts before paying through another app.",
+  ],
+  [
+    "Shared groups",
+    "Group members can see and update shared transactions. Changes are logged. Deleted groups remain read-only so their financial history is preserved.",
+  ],
+  [
+    "Availability",
+    "Network, provider, and maintenance interruptions may occur. Keep independent records when required.",
+  ],
+  [
+    "Your responsibility",
+    "You are responsible for your device, sign-in methods, entries, payment decisions, and compliance with applicable law.",
+  ],
+  [
+    "Changes and contact",
+    "These terms may be updated as the service changes. The effective date identifies the version that applies.",
+  ],
+];
+const termsHtml = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Terms and conditions - SettleUp</title><link rel="icon" href="/favicon.ico">
+<style>*{box-sizing:border-box}body{margin:0;background:#f7f6f9;color:#24222b;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.page{max-width:760px;margin:auto;padding:48px 20px 72px}a{color:#6652a3;text-decoration:none;font-weight:700}h1{font-size:40px;letter-spacing:-1px;margin:28px 0 8px}p{color:#55515e;line-height:1.65}.date{color:#6b6874;margin-bottom:30px}.section{border-top:1px solid #e5e2ea;padding:22px 0}.section h2{font-size:20px;margin:0 0 8px}@media(max-width:560px){.page{padding-top:28px}h1{font-size:32px}}</style></head>
+<body><main class="page"><a href="/">settleup.</a><h1>Terms and conditions</h1><p class="date">Effective 3 October 2026</p>
+${termsSections.map(([title, text]) => `<section class="section"><h2>${title}</h2><p>${text}</p></section>`).join("\n")}
+</main></body></html>`;
+fs.writeFileSync(path.join(distDir, "terms.html"), termsHtml);
+fs.writeFileSync(path.join(termsDir, "index.html"), termsHtml);
 
 // 2. Generate cute Pip mascot 404.html for Vercel static error handling
 const notFoundHtml = `<!DOCTYPE html>
@@ -524,5 +562,8 @@ fs.writeFileSync(path.join(distDir, "404.html"), notFoundHtml);
 fs.writeFileSync(path.join(distDir, "+not-found.html"), notFoundHtml);
 
 console.log("Post-build completed successfully:");
-console.log("- Created dist/privacy/index.html & dist/privacy.html (Static Privacy Policy)");
+console.log(
+  "- Created dist/privacy/index.html & dist/privacy.html (Static Privacy Policy)",
+);
+console.log("- Created dist/terms/index.html & dist/terms.html (Static Terms)");
 console.log("- Created dist/404.html & dist/+not-found.html (Pip Mascot 404)");

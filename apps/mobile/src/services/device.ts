@@ -192,6 +192,41 @@ export async function chooseContact() {
   if (!number) throw new Error("This contact has no phone number.");
   return { name: selected.name ?? "Friend", phone: normalizePhone(number) };
 }
+export async function chooseContacts() {
+  if (Platform.OS === "web") {
+    const picker = (navigator as any).contacts;
+    if (!picker?.select)
+      throw new Error("This browser cannot open phone contacts.");
+    const selected = await picker.select(["name", "tel"], { multiple: true });
+    return selected
+      .filter((contact: any) => contact.tel?.[0])
+      .map((contact: any) => ({
+        name: contact.name?.[0] ?? "Friend",
+        phone: normalizePhone(contact.tel[0]),
+      }));
+  }
+  const permission = await Contacts.requestPermissionsAsync();
+  if (!permission.granted)
+    throw new Error("Contact permission was declined.");
+  const result = await Contacts.getContactsAsync({
+    fields: [Contacts.Fields.PhoneNumbers],
+    sort: Contacts.SortTypes.FirstName,
+    pageSize: 5000,
+  });
+  const unique = new Map<string, { name: string; phone: string }>();
+  for (const contact of result.data) {
+    const raw = contact.phoneNumbers?.[0]?.number;
+    if (!raw) continue;
+    try {
+      const phone = normalizePhone(raw);
+      if (!unique.has(phone))
+        unique.set(phone, { name: contact.name ?? "Friend", phone });
+    } catch {
+      // Skip incomplete local numbers that cannot be normalized safely.
+    }
+  }
+  return [...unique.values()];
+}
 let lastPaymentLaunch: { uri: string; at: number } | undefined;
 export const paymentLauncher = {
   async open(uri: string) {

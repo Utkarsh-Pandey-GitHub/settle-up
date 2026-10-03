@@ -25,12 +25,15 @@ import {
   optimisticDashboardMutation,
   readCachedDashboard,
   subscribeCachedDashboard,
+  clearCachedDashboard,
+  repository,
 } from "../apps/mobile/src/data/repository";
 
 const key = `settleup.dashboard.v1.${ids.Utkarsh}`;
 
 beforeEach(async () => {
   values.clear();
+  await clearCachedDashboard(ids.Utkarsh);
   await AsyncStorage.setItem(key, JSON.stringify(demoDashboard(ids.Utkarsh)));
 });
 
@@ -86,4 +89,46 @@ it("restores the previous UI snapshot when the server rejects the change", async
     "Utkarsh Mehta",
   );
   unsubscribe();
+});
+
+it("does not let an older dashboard response overwrite a newer local edit", async () => {
+  const stale = demoDashboard(ids.Utkarsh);
+  let finish!: () => void;
+  let requestStarted!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    requestStarted = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      requestStarted();
+      await gate;
+      return new Response(JSON.stringify(stale), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }),
+  );
+
+  const loading = repository.dashboard(ids.Utkarsh);
+  await started;
+  await optimisticDashboardMutation(
+    ids.Utkarsh,
+    (dashboard) => {
+      dashboard.account.name = "Latest local name";
+    },
+    async () => ({ ok: true }),
+  );
+  finish();
+
+  await expect(loading).resolves.toMatchObject({
+    account: { name: "Latest local name" },
+  });
+  expect((await readCachedDashboard(ids.Utkarsh))?.account.name).toBe(
+    "Latest local name",
+  );
+  vi.unstubAllGlobals();
 });

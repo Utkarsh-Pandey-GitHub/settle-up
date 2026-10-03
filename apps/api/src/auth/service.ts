@@ -40,6 +40,7 @@ export class GatewayOtpProvider implements OtpProvider {
 class DevelopmentOtpProvider implements OtpProvider {
   async send() {}
 }
+
 const secret = () =>
   new TextEncoder().encode(
     process.env.JWT_SECRET ||
@@ -59,57 +60,27 @@ const otpHash = (id: string, code: string) =>
 export function validateConfig() {
   const production = process.env.NODE_ENV === "production";
   if (production) {
-    for (const key of ["JWT_SECRET", "OTP_PEPPER"])
-      if (
-        !process.env[key] ||
-        /production_key_min_32|replace-with/.test(process.env[key]!)
-      )
-        throw new Error(
-          `Configure a unique ${key} before starting production.`,
-        );
-    if (!process.env.OTP_PROVIDER || process.env.OTP_PROVIDER === "development")
+    if (
+      !process.env.JWT_SECRET ||
+      /production_key_min_32|replace-with/.test(process.env.JWT_SECRET)
+    )
       throw new Error(
-        "Production requires OTP_PROVIDER=supabase, stytch, gateway, or disabled.",
+        "Configure a unique JWT_SECRET before starting production.",
       );
   }
-  if (
-    process.env.OTP_PROVIDER &&
-    !["development", "gateway", "supabase", "stytch", "disabled"].includes(
-      process.env.OTP_PROVIDER,
-    )
-  )
-    throw new Error("Choose a supported OTP_PROVIDER.");
-  if (
-    process.env.OTP_PROVIDER === "supabase" &&
-    (!process.env.SUPABASE_URL ||
-      !(process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY))
-  )
-    throw new Error(
-      "Configure the Supabase project URL and publishable key for phone OTP.",
-    );
-  if (
-    process.env.OTP_PROVIDER === "stytch" &&
-    (!process.env.STYTCH_PROJECT_ID || !process.env.STYTCH_SECRET)
-  )
-    throw new Error(
-      "Configure STYTCH_PROJECT_ID and STYTCH_SECRET for phone OTP.",
-    );
   if (!process.env.JWT_SECRET)
     process.env.JWT_SECRET =
       "settleup_jwt_secret_production_key_min_32_characters_long_123";
-  if (!process.env.OTP_PEPPER)
-    process.env.OTP_PEPPER =
-      "settleup_otp_pepper_production_key_min_32_characters_long_456";
-  if (!process.env.OTP_PROVIDER) process.env.OTP_PROVIDER = "development";
-
-  for (const key of ["JWT_SECRET", "OTP_PEPPER"])
+  for (const key of ["JWT_SECRET"])
     if ((process.env[key]?.length ?? 0) < 32)
       throw new Error(`${key} must contain at least 32 characters.`);
-  if (process.env.JWT_SECRET === process.env.OTP_PEPPER)
-    throw new Error("Use separate signing and OTP secrets.");
 }
 export class AuthService {
-  async signInWithGoogle(idToken: string) {
+  async signInWithGoogle(
+    idToken: string,
+    rawPhone?: string,
+    linkUserId?: string,
+  ) {
     const audiences = (process.env.GOOGLE_CLIENT_IDS ?? "")
       .split(",")
       .map((value) => value.trim())
@@ -146,38 +117,106 @@ export class AuthService {
       typeof claims.email === "string" ? claims.email.slice(0, 254) : null;
     const avatar =
       typeof claims.picture === "string" ? claims.picture.slice(0, 500) : null;
+    const phone = rawPhone ? normalizePhone(rawPhone) : undefined;
     const session = await atomic(async (tx) => {
       let identity = await tx.googleIdentity.findUnique({
         where: { subject: claims.sub! },
-        include: { user: true },
+        include: { user: { include: { phone: true } } },
       });
       if (identity?.user.deletedAt) return null;
+      if (linkUserId) {
+        if (identity && identity.userId !== linkUserId)
+          throw new DomainError(
+            "GOOGLE_IN_USE",
+            "This Google account is already linked to another SettleUp account.",
+            409,
+          );
+        if (!identity)
+          await tx.user.update({
+            where: { id: linkUserId },
+            data: {
+              google: { create: { subject: claims.sub! } },
+              profile: { update: { email } },
+            },
+          });
+        return this.newSession(tx, linkUserId, randomUUID());
+      }
+      if (identity && phone) {
+        if (identity.user.phone && identity.user.phone.phone !== phone)
+          throw new DomainError(
+            "PHONE_LOCKED",
+            "This Google account is already tied to another phone number.",
+            409,
+          );
+        if (!identity.user.phone) {
+          const occupied = await tx.phoneIdentity.findUnique({
+            where: { phone },
+          });
+          if (occupied && occupied.userId !== identity.userId)
+            throw new DomainError(
+              "PHONE_IN_USE",
+              "This phone number already belongs to another account.",
+              409,
+            );
+          await tx.phoneIdentity.create({
+            data: { userId: identity.userId, phone, verifiedAt: null },
+          });
+        }
+      }
       if (!identity) {
-        const user = await tx.user.create({
-          data: {
-            profile: {
-              create: { name: "New friend", email, avatar },
-            },
-            google: { create: { subject: claims.sub! } },
-            notifications: { create: {} },
-            tags: {
-              create: [
-                { name: "Food", color: "#8576AA" },
-                { name: "Transport", color: "#8576AA" },
-                { name: "Shopping", color: "#8576AA" },
-                { name: "Travel", color: "#8576AA" },
-                { name: "Utilities", color: "#8576AA" },
-                { name: "Rent", color: "#8576AA" },
-              ],
-            },
-          },
+        if (!phone)
+          throw new DomainError(
+            "PHONE_REQUIRED",
+            "Enter your phone number before continuing with Google.",
+          );
+        const occupied = await tx.phoneIdentity.findUnique({
+          where: { phone },
+          include: { user: { include: { google: true } } },
         });
+        if (occupied?.verifiedAt)
+          throw new DomainError(
+            "PHONE_VERIFICATION_REQUIRED",
+            "This phone is already verified. Continue with Truecaller first.",
+            409,
+          );
+        if (occupied?.user.google)
+          throw new DomainError(
+            "PHONE_IN_USE",
+            "This phone number is already tied to another Google account.",
+            409,
+          );
+        const user = occupied
+          ? await tx.user.update({
+              where: { id: occupied.userId },
+              data: {
+                google: { create: { subject: claims.sub! } },
+                profile: { update: { email, avatar } },
+              },
+            })
+          : await tx.user.create({
+              data: {
+                profile: { create: { name: "New friend", email, avatar } },
+                phone: { create: { phone, verifiedAt: null } },
+                google: { create: { subject: claims.sub! } },
+                notifications: { create: {} },
+                tags: {
+                  create: [
+                    { name: "Food", color: "#8576AA" },
+                    { name: "Transport", color: "#8576AA" },
+                    { name: "Shopping", color: "#8576AA" },
+                    { name: "Travel", color: "#8576AA" },
+                    { name: "Utilities", color: "#8576AA" },
+                    { name: "Rent", color: "#8576AA" },
+                  ],
+                },
+              },
+            });
         identity = await tx.googleIdentity.findUniqueOrThrow({
           where: { userId: user.id },
-          include: { user: true },
+          include: { user: { include: { phone: true } } },
         });
       }
-      return this.newSession(tx, identity.userId, randomUUID());
+      return this.newSession(tx, identity!.userId, randomUUID());
     });
     if (!session)
       throw new DomainError(

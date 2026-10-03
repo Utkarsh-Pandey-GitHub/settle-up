@@ -198,6 +198,7 @@ export type LedgerView = {
   name: string;
   description: string;
   currency: string;
+  deleted?: boolean;
   members: { id: string; name: string; role: string; avatar?: string }[];
 };
 export type TagView = {
@@ -212,6 +213,9 @@ export type ActivityView = {
   message: string;
   createdAt: string;
   ledgerId?: string | null;
+  actorId?: string;
+  actorName?: string;
+  event?: string;
 };
 export type Dashboard = {
   account: Account;

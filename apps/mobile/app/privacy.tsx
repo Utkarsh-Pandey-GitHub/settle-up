@@ -1,14 +1,26 @@
 import React from "react";
 import { ScrollView, Platform, Linking } from "react-native";
 import { YStack, XStack } from "tamagui";
-import { Label, Heading, Card, useColors, Mascot, Brand } from "../src/components/ui";
+import {
+  Label,
+  Heading,
+  Card,
+  useColors,
+  Mascot,
+  Brand,
+} from "../src/components/ui";
 
 const UPDATED = "2 October 2026";
 
 function SectionHeading({ children }: { children: string }) {
   const c = useColors();
   return (
-    <Label bold size={17} color={c.text} style={{ marginTop: 24, marginBottom: 8 }}>
+    <Label
+      bold
+      size={17}
+      color={c.text}
+      style={{ marginTop: 24, marginBottom: 8 }}
+    >
       {children}
     </Label>
   );
@@ -51,7 +63,12 @@ function Highlight({ children }: { children: React.ReactNode }) {
 function BodyText({ children }: { children: React.ReactNode }) {
   const c = useColors();
   return (
-    <Label size={14} color={c.text} lineHeight={22} style={{ marginBottom: 10 }}>
+    <Label
+      size={14}
+      color={c.text}
+      lineHeight={22}
+      style={{ marginBottom: 10 }}
+    >
       {children}
     </Label>
   );
@@ -74,7 +91,9 @@ export default function PrivacyScreen() {
       {/* Header */}
       <YStack alignItems="center" gap={12} style={{ marginBottom: 28 }}>
         <Brand />
-        <Heading size={28} textAlign="center">Privacy Policy</Heading>
+        <Heading size={28} textAlign="center">
+          Privacy Policy
+        </Heading>
         <Label size={13} color={c.muted}>
           Last updated: {UPDATED}
         </Label>
@@ -82,7 +101,7 @@ export default function PrivacyScreen() {
 
       {/* Content */}
       <Card style={{ padding: 20, borderRadius: 20 }}>
-        <SectionHeading>📋 Overview</SectionHeading>
+        <SectionHeading>Overview</SectionHeading>
         <BodyText>
           SettleUp ("we", "our", or "the app") is a personal finance tool that
           helps you record shared expenses, track debts, settle balances with
@@ -95,11 +114,19 @@ export default function PrivacyScreen() {
           do not include advertising SDKs or third-party behavioural analytics.
         </Highlight>
 
-        <SectionHeading>📦 Information We Collect</SectionHeading>
-        <Label bold size={15} color={c.text} style={{ marginTop: 8, marginBottom: 6 }}>
+        <SectionHeading>Information We Collect</SectionHeading>
+        <Label
+          bold
+          size={15}
+          color={c.text}
+          style={{ marginTop: 8, marginBottom: 6 }}
+        >
           Information you provide
         </Label>
-        <Bullet>Phone number — used for OTP or Truecaller verification.</Bullet>
+        <Bullet>
+          Phone number — used with Truecaller or Google sign-in to identify your
+          account.
+        </Bullet>
         <Bullet>
           Profile information — optional name, email, avatar, currency, and
           timezone.
@@ -113,9 +140,16 @@ export default function PrivacyScreen() {
           We do not upload your full address book.
         </Bullet>
         <Bullet>UPI ID — optionally provided for payment request links.</Bullet>
-        <Bullet>Notification preferences — your push notification choices.</Bullet>
+        <Bullet>
+          Notification preferences — your push notification choices.
+        </Bullet>
 
-        <Label bold size={15} color={c.text} style={{ marginTop: 12, marginBottom: 6 }}>
+        <Label
+          bold
+          size={15}
+          color={c.text}
+          style={{ marginTop: 12, marginBottom: 6 }}
+        >
           Information collected automatically
         </Label>
         <Bullet>
@@ -127,7 +161,12 @@ export default function PrivacyScreen() {
           timestamp. We do not store visitor IP addresses.
         </Bullet>
 
-        <Label bold size={15} color={c.text} style={{ marginTop: 12, marginBottom: 6 }}>
+        <Label
+          bold
+          size={15}
+          color={c.text}
+          style={{ marginTop: 12, marginBottom: 6 }}
+        >
           Information we do NOT collect
         </Label>
         <Bullet>Bank account or card details</Bullet>
@@ -137,15 +176,13 @@ export default function PrivacyScreen() {
         <Bullet>Email inbox contents</Bullet>
         <Bullet>Full contact list (only contacts you explicitly select)</Bullet>
 
-        <SectionHeading>⚙️ How We Use Your Information</SectionHeading>
+        <SectionHeading>How We Use Your Information</SectionHeading>
         <Bullet>Authentication — verify your phone number.</Bullet>
         <Bullet>
           Core functionality — manage expenses, splits, repayments, goals, and
           analytics.
         </Bullet>
-        <Bullet>
-          Group ledgers — show shared records to ledger members.
-        </Bullet>
+        <Bullet>Group ledgers — show shared records to ledger members.</Bullet>
         <Bullet>
           Payment links — generate shareable UPI payment requests.
         </Bullet>
@@ -157,13 +194,15 @@ export default function PrivacyScreen() {
           time-limited links.
         </Bullet>
 
-        <SectionHeading>🔐 Device Permissions</SectionHeading>
+        <SectionHeading>Device Permissions</SectionHeading>
         <BodyText>
           Permissions are requested only when you initiate a specific feature.
           Each can be declined — the app continues to function.
         </BodyText>
         <Bullet>Camera — UPI QR scanning or bill photo capture.</Bullet>
-        <Bullet>Photo library — select a bill photo for item extraction.</Bullet>
+        <Bullet>
+          Photo library — select a bill photo for item extraction.
+        </Bullet>
         <Bullet>
           Contacts — pick a contact for splitting. Manual entry always
           available.
@@ -171,7 +210,7 @@ export default function PrivacyScreen() {
         <Bullet>Notifications — optional, requested from Settings.</Bullet>
         <Bullet>SMS (Android only) — see below.</Bullet>
 
-        <SectionHeading>💬 Bank SMS Review (Android Only)</SectionHeading>
+        <SectionHeading>Bank SMS Review (Android Only)</SectionHeading>
         <Highlight>
           Raw SMS messages never leave your device. All parsing and matching
           happen entirely on-device.
@@ -183,15 +222,13 @@ export default function PrivacyScreen() {
         <Bullet>
           Only the structured data you approve is saved to your ledger.
         </Bullet>
-        <Bullet>
-          On-device fingerprints expire after seven days.
-        </Bullet>
+        <Bullet>On-device fingerprints expire after seven days.</Bullet>
         <Bullet>
           SMS permission is requested only after an on-screen explanation and
           your tap.
         </Bullet>
 
-        <SectionHeading>📸 Bill Scanning</SectionHeading>
+        <SectionHeading>Bill Scanning</SectionHeading>
         <BodyText>
           When you scan a bill, the image is forwarded to a configured AI vision
           model for one-time itemisation. SettleUp does not store, attach, or
@@ -199,7 +236,7 @@ export default function PrivacyScreen() {
           terms.
         </BodyText>
 
-        <SectionHeading>🤝 How Information Is Shared</SectionHeading>
+        <SectionHeading>How Information Is Shared</SectionHeading>
         <Bullet>
           With other users — ledger members see shared records only. Your
           personal entries are not visible.
@@ -215,7 +252,7 @@ export default function PrivacyScreen() {
           AI vision model provider — receives bill images only during scanning.
         </Bullet>
         <Bullet>
-          Truecaller — optional; OTP verification is always available.
+          Truecaller — optional; Google sign-in remains available.
         </Bullet>
         <Bullet>
           Infrastructure providers — process data under standard agreements.
@@ -225,16 +262,21 @@ export default function PrivacyScreen() {
           advertising network, analytics SDK, or data broker receives your data.
         </Highlight>
 
-        <SectionHeading>🛡️ Data Storage &amp; Security</SectionHeading>
+        <SectionHeading>Data Storage &amp; Security</SectionHeading>
         <Bullet>PostgreSQL with encryption at rest and TLS in transit.</Bullet>
         <Bullet>
-          No passwords — authentication via expiring OTP with rate limits.
+          No app passwords — authentication uses Truecaller or Google identity
+          tokens.
         </Bullet>
-        <Bullet>JWT tokens with short expiry, refresh rotation, and replay revocation.</Bullet>
+        <Bullet>
+          JWT tokens with short expiry, refresh rotation, and replay revocation.
+        </Bullet>
         <Bullet>On-device tokens use OS secure storage.</Bullet>
-        <Bullet>API logging redacts sensitive headers, bodies, and tokens.</Bullet>
+        <Bullet>
+          API logging redacts sensitive headers, bodies, and tokens.
+        </Bullet>
 
-        <SectionHeading>🗑️ Data Retention &amp; Deletion</SectionHeading>
+        <SectionHeading>Data Retention &amp; Deletion</SectionHeading>
         <Bullet>Export your data from Settings at any time.</Bullet>
         <Bullet>
           Account deletion revokes sessions and links, removes your identity,
@@ -244,17 +286,15 @@ export default function PrivacyScreen() {
           Shared records are retained under an anonymised account for other
           participants.
         </Bullet>
-        <Bullet>
-          Unresolved obligations must be settled before deletion.
-        </Bullet>
+        <Bullet>Unresolved obligations must be settled before deletion.</Bullet>
 
-        <SectionHeading>🔗 Third-Party Services</SectionHeading>
+        <SectionHeading>Third-Party Services</SectionHeading>
         <Bullet>
           Truecaller (optional verification) — truecaller.com/privacy-policy
         </Bullet>
         <Bullet>Expo / EAS Update (OTA updates) — expo.dev/privacy</Bullet>
 
-        <SectionHeading>👶 Children's Privacy</SectionHeading>
+        <SectionHeading>Children's Privacy</SectionHeading>
         <BodyText>
           SettleUp is not directed at children under 13. We do not knowingly
           collect personal information from children.
@@ -266,7 +306,7 @@ export default function PrivacyScreen() {
           this page with an updated date. Continued use constitutes acceptance.
         </BodyText>
 
-        <SectionHeading>✉️ Contact Us</SectionHeading>
+        <SectionHeading>Contact Us</SectionHeading>
         <BodyText>
           Questions about this policy or your data? Reach out:
         </BodyText>

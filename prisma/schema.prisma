@@ -60,6 +60,8 @@ model User {
   events           AuditEvent[]
   blocks           UserBlock[]              @relation("Blocker")
   blockedBy        UserBlock[]              @relation("Blocked")
+  contactPreferences ContactPreference[]    @relation("ContactOwner")
+  savedByPreferences ContactPreference[]    @relation("ContactTarget")
 }
 
 model UserProfile {
@@ -78,6 +80,7 @@ model PhoneIdentity {
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   phone      String    @unique @db.VarChar(16)
   verifiedAt DateTime? @db.Timestamptz
+  changedAt  DateTime? @db.Timestamptz
 }
 
 model GoogleIdentity {
@@ -122,6 +125,22 @@ model UserBlock {
   blocked   User   @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
 
   @@id([blockerId, blockedId])
+  @@index([blockedId, blockerId])
+}
+
+// A private address-book label and visibility preference. The contact remains
+// a normal User; this row never changes the contact's verified profile name.
+model ContactPreference {
+  ownerId   String   @db.Uuid
+  owner     User     @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  contactId String   @db.Uuid
+  contact   User     @relation("ContactTarget", fields: [contactId], references: [id], onDelete: Cascade)
+  alias     String?  @db.VarChar(100)
+  hiddenAt  DateTime? @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@id([ownerId, contactId])
+  @@index([ownerId, hiddenAt])
 }
 
 model Group {
@@ -129,8 +148,11 @@ model Group {
   name        String        @db.VarChar(100)
   description String?       @db.VarChar(500)
   createdAt   DateTime      @default(now()) @db.Timestamptz
+  deletedAt   DateTime?     @db.Timestamptz
   members     GroupMember[]
   ledgers     Ledger[]
+
+  @@index([deletedAt])
 }
 
 model GroupMember {

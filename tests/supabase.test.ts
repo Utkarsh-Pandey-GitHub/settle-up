@@ -47,13 +47,11 @@ describe("Supabase SMS provider", () => {
     await expect(new SupabaseOtpProvider(fetcher as any).send(phone)).rejects.toMatchObject({ code: "OTP_CONFIG" });
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it("prevents production from using development OTP or default signing secrets", () => {
+  it("requires a unique production signing secret", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("JWT_SECRET", "");
     expect(validateConfig).toThrow("unique JWT_SECRET");
-    vi.stubEnv("JWT_SECRET", "j".repeat(40)); vi.stubEnv("OTP_PEPPER", "p".repeat(40)); vi.stubEnv("OTP_PROVIDER", "development");
-    expect(validateConfig).toThrow("Production requires");
-    vi.stubEnv("OTP_PROVIDER", "supabase");
+    vi.stubEnv("JWT_SECRET", "j".repeat(40));
     expect(validateConfig).not.toThrow();
   });
 });

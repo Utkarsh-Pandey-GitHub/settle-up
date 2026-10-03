@@ -176,13 +176,13 @@ export class FinanceService {
     return atomic(async (tx) => {
       const uniqueIds = [...new Set(ids)];
       const records = await tx.transaction.findMany({
-        where: { id: { in: uniqueIds }, sourceId: userId, deletedAt: null },
-        select: { id: true, title: true, ledgerId: true, type: true },
+        where: { id: { in: uniqueIds }, deletedAt: null },
+        include: { participants: true },
       });
       if (records.length !== uniqueIds.length)
         throw new DomainError(
           "NOT_FOUND",
-          "You can only delete active transactions that you created.",
+          "One or more transactions are unavailable.",
           404,
         );
       if (
@@ -195,8 +195,40 @@ export class FinanceService {
           "Repayments and reversals must be corrected from their transaction details.",
           409,
         );
+      for (const record of records) {
+        if (record.ledgerId) {
+          await requireMember(tx, record.ledgerId, userId, true);
+          const people = [
+            ...new Set([
+              record.sourceId,
+              ...(record.destinationId ? [record.destinationId] : []),
+              ...record.participants.map((participant) => participant.userId),
+            ]),
+          ].filter((personId) => personId !== userId);
+          if (
+            await tx.userBlock.findFirst({
+              where: {
+                OR: people.flatMap((personId) => [
+                  { blockerId: userId, blockedId: personId },
+                  { blockerId: personId, blockedId: userId },
+                ]),
+              },
+            })
+          )
+            throw new DomainError(
+              "CONTACT_BLOCKED",
+              "Sorry, looks like you are not allowed to delete this transaction.",
+              403,
+            );
+        } else if (record.sourceId !== userId)
+          throw new DomainError(
+            "FORBIDDEN",
+            "Only its author can delete a personal transaction.",
+            403,
+          );
+      }
       await tx.transaction.updateMany({
-        where: { id: { in: uniqueIds }, sourceId: userId, deletedAt: null },
+        where: { id: { in: uniqueIds }, deletedAt: null },
         data: { deletedAt: new Date() },
       });
       for (const record of records)
@@ -244,6 +276,8 @@ export class FinanceService {
           "The selected group uses a different currency.",
         );
       for (const record of records) {
+        if (record.ledgerId)
+          await requireMember(tx, record.ledgerId, userId, true);
         const participantIds = [
           ...new Set([
             ...record.participants.map((participant) => participant.userId),
@@ -281,6 +315,189 @@ export class FinanceService {
         );
       }
       return { ok: true, assigned: records.length };
+    });
+  }
+  async update(
+    userId: string,
+    id: string,
+    input: CreateTransaction,
+    version: number,
+  ) {
+    return atomic(async (tx) => {
+      const record = await tx.transaction.findUnique({
+        where: { id },
+        include: { obligations: { include: { settlements: true } } },
+      });
+      if (!record || record.deletedAt)
+        throw new DomainError("NOT_FOUND", "Transaction unavailable.", 404);
+      if (record.version !== version)
+        throw new DomainError(
+          "VERSION",
+          "This transaction changed. Refresh before editing.",
+          409,
+        );
+      if (["SETTLEMENT", "LOAN_REPAYMENT", "REVERSAL"].includes(record.type))
+        throw new DomainError(
+          "TYPE",
+          "This transaction cannot be edited.",
+          409,
+        );
+      if (record.ledgerId)
+        await requireMember(tx, record.ledgerId, userId, true);
+      else if (record.sourceId !== userId)
+        throw new DomainError(
+          "FORBIDDEN",
+          "Only its author can edit this transaction.",
+          403,
+        );
+      if (input.ledgerId) {
+        const membership = await requireMember(
+          tx,
+          input.ledgerId,
+          userId,
+          true,
+        );
+        if (membership.ledger.currency !== input.currency)
+          throw new DomainError("CURRENCY", "Use the group currency.");
+      }
+      if (record.obligations.some((item) => item.settlements.length))
+        throw new DomainError(
+          "REPAID",
+          "A transaction with repayments cannot be edited.",
+          409,
+        );
+      const people = [
+        ...new Set([
+          record.sourceId,
+          ...input.participants.map((participant) => participant.userId),
+          ...(input.destinationId ? [input.destinationId] : []),
+        ]),
+      ];
+      if (input.ledgerId) {
+        const members = await tx.ledgerMember.count({
+          where: {
+            ledgerId: input.ledgerId,
+            userId: { in: people },
+            leftAt: null,
+          },
+        });
+        if (members !== people.length)
+          throw new DomainError(
+            "GROUP_MEMBERS",
+            "Every person in the transaction must belong to the group.",
+            409,
+          );
+      }
+      const otherPeople = people.filter((personId) => personId !== userId);
+      const blocked = otherPeople.length
+        ? await tx.userBlock.findFirst({
+            where: {
+              OR: otherPeople.flatMap((personId) => [
+                { blockerId: userId, blockedId: personId },
+                { blockerId: personId, blockedId: userId },
+              ]),
+            },
+          })
+        : null;
+      if (blocked)
+        throw new DomainError(
+          "CONTACT_BLOCKED",
+          "Sorry, looks like you are not allowed to edit this transaction.",
+          403,
+        );
+      const distinctTagIds = [...new Set(input.tagIds)];
+      const validTags = await tx.tag.count({
+        where: {
+          id: { in: distinctTagIds },
+          ownerId: userId,
+          archivedAt: null,
+        },
+      });
+      if (
+        validTags !== distinctTagIds.length ||
+        distinctTagIds.length !== input.tagIds.length
+      )
+        throw new DomainError("TAG", "Select your own active tags.");
+      const splits =
+        input.type === "SHARED_EXPENSE"
+          ? splitExpense(
+              input.amountMinor,
+              input.participants,
+              input.splitMethod,
+            )
+          : [];
+      const debts =
+        input.type === "SHARED_EXPENSE"
+          ? obligations(record.sourceId, splits, input.currency)
+          : [];
+      await tx.obligation.deleteMany({ where: { transactionId: id } });
+      await tx.expenseSplit.deleteMany({ where: { transactionId: id } });
+      await tx.transactionParticipant.deleteMany({
+        where: { transactionId: id },
+      });
+      await tx.transactionTag.deleteMany({ where: { transactionId: id } });
+      await tx.transactionItem.deleteMany({ where: { transactionId: id } });
+      await tx.transaction.update({
+        where: { id },
+        data: {
+          title: input.title,
+          amountMinor: input.amountMinor,
+          currency: input.currency,
+          type: input.type,
+          status: input.status,
+          occurredAt: new Date(input.occurredAt),
+          notes: input.notes,
+          icon: input.icon,
+          destinationId: input.destinationId,
+          ledgerId: input.ledgerId,
+          version: { increment: 1 },
+          participants: {
+            create: people.map((personId) => ({ userId: personId })),
+          },
+          splits: {
+            create: splits.map((split) => ({
+              ...split,
+              method: input.splitMethod,
+              weight: input.participants.find((p) => p.userId === split.userId)
+                ?.value,
+            })),
+          },
+          obligations: {
+            create: debts.map((debt) => ({
+              ...debt,
+              ledgerId: input.ledgerId!,
+            })),
+          },
+          tags: { create: input.tagIds.map((tagId) => ({ tagId })) },
+          items: {
+            create: (input.items ?? []).map((item, position) => ({
+              ...item,
+              position,
+            })),
+          },
+        },
+      });
+      await audit(
+        tx,
+        userId,
+        id,
+        "TRANSACTION_EDITED",
+        {
+          previous: {
+            title: record.title,
+            amountMinor: Number(record.amountMinor),
+            ledgerId: record.ledgerId,
+          },
+          next: {
+            title: input.title,
+            amountMinor: input.amountMinor,
+            ledgerId: input.ledgerId,
+          },
+        },
+        input.ledgerId ?? record.ledgerId,
+        `${record.title}: amount ${Number(record.amountMinor)} → ${input.amountMinor}; group ${record.ledgerId ?? "none"} → ${input.ledgerId ?? "none"}`,
+      );
+      return { ok: true };
     });
   }
   async settle(userId: string, input: CreateSettlement) {
@@ -375,18 +592,13 @@ export class FinanceService {
   async action(
     userId: string,
     id: string,
-    action: "complete" | "reverse" | "dispute" | "resolve",
+    action: "complete",
     version: number,
-    reason: string,
+    _reason: string,
   ) {
     return atomic(async (tx) => {
       const record = await tx.transaction.findFirst({
         where: { id, ...visibleTransaction(userId) },
-        include: {
-          obligations: true,
-          settlements: { include: { obligation: true } },
-          disputes: true,
-        },
       });
       if (!record)
         throw new DomainError("NOT_FOUND", "Transaction unavailable.", 404);
@@ -396,149 +608,27 @@ export class FinanceService {
           "This record changed. Refresh before trying again.",
           409,
         );
-      if (action === "dispute") {
-        if (!["SETTLED", "PENDING_LOAN"].includes(record.status))
-          throw new DomainError(
-            "STATUS",
-            "Only posted records can be disputed.",
-          );
-        if (
-          record.sourceId !== userId &&
-          record.destinationId !== userId &&
-          !(await tx.transactionParticipant.count({
-            where: { transactionId: id, userId },
-          }))
-        )
-          throw new DomainError(
-            "FORBIDDEN",
-            "Only participants can dispute a record.",
-            403,
-          );
-        await tx.dispute.create({
-          data: {
-            transactionId: id,
-            openedBy: userId,
-            reason,
-            previousStatus: record.status,
-          },
-        });
-        await tx.transaction.update({
-          where: { id },
-          data: { status: "DISPUTED", version: { increment: 1 } },
-        });
-      } else if (action === "resolve") {
-        const dispute = record.disputes.find((d) => !d.resolvedAt);
-        if (!dispute) throw new DomainError("DISPUTE", "No open dispute.");
-        // The person who raised the dispute confirms its resolution; the payer cannot dismiss it.
-        if (dispute.openedBy !== userId)
-          throw new DomainError(
-            "FORBIDDEN",
-            "The person who raised this dispute must confirm its resolution.",
-            403,
-          );
-        await tx.dispute.update({
-          where: { id: dispute.id },
-          data: {
-            resolvedBy: userId,
-            resolvedAt: new Date(),
-            resolution: reason,
-          },
-        });
-        await tx.transaction.update({
-          where: { id },
-          data: { status: dispute.previousStatus, version: { increment: 1 } },
-        });
-      } else {
-        if (record.sourceId !== userId)
-          throw new DomainError(
-            "FORBIDDEN",
-            "Only the original author can perform this action.",
-            403,
-          );
-        if (action === "complete") {
-          if (record.status !== "PENDING" || record.type !== "PERSONAL_EXPENSE")
-            throw new DomainError(
-              "STATUS",
-              "Only pending personal payments can be completed.",
-            );
-          await tx.transaction.update({
-            where: { id },
-            data: { status: "SETTLED", version: { increment: 1 } },
-          });
-        } else {
-          if (
-            ["REVERSED", "DISPUTED"].includes(record.status) ||
-            record.type === "REVERSAL"
-          )
-            throw new DomainError(
-              "STATUS",
-              "Resolve disputes before reversing a record.",
-            );
-          if (
-            record.obligations.some((o) => o.remainingMinor !== o.amountMinor)
-          )
-            throw new DomainError(
-              "REPAID",
-              "Reverse associated repayments before reversing this expense or loan.",
-            );
-          for (const s of record.settlements) {
-            await tx.transaction.updateMany({
-              where: {
-                id: s.obligation.transactionId,
-                type: "LOAN",
-                status: "SETTLED",
-              },
-              data: { status: "PENDING_LOAN", version: { increment: 1 } },
-            });
-            if (
-              s.obligation.remainingMinor + s.amountMinor >
-              s.obligation.amountMinor
-            )
-              throw new DomainError(
-                "BALANCE",
-                "This repayment cannot be reversed.",
-              );
-            await tx.obligation.update({
-              where: { id: s.obligationId },
-              data: {
-                remainingMinor: { increment: s.amountMinor },
-                version: { increment: 1 },
-              },
-            });
-          }
-          await tx.obligation.updateMany({
-            where: { transactionId: id },
-            data: { remainingMinor: 0, version: { increment: 1 } },
-          });
-          await tx.transaction.create({
-            data: {
-              sourceId: userId,
-              destinationId: record.destinationId,
-              ledgerId: record.ledgerId,
-              title: `Reversal: ${record.title}`.slice(0, 120),
-              amountMinor: record.amountMinor,
-              currency: record.currency,
-              type: "REVERSAL",
-              status: "SETTLED",
-              occurredAt: new Date(),
-              idempotencyKey: crypto.randomUUID(),
-              requestDigest: digest(`reverse:${id}:${version}`),
-              correctsId: id,
-              notes: reason,
-            },
-          });
-          await tx.transaction.update({
-            where: { id },
-            data: { status: "REVERSED", version: { increment: 1 } },
-          });
-        }
-      }
+      if (record.sourceId !== userId)
+        throw new DomainError(
+          "FORBIDDEN",
+          "Only the original author can complete a pending personal payment.",
+          403,
+        );
+      if (record.status !== "PENDING" || record.type !== "PERSONAL_EXPENSE")
+        throw new DomainError(
+          "STATUS",
+          "Only pending personal payments can be completed.",
+        );
+      await tx.transaction.update({
+        where: { id },
+        data: { status: "SETTLED", version: { increment: 1 } },
+      });
       await audit(
         tx,
         userId,
         id,
         `TRANSACTION_${action.toUpperCase()}`,
-        { reason, previousVersion: version, previousStatus: record.status },
+        { previousVersion: version, previousStatus: record.status },
         record.ledgerId,
       );
       return { ok: true };
@@ -560,21 +650,54 @@ export class PrismaDashboardRepository implements DashboardRepository {
           await Promise.all([
             tx.transaction.findMany({
               where: visibleTransaction(userId),
-              include: {
-                participants: true,
-                splits: true,
-                items: { orderBy: { position: "asc" } },
-                tags: { where: { tag: { ownerId: userId } } },
+              select: {
+                id: true,
+                title: true,
+                amountMinor: true,
+                currency: true,
+                type: true,
+                status: true,
+                occurredAt: true,
+                sourceId: true,
+                destinationId: true,
+                ledgerId: true,
+                notes: true,
+                icon: true,
+                version: true,
+                participants: { select: { userId: true } },
+                splits: {
+                  select: { userId: true, amountMinor: true },
+                },
+                items: {
+                  orderBy: { position: "asc" },
+                  select: { name: true, quantity: true, amountMinor: true },
+                },
+                tags: {
+                  where: { tag: { ownerId: userId } },
+                  select: { tagId: true },
+                },
               },
               orderBy: { occurredAt: "desc" },
             }),
             tx.ledger.findMany({
               where: { members: { some: { userId, leftAt: null } } },
-              include: {
-                group: true,
+              select: {
+                id: true,
+                groupId: true,
+                name: true,
+                currency: true,
+                group: { select: { description: true, deletedAt: true } },
                 members: {
                   where: { leftAt: null },
-                  include: { user: { include: { profile: true } } },
+                  select: {
+                    userId: true,
+                    role: true,
+                    user: {
+                      select: {
+                        profile: { select: { name: true, avatar: true } },
+                      },
+                    },
+                  },
                 },
               },
             }),
@@ -595,6 +718,7 @@ export class PrismaDashboardRepository implements DashboardRepository {
               },
               orderBy: { createdAt: "desc" },
               take: 50,
+              include: { actor: { include: { profile: true } } },
             }),
           ]);
         const savedContactIds = new Set<string>();
@@ -612,9 +736,22 @@ export class PrismaDashboardRepository implements DashboardRepository {
         }
         const savedContacts = await tx.user.findMany({
           where: { id: { in: [...savedContactIds] }, deletedAt: null },
-          include: { profile: true, phone: true },
+          select: {
+            id: true,
+            profile: { select: { name: true, avatar: true } },
+            phone: { select: { phone: true, verifiedAt: true } },
+          },
           orderBy: { profile: { name: "asc" } },
         });
+        const contactPreferences = await tx.contactPreference.findMany({
+          where: { ownerId: userId, contactId: { in: [...savedContactIds] } },
+        });
+        const preferences = new Map(
+          contactPreferences.map((preference) => [
+            preference.contactId,
+            preference,
+          ]),
+        );
         const data: Dashboard = json({
           account: {
             id: userId,
@@ -654,9 +791,13 @@ export class PrismaDashboardRepository implements DashboardRepository {
             name: l.name,
             description: l.group.description ?? "",
             currency: l.currency,
+            deleted: !!l.group.deletedAt,
             members: l.members.map((m) => ({
               id: m.userId,
-              name: m.user.profile?.name ?? "Former member",
+              name:
+                preferences.get(m.userId)?.alias ??
+                m.user.profile?.name ??
+                "Former member",
               role: m.role,
               avatar: m.user.profile?.avatar ?? undefined,
             })),
@@ -683,14 +824,32 @@ export class PrismaDashboardRepository implements DashboardRepository {
             ),
             spentMinor: 0,
           })),
-          activity,
-          savedContacts: savedContacts.map((contact) => ({
-            id: contact.id,
-            name: contact.profile?.name ?? "Saved contact",
-            phone: contact.phone?.phone,
-            verified: !!contact.phone?.verifiedAt,
-            avatar: contact.profile?.avatar ?? undefined,
+          activity: activity.map((entry) => ({
+            id: entry.id,
+            ledgerId: entry.ledgerId,
+            event: entry.event,
+            message: entry.message,
+            actorId: entry.actorId,
+            actorName:
+              entry.actorId === userId
+                ? "You"
+                : (preferences.get(entry.actorId)?.alias ??
+                  entry.actor.profile?.name ??
+                  "A member"),
+            createdAt: entry.createdAt,
           })),
+          savedContacts: savedContacts
+            .filter((contact) => !preferences.get(contact.id)?.hiddenAt)
+            .map((contact) => ({
+              id: contact.id,
+              name:
+                preferences.get(contact.id)?.alias ??
+                contact.profile?.name ??
+                "Saved contact",
+              phone: contact.phone?.phone,
+              verified: !!contact.phone?.verifiedAt,
+              avatar: contact.profile?.avatar ?? undefined,
+            })),
         });
         const { analytics } = await import("@settleup/domain/src/analytics");
         data.goals.forEach((g) => {
