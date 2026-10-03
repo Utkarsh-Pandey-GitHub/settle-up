@@ -45,10 +45,12 @@ function GoogleSignInButton({
   onSession,
   phone,
   endpoint = "/auth/google",
+  label = "Continue with Google",
 }: {
   disabled: boolean;
   phone?: string;
   endpoint?: "/auth/google" | "/profile/google";
+  label?: string;
   onSession(session: Session & { suggestedName?: string }): Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
@@ -109,7 +111,7 @@ function GoogleSignInButton({
           }
         }}
       >
-        Continue with Google
+        {label}
       </Button>
       {!!error && <Notice error>{error}</Notice>}
     </YStack>
@@ -474,6 +476,7 @@ export function AuthScreen() {
                     <GoogleSignInButton
                       disabled={action.busy || truecallerBusy || !phone.trim()}
                       phone={phone}
+                      label="Confirm phone and sign in with Google"
                       onSession={acceptSession}
                     />
                   )}
@@ -1075,8 +1078,9 @@ export function SettingsScreen() {
               <Heading size={18}>Delete account</Heading>
               <Label muted size={12}>
                 This revokes sessions and links and removes your profile. Shared
-                financial history is retained in anonymized form for the other
-                participants. Outstanding obligations must be resolved first.
+                financial history stays available to the other participants.
+                Your phone remains an unverified identity key so you can verify
+                again and reclaim that shared history later.
               </Label>
               <Field
                 label="Type DELETE MY ACCOUNT to confirm"

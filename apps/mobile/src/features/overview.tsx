@@ -237,10 +237,7 @@ export function TransactionRow({
             </Label>
           )}
           {t.status !== "SETTLED" && (
-            <Label
-              size={9}
-              color="#A26D20"
-            >
+            <Label size={9} color="#A26D20">
               · {t.status.toLowerCase().replace(/_/g, " ")}
             </Label>
           )}
@@ -834,22 +831,18 @@ export function ActivityScreen() {
 
               {openDropdown === "status" && (
                 <FilterDropdownPanel title="FILTER BY STATUS">
-                  {["", "PENDING", "SETTLED", "PENDING_LOAN"].map(
-                    (s) => (
-                      <Chip
-                        key={s}
-                        selected={status === s}
-                        onPress={() => {
-                          setStatus(s);
-                          setOpenDropdown(null);
-                        }}
-                      >
-                        {s
-                          ? s.toLowerCase().replace(/_/g, " ")
-                          : "All statuses"}
-                      </Chip>
-                    ),
-                  )}
+                  {["", "PENDING", "SETTLED", "PENDING_LOAN"].map((s) => (
+                    <Chip
+                      key={s}
+                      selected={status === s}
+                      onPress={() => {
+                        setStatus(s);
+                        setOpenDropdown(null);
+                      }}
+                    >
+                      {s ? s.toLowerCase().replace(/_/g, " ") : "All statuses"}
+                    </Chip>
+                  ))}
                 </FilterDropdownPanel>
               )}
               {openDropdown === "ledger" && (

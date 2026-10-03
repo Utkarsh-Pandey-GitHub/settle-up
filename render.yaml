@@ -18,6 +18,8 @@ services:
         generateValue: true
       - key: TRUECALLER_CLIENT_ID
         value: f6ydr8pehvg_69vacnh7z4alfzdzpywyremiruuuegg
+      - key: GOOGLE_CLIENT_IDS
+        value: 1006604995208-t3k8qotf1pmdr53tpn1iojpo3n2ja4va.apps.googleusercontent.com,1006604995208-mfkii6r82inootnea7vk0l6p33gdi9to.apps.googleusercontent.com,1006604995208-hchg9963bmq747pc4o7pqlun8o89agn6.apps.googleusercontent.com
       - key: OPENROUTER_API_KEY
         sync: false
       - key: BILL_VISION_MODEL

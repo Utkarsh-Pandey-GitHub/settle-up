@@ -3,7 +3,7 @@
     "name": "SettleUp",
     "slug": "settleup",
     "scheme": ["settleup", "app.settleup.mobile"],
-    "version": "1.0.9",
+    "version": "1.0.13",
     "runtimeVersion": {
       "policy": "appVersion"
     },

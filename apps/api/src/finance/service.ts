@@ -187,12 +187,12 @@ export class FinanceService {
         );
       if (
         records.some((record) =>
-          ["SETTLEMENT", "LOAN_REPAYMENT", "REVERSAL"].includes(record.type),
+          ["SETTLEMENT", "LOAN_REPAYMENT"].includes(record.type),
         )
       )
         throw new DomainError(
-          "DELETE_REQUIRES_REVERSAL",
-          "Repayments and reversals must be corrected from their transaction details.",
+          "DELETE_REQUIRES_CORRECTION",
+          "Repayments must be corrected from their transaction details.",
           409,
         );
       for (const record of records) {

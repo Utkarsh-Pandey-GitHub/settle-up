@@ -1343,24 +1343,21 @@ export async function createApp() {
     const { userId } = await actor(req);
     z.object({ confirmation: z.literal("DELETE MY ACCOUNT") }).parse(req.body);
     return atomic(async (tx) => {
-      const outstanding = await tx.obligation.count({
-        where: {
-          remainingMinor: { gt: 0 },
-          OR: [{ debtorId: userId }, { creditorId: userId }],
-        },
+      const closedAt = new Date();
+      // Keep the user row and shared ledger references intact. The phone is
+      // retained only as an unverified identity key so the person can reclaim
+      // the same shared history after verifying again.
+      await tx.transaction.updateMany({
+        where: { sourceId: userId, ledgerId: null, deletedAt: null },
+        data: { deletedAt: closedAt },
       });
-      if (outstanding)
-        throw new DomainError(
-          "OUTSTANDING",
-          "Settle or reverse outstanding obligations before deleting your account.",
-        );
       await tx.user.update({
         where: { id: userId },
         data: {
-          deletedAt: new Date(),
+          deletedAt: null,
           profile: {
             update: {
-              name: "Deleted account",
+              name: "Unverified contact",
               email: null,
               avatar: null,
               discoverable: false,
@@ -1368,10 +1365,14 @@ export async function createApp() {
           },
         },
       });
-      await tx.phoneIdentity.delete({ where: { userId } });
+      await tx.phoneIdentity.update({
+        where: { userId },
+        data: { verifiedAt: null, changedAt: null },
+      });
+      await tx.googleIdentity.deleteMany({ where: { userId } });
       await tx.deviceSession.updateMany({
         where: { userId },
-        data: { revokedAt: new Date() },
+        data: { revokedAt: closedAt },
       });
       await tx.sharedAnalyticsLink.updateMany({
         where: { ownerId: userId },
@@ -1380,6 +1381,10 @@ export async function createApp() {
       await tx.smsImportRecord.deleteMany({ where: { ownerId: userId } });
       await tx.paymentLink.deleteMany({ where: { ownerId: userId } });
       await tx.notificationPreference.deleteMany({ where: { userId } });
+      await tx.contactPreference.deleteMany({ where: { ownerId: userId } });
+      await tx.userBlock.deleteMany({
+        where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      });
       await audit(tx, userId, userId, "ACCOUNT_DELETED");
       return { ok: true };
     });
