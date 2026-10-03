@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState } from "react";
 import { Platform, Share, View, Pressable } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
+import {
+  GoogleSignin,
+  isSuccessResponse,
+} from "@react-native-google-signin/google-signin";
 import { Redirect, useRouter } from "expo-router";
 import { XStack, YStack } from "tamagui";
 import Svg, { Circle, Path } from "react-native-svg";
@@ -104,9 +108,9 @@ function GoogleSignInButton({
     ios: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || "unconfigured",
     web: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "unconfigured",
   };
-  const googleConfigured = Object.values(googleClientIds).some(
-    (clientId) => clientId !== "unconfigured",
-  );
+  const googleConfigured =
+    googleClientIds.web !== "unconfigured" &&
+    (Platform.OS !== "ios" || googleClientIds.ios !== "unconfigured");
   const webRedirectUri =
     Platform.OS === "web" && typeof window !== "undefined"
       ? window.location.origin
@@ -118,25 +122,50 @@ function GoogleSignInButton({
     ...(webRedirectUri ? { redirectUri: webRedirectUri } : {}),
     selectAccount: true,
   });
+  useEffect(() => {
+    if (Platform.OS === "web" || !googleConfigured) return;
+    GoogleSignin.configure({
+      webClientId: googleClientIds.web,
+      iosClientId: googleClientIds.ios,
+      offlineAccess: false,
+    });
+  }, [googleClientIds.ios, googleClientIds.web, googleConfigured]);
   return (
     <YStack gap={8}>
       <Button
         secondary
         leading={<GoogleMark />}
         loading={busy}
-        disabled={disabled || busy || !googleRequest || !googleConfigured}
+        disabled={
+          disabled ||
+          busy ||
+          !googleConfigured ||
+          (Platform.OS === "web" && !googleRequest)
+        }
         onPress={async () => {
           if (busy) return;
           setBusy(true);
           setError("");
           try {
-            const response = await promptGoogle();
-            if (response.type === "cancel" || response.type === "dismiss")
-              return;
-            if (response.type !== "success")
-              throw new Error("Google sign-in could not be completed.");
-            const idToken =
-              response.params.id_token ?? response.authentication?.idToken;
+            let idToken: string | null | undefined;
+            if (Platform.OS === "web") {
+              const response = await promptGoogle();
+              if (response.type === "cancel" || response.type === "dismiss")
+                return;
+              if (response.type !== "success")
+                throw new Error("Google sign-in could not be completed.");
+              idToken =
+                response.params.id_token ?? response.authentication?.idToken;
+            } else {
+              if (Platform.OS === "android") {
+                await GoogleSignin.hasPlayServices({
+                  showPlayServicesUpdateDialog: true,
+                });
+              }
+              const response = await GoogleSignin.signIn();
+              if (!isSuccessResponse(response)) return;
+              idToken = response.data.idToken;
+            }
             if (!idToken)
               throw new Error("Google did not return a verifiable identity.");
             await onSession(

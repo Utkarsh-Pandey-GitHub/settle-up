@@ -15,6 +15,7 @@
     "@expo-google-fonts/montserrat": "^0.4.2",
     "@hookform/resolvers": "^3.10.0",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-google-signin/google-signin": "^16.1.5",
     "@settleup/contracts": "*",
     "@settleup/domain": "*",
     "@tamagui/config": "^1.144.4",

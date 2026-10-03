@@ -3,7 +3,7 @@
     "name": "SettleUp",
     "slug": "settleup",
     "scheme": ["settleup", "app.settleup.mobile"],
-    "version": "1.0.15",
+    "version": "1.0.16",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -76,7 +76,13 @@
       ],
       "./modules/truecaller/app.plugin.js",
       "./with-upi-queries.js",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.1006604995208-mfkii6r82inootnea7vk0l6p33gdi9to"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
