@@ -1328,11 +1328,25 @@ export function GroupScreen() {
                     onPress={() =>
                       Alert.alert(
                         "Delete this group?",
-                        "It will be hidden and become read-only. Its history stays available.",
+                        "Choose whether its transactions should remain in your history.",
                         [
                           { text: "Cancel", style: "cancel" },
                           {
-                            text: "Delete group",
+                            text: "Keep transactions",
+                            onPress: () =>
+                              void action.run(
+                                () =>
+                                  extra(
+                                    d.account.id,
+                                    `/groups/${l.groupId}`,
+                                    { deleteTransactions: false },
+                                    "DELETE",
+                                  ),
+                                "Group deleted. Transactions were kept.",
+                              ),
+                          },
+                          {
+                            text: "Delete transactions too",
                             style: "destructive",
                             onPress: () =>
                               void action.run(
@@ -1340,10 +1354,10 @@ export function GroupScreen() {
                                   extra(
                                     d.account.id,
                                     `/groups/${l.groupId}`,
-                                    undefined,
+                                    { deleteTransactions: true },
                                     "DELETE",
                                   ),
-                                "Group moved to deleted groups.",
+                                "Group and its transactions were deleted.",
                               ),
                           },
                         ],

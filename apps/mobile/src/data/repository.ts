@@ -265,7 +265,9 @@ export async function request<T>(
     response = await fetch(`${API_URL}${path}`, {
       method: options.method ?? (options.body !== undefined ? "POST" : "GET"),
       headers: {
-        "content-type": "application/json",
+        ...(options.body !== undefined
+          ? { "content-type": "application/json" }
+          : {}),
         ...(session ? { authorization: `Bearer ${session.accessToken}` } : {}),
       },
       ...(options.body !== undefined
@@ -672,7 +674,13 @@ export class DemoRepository implements AppRepository {
     } else if (path.match(/^\/groups\/[^/]+$/) && method === "DELETE") {
       const groupId = path.split("/")[2];
       const ledger = d.ledgers.find((entry) => entry.groupId === groupId);
-      if (ledger) ledger.deleted = true;
+      if (ledger) {
+        ledger.deleted = true;
+        if (body?.deleteTransactions)
+          d.transactions = d.transactions.filter(
+            (transaction) => transaction.ledgerId !== ledger.id,
+          );
+      }
     } else if (path.match(/^\/contacts\/[^/]+$/) && method === "DELETE") {
       const contactId = path.split("/")[2];
       d.savedContacts = d.savedContacts.filter(
@@ -983,12 +991,19 @@ function extraDashboardUpdate(
   const deletedGroupMatch = path.match(/^\/groups\/([^/]+)$/);
   if (deletedGroupMatch && method === "DELETE")
     return (dashboard: Dashboard) => {
-      const ledger = dashboard.ledgers.find(
+      const groupLedgers = dashboard.ledgers.filter(
         (entry) =>
           entry.groupId === deletedGroupMatch[1] ||
           entry.id === deletedGroupMatch[1],
       );
-      if (ledger) ledger.deleted = true;
+      groupLedgers.forEach((ledger) => (ledger.deleted = true));
+      if (body?.deleteTransactions) {
+        const ledgerIds = new Set(groupLedgers.map((ledger) => ledger.id));
+        dashboard.transactions = dashboard.transactions.filter(
+          (transaction) =>
+            !transaction.ledgerId || !ledgerIds.has(transaction.ledgerId),
+        );
+      }
     };
   if (path === "/profile" && method === "PATCH")
     return (dashboard: Dashboard) => {

@@ -115,6 +115,17 @@ it("cleans up when the network fails immediately", async () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
+it("does not label a bodyless delete as JSON", async () => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+  vi.stubGlobal("fetch", fetcher);
+  await request("/groups/00000000-0000-4000-8000-000000000001", {
+    method: "DELETE",
+  });
+  expect(fetcher.mock.calls[0][1]?.headers).not.toHaveProperty(
+    "content-type",
+  );
+});
+
 it("does not display HTML from an incorrect API deployment", async () => {
   vi.stubGlobal(
     "fetch",

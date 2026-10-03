@@ -917,6 +917,9 @@ export async function createApp() {
   app.delete("/groups/:id", async (req) => {
     const { userId } = await actor(req);
     const requestedId = pathId(req);
+    const { deleteTransactions } = z
+      .object({ deleteTransactions: z.boolean().default(false) })
+      .parse(req.body ?? {});
     return atomic(async (tx) => {
       // Older clients used the ledger id in this route. Resolve it here so a
       // group delete remains safe and idempotent across app versions.
@@ -935,24 +938,42 @@ export async function createApp() {
           "Only the group owner can delete this group.",
           403,
         );
-      if (membership.group.deletedAt) return { ok: true };
-      const deletedAt = new Date();
-      await tx.group.update({ where: { id: groupId }, data: { deletedAt } });
       const ledgers = await tx.ledger.findMany({
         where: { groupId },
         select: { id: true, name: true },
       });
+      const ledgerIds = ledgers.map((ledger) => ledger.id);
+      const transactions = deleteTransactions
+        ? await tx.transaction.findMany({
+            where: { ledgerId: { in: ledgerIds }, deletedAt: null },
+            select: { id: true },
+          })
+        : [];
+      const deletedAt = membership.group.deletedAt ?? new Date();
+      if (!membership.group.deletedAt)
+        await tx.group.update({ where: { id: groupId }, data: { deletedAt } });
+      if (transactions.length)
+        await tx.transaction.updateMany({
+          where: { id: { in: transactions.map((transaction) => transaction.id) } },
+          data: { deletedAt, version: { increment: 1 } },
+        });
       for (const ledger of ledgers)
         await audit(
           tx,
           userId,
           groupId,
           "GROUP_DELETED",
-          { deletedAt: deletedAt.toISOString() },
+          {
+            deletedAt: deletedAt.toISOString(),
+            deleteTransactions,
+            deletedTransactionCount: transactions.length,
+          },
           ledger.id,
-          `${ledger.name} was deleted and made read-only`,
+          deleteTransactions
+            ? `${ledger.name} and ${transactions.length} transactions were deleted`
+            : `${ledger.name} was deleted and its transactions were kept`,
         );
-      return { ok: true };
+      return { ok: true, deletedTransactions: transactions.length };
     });
   });
   app.post("/tags", async (req) => {
