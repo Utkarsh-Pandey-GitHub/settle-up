@@ -3,7 +3,7 @@
     "name": "SettleUp",
     "slug": "settleup",
     "scheme": ["settleup", "app.settleup.mobile"],
-    "version": "1.0.14",
+    "version": "1.0.15",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -11,7 +11,10 @@
       "url": "https://u.expo.dev/1a6df8cb-0a63-48c1-9e5c-a1754f54f226",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     },
     "icon": "./assets/icon-production.png",
     "orientation": "portrait",
