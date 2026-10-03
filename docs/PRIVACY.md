@@ -27,7 +27,7 @@ Security-relevant shared-link access events record whether access was allowed an
 
 ## Export, deletion, and retention
 
-Export your accessible data from Settings. Deleting an account revokes sessions and links and removes the phone identity, profile identifying details, import records, and notification preferences. Unresolved obligations must first be settled or reversed. Shared financial and audit records are retained under an anonymized account so other participants do not lose their history. Free-text notes can contain personal information; the operator needs a documented erasure/redaction process for such requests and must publish legally appropriate retention limits before launch.
+Export your accessible data from Settings. Deleting an account removes the phone and Google identities, profile identifiers, sessions, notification data, private links, import records, preferences, goals, tags, and personal-only transactions. Shared transactions, descriptions, notes, splits, settlements, balances, and group history remain under the non-identifying label "Deleted member" so other participants do not lose their records. A minimal deletion audit is retained for up to 12 months. Encrypted disaster-recovery backup remnants rotate out within 90 days.
 
 Production databases must use encryption at rest and TLS in transit, restricted operator access, backups, and deletion procedures. No advertising SDK or third-party behavioral analytics is included in this repository.
 

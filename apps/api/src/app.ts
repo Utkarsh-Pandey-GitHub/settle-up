@@ -1370,46 +1370,73 @@ export async function createApp() {
     z.object({ confirmation: z.literal("DELETE MY ACCOUNT") }).parse(req.body);
     return atomic(async (tx) => {
       const closedAt = new Date();
-      // Keep the user row and shared ledger references intact. The phone is
-      // retained only as an unverified identity key so the person can reclaim
-      // the same shared history after verifying again.
-      await tx.transaction.updateMany({
-        where: { sourceId: userId, ledgerId: null, deletedAt: null },
-        data: { deletedAt: closedAt },
+      const identity = await tx.phoneIdentity.findUnique({
+        where: { userId },
+        select: { phone: true },
       });
-      await tx.user.update({
-        where: { id: userId },
-        data: {
-          deletedAt: null,
-          profile: {
-            update: {
-              name: "Unverified contact",
-              email: null,
-              avatar: null,
-              discoverable: false,
-            },
-          },
+      // A transaction is private only when no group or second person depends
+      // on it. Shared records remain intact for the other participants.
+      const privateTransactions = await tx.transaction.findMany({
+        where: {
+          sourceId: userId,
+          ledgerId: null,
+          destinationId: null,
+          participants: { none: { userId: { not: userId } } },
+          splits: { none: { userId: { not: userId } } },
         },
+        select: { id: true },
       });
-      await tx.phoneIdentity.update({
-        where: { userId },
-        data: { verifiedAt: null, changedAt: null },
+      const privateIds = privateTransactions.map(({ id }) => id);
+      if (privateIds.length) {
+        const transactions = { transactionId: { in: privateIds } };
+        await tx.settlement.deleteMany({ where: transactions });
+        await tx.obligation.deleteMany({ where: transactions });
+        await tx.dispute.deleteMany({ where: transactions });
+        await tx.transactionItem.deleteMany({ where: transactions });
+        await tx.transactionTag.deleteMany({ where: transactions });
+        await tx.expenseSplit.deleteMany({ where: transactions });
+        await tx.transactionParticipant.deleteMany({ where: transactions });
+        await tx.transaction.updateMany({
+          where: { correctsId: { in: privateIds } },
+          data: { correctsId: null },
+        });
+        await tx.transaction.deleteMany({ where: { id: { in: privateIds } } });
+      }
+      await tx.goal.deleteMany({ where: { ownerId: userId } });
+      await tx.transactionTag.deleteMany({
+        where: { tag: { ownerId: userId } },
       });
-      await tx.googleIdentity.deleteMany({ where: { userId } });
-      await tx.deviceSession.updateMany({
-        where: { userId },
-        data: { revokedAt: closedAt },
-      });
-      await tx.sharedAnalyticsLink.updateMany({
-        where: { ownerId: userId },
-        data: { revokedAt: new Date() },
-      });
+      await tx.tag.deleteMany({ where: { ownerId: userId } });
+      await tx.sharedAnalyticsLink.deleteMany({ where: { ownerId: userId } });
       await tx.smsImportRecord.deleteMany({ where: { ownerId: userId } });
       await tx.paymentLink.deleteMany({ where: { ownerId: userId } });
+      await tx.notificationJob.deleteMany({ where: { userId } });
       await tx.notificationPreference.deleteMany({ where: { userId } });
       await tx.contactPreference.deleteMany({ where: { ownerId: userId } });
       await tx.userBlock.deleteMany({
         where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      });
+      await tx.auditEvent.deleteMany({ where: { actorId: userId } });
+      await tx.deviceSession.deleteMany({ where: { userId } });
+      await tx.googleIdentity.deleteMany({ where: { userId } });
+      await tx.phoneIdentity.deleteMany({ where: { userId } });
+      if (identity?.phone)
+        await tx.otpChallenge.deleteMany({ where: { phone: identity.phone } });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          deletedAt: closedAt,
+          profile: {
+            update: {
+              name: "Deleted member",
+              email: null,
+              avatar: null,
+              currency: "INR",
+              timezone: "UTC",
+              discoverable: false,
+            },
+          },
+        },
       });
       await audit(tx, userId, userId, "ACCOUNT_DELETED");
       return { ok: true };

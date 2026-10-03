@@ -48,6 +48,12 @@ export async function cleanup(now = new Date()) {
     await tx.sharedLinkAccessEvent.deleteMany({
       where: { createdAt: { lt: new Date(+now - 90 * 86400000) } },
     });
+    await tx.auditEvent.deleteMany({
+      where: {
+        action: "ACCOUNT_DELETED",
+        createdAt: { lt: new Date(+now - 365 * 86400000) },
+      },
+    });
   });
 }
 export async function processGoals() {

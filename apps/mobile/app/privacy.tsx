@@ -279,14 +279,18 @@ export default function PrivacyScreen() {
         <SectionHeading>Data Retention &amp; Deletion</SectionHeading>
         <Bullet>Export your data from Settings at any time.</Bullet>
         <Bullet>
-          Account deletion revokes sessions and links, removes your identity,
-          profile, and preferences.
+          Account deletion removes your phone and Google identities, profile,
+          sessions, private links, preferences, personal-only transactions,
+          goals, and tags.
         </Bullet>
         <Bullet>
-          Shared records are retained under an anonymised account for other
-          participants.
+          Shared records remain available to other participants under the
+          non-identifying label Deleted member.
         </Bullet>
-        <Bullet>Unresolved obligations must be settled before deletion.</Bullet>
+        <Bullet>
+          A minimal deletion audit is retained for up to 12 months; encrypted
+          backup remnants rotate out within 90 days.
+        </Bullet>
 
         <SectionHeading>Third-Party Services</SectionHeading>
         <Bullet>

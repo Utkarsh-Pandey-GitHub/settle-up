@@ -6,6 +6,18 @@
   "cleanUrls": true,
   "rewrites": [
     {
+      "source": "/delete-account",
+      "destination": "/delete-account/index.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy/index.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms/index.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

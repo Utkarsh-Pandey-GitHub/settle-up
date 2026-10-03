@@ -32,7 +32,7 @@ Do not put `JWT_SECRET`, `OTP_PEPPER`, database credentials, Supabase secret/ser
 
 Before inviting Play testers, rotate every credential that has ever been pasted into chat or another public channel, including the database password, Supabase secret key, Stytch secret, OpenRouter key, `JWT_SECRET`, and `OTP_PEPPER`. Update Render with the rotated values, add `OPENROUTER_API_KEY` and `BILL_VISION_MODEL=openrouter/free`, and set `NODE_ENV=production`. Keep secrets only in Render's encrypted environment settings.
 
-Use the Supabase session-pooler URL for `DATABASE_URL`, run `npm run db:migrate`, and verify `https://settleup-api-j248.onrender.com/health` after deployment. Set both `PUBLIC_APP_URL` and `CORS_ORIGIN` to `https://settleup.tinkrs.space`. A sleeping free Render instance can delay account loading and Truecaller/OTP callbacks; use an always-on instance or another always-on host before a public launch.
+Use the Supabase session-pooler URL for `DATABASE_URL`, run `npm run db:migrate`, and verify `https://settleup-api-j248.onrender.com/health` after deployment. Set both `PUBLIC_APP_URL` and `CORS_ORIGIN` to `https://settleup.tinkrs.space`. Set `GOOGLE_CLIENT_IDS` to the comma-separated Android, iOS, and web OAuth client IDs; the web ID is required by the public deletion page. A sleeping free Render instance can delay account loading and Truecaller/OTP callbacks; use an always-on instance or another always-on host before a public launch.
 
 ### First store build
 
@@ -52,6 +52,7 @@ The bundle is written to `apps/mobile/android/app/build/outputs/bundle/release/a
 - Publish the operator-completed privacy policy from `docs/PRIVACY.md` at a public HTTPS URL. Add the operator identity, support email, deletion request route, retention periods, subprocessors, and jurisdiction before publishing.
 - Complete Data safety for phone number/account data, user-created financial entries, selected contacts, one-time bill processing, notification tokens, and optional SMS access. Match the answers to actual production providers and retention.
 - Complete App access with a working reviewer account or review instructions, Content rating, Target audience, Ads declaration, Financial features declaration where shown, and the account deletion URL.
+- Use `https://settleup.tinkrs.space/delete-account` as the Google Play account-deletion URL. Add `https://settleup.tinkrs.space` to the Web OAuth client's Authorized JavaScript origins; the page lets an existing user sign in with the Google account already linked to SettleUp and delete the account directly.
 - Add the store icon, feature graphic, phone screenshots, short/full descriptions, support email, and privacy-policy URL.
 - Personal Play developer accounts created after 13 November 2023 must complete a closed test with at least 12 continuously opted-in testers for 14 days, then apply for production access.
 

@@ -88,7 +88,7 @@ function TruecallerMark() {
   );
 }
 
-function GoogleSignInButton({
+export function GoogleSignInButton({
   disabled,
   onSession,
   phone,
@@ -1174,11 +1174,18 @@ export function SettingsScreen() {
             <YStack gap={14}>
               <Heading size={18}>Delete account</Heading>
               <Label muted size={12}>
-                This revokes sessions and links and removes your profile. Shared
-                financial history stays available to the other participants.
-                Your phone remains an unverified identity key so you can verify
-                again and reclaim that shared history later.
+                This permanently removes your profile, phone and Google
+                identities, sessions, private links, preferences, and
+                personal-only records. Shared financial records stay available
+                to their other participants under the name Deleted member.
               </Label>
+              <Button
+                secondary
+                compact
+                onPress={() => router.push("/delete-account" as any)}
+              >
+                What is deleted or retained?
+              </Button>
               <Field
                 label="Type DELETE MY ACCOUNT to confirm"
                 value={deleteText}
