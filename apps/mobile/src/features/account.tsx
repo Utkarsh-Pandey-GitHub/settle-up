@@ -53,10 +53,18 @@ function GoogleSignInButton({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const googleClientIds = {
+    android: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || "unconfigured",
+    ios: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || "unconfigured",
+    web: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "unconfigured",
+  };
+  const googleConfigured = Object.values(googleClientIds).some(
+    (clientId) => clientId !== "unconfigured",
+  );
   const [googleRequest, , promptGoogle] = Google.useIdTokenAuthRequest({
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    androidClientId: googleClientIds.android,
+    iosClientId: googleClientIds.ios,
+    webClientId: googleClientIds.web,
     selectAccount: true,
   });
   return (
@@ -64,7 +72,7 @@ function GoogleSignInButton({
       <Button
         secondary
         loading={busy}
-        disabled={disabled || busy || !googleRequest}
+        disabled={disabled || busy || !googleRequest || !googleConfigured}
         onPress={async () => {
           if (busy) return;
           setBusy(true);
@@ -80,18 +88,15 @@ function GoogleSignInButton({
             if (!idToken)
               throw new Error("Google did not return a verifiable identity.");
             await onSession(
-              await request<Session & { suggestedName?: string }>(
-                endpoint,
-                {
-                  ...(endpoint === "/profile/google"
-                    ? { accountId: useSession.getState().activeId ?? undefined }
-                    : {}),
-                  body: {
-                    idToken,
-                    ...(phone ? { phone: normalizePhone(phone) } : {}),
-                  },
+              await request<Session & { suggestedName?: string }>(endpoint, {
+                ...(endpoint === "/profile/google"
+                  ? { accountId: useSession.getState().activeId ?? undefined }
+                  : {}),
+                body: {
+                  idToken,
+                  ...(phone ? { phone: normalizePhone(phone) } : {}),
                 },
-              ),
+              }),
             );
           } catch (cause) {
             setError(
@@ -320,7 +325,9 @@ export function AuthScreen() {
       // The Truecaller footer is an intentional switch to our phone form.
       if (err?.code === "TRUECALLER_14") {
         setStage("phone");
-        setTruecallerHint("Enter another mobile number, then continue with Google.");
+        setTruecallerHint(
+          "Enter another mobile number, then continue with Google.",
+        );
         return;
       }
       setTruecallerHint(
@@ -397,19 +404,19 @@ export function AuthScreen() {
                 {stage === "phone"
                   ? "Let's get you signed in."
                   : stage === "profile"
-                      ? "A few details about you."
-                      : stage === "permissions"
-                        ? "Choose your permissions."
-                        : `You’re all set, ${name.split(" ")[0]}.`}
+                    ? "A few details about you."
+                    : stage === "permissions"
+                      ? "Choose your permissions."
+                      : `You’re all set, ${name.split(" ")[0]}.`}
               </Heading>
               <Label muted size={13}>
                 {stage === "phone"
                   ? "Sign in or create an account to manage your spending and shared bills."
                   : stage === "profile"
-                      ? "Just the essentials. You can change these later."
-                      : stage === "permissions"
-                        ? "One clear step now. You can change every permission later in phone settings."
-                        : "You can now add transactions, join groups, and track your spending."}
+                    ? "Just the essentials. You can change these later."
+                    : stage === "permissions"
+                      ? "One clear step now. You can change every permission later in phone settings."
+                      : "You can now add transactions, join groups, and track your spending."}
               </Label>
             </YStack>
           </XStack>
@@ -893,10 +900,18 @@ export function SettingsScreen() {
                 Saved contacts
               </Button>
               <XStack gap={8}>
-                <Button secondary style={{ flex: 1 }} onPress={() => router.push("/privacy")}>
+                <Button
+                  secondary
+                  style={{ flex: 1 }}
+                  onPress={() => router.push("/privacy")}
+                >
                   Privacy
                 </Button>
-                <Button secondary style={{ flex: 1 }} onPress={() => router.push("/terms")}>
+                <Button
+                  secondary
+                  style={{ flex: 1 }}
+                  onPress={() => router.push("/terms")}
+                >
                   Terms
                 </Button>
               </XStack>
@@ -1108,54 +1123,60 @@ export function ContactsScreen() {
             .includes(search.trim().toLowerCase()),
         );
         return (
-        <YStack gap={14} maxWidth={760} width="100%" alignSelf="center">
-          <Heading>Saved contacts</Heading>
-          <Notice>
-            These are people who share a group or transaction with you. Add a
-            phone contact while creating a group; SettleUp creates an unverified
-            account for them until they sign in with that number.
-          </Notice>
-          <SearchBar
-            value={search}
-            onChangeText={setSearch}
-            placeholder={`Search ${d.savedContacts.length} saved contacts`}
-          />
-          {!!action.error && <Notice error>{action.error}</Notice>}
-          {contacts.map((p) => (
-            <Card key={p.id} style={{ padding: 12 }}>
-              <XStack alignItems="center" gap={12}>
-                <Avatar name={p.name} avatar={p.avatar} />
-                <YStack flex={1}>
-                  <Label bold>{p.name}</Label>
-                  <Label muted size={12}>
-                    {p.phone ?? "Shared transaction"} ·{" "}
-                    {p.verified ? "Verified" : "Not verified yet"}
-                  </Label>
-                </YStack>
-                <Button
-                  secondary
-                  compact
-                  icon="trash"
-                  disabled={action.busy}
-                  onPress={() =>
-                    void action.run(
-                      () => extra(d.account.id, `/contacts/${p.id}`, undefined, "DELETE"),
-                      `${p.name} removed from saved contacts.`,
-                    )
-                  }
-                >
-                  Remove
-                </Button>
-              </XStack>
-            </Card>
-          ))}
-          {!contacts.length && (
-            <Empty
-              title="No saved contacts yet"
-              detail="Create a group and choose a phone contact to add someone."
+          <YStack gap={14} maxWidth={760} width="100%" alignSelf="center">
+            <Heading>Saved contacts</Heading>
+            <Notice>
+              These are people who share a group or transaction with you. Add a
+              phone contact while creating a group; SettleUp creates an
+              unverified account for them until they sign in with that number.
+            </Notice>
+            <SearchBar
+              value={search}
+              onChangeText={setSearch}
+              placeholder={`Search ${d.savedContacts.length} saved contacts`}
             />
-          )}
-        </YStack>
+            {!!action.error && <Notice error>{action.error}</Notice>}
+            {contacts.map((p) => (
+              <Card key={p.id} style={{ padding: 12 }}>
+                <XStack alignItems="center" gap={12}>
+                  <Avatar name={p.name} avatar={p.avatar} />
+                  <YStack flex={1}>
+                    <Label bold>{p.name}</Label>
+                    <Label muted size={12}>
+                      {p.phone ?? "Shared transaction"} ·{" "}
+                      {p.verified ? "Verified" : "Not verified yet"}
+                    </Label>
+                  </YStack>
+                  <Button
+                    secondary
+                    compact
+                    icon="trash"
+                    disabled={action.busy}
+                    onPress={() =>
+                      void action.run(
+                        () =>
+                          extra(
+                            d.account.id,
+                            `/contacts/${p.id}`,
+                            undefined,
+                            "DELETE",
+                          ),
+                        `${p.name} removed from saved contacts.`,
+                      )
+                    }
+                  >
+                    Remove
+                  </Button>
+                </XStack>
+              </Card>
+            ))}
+            {!contacts.length && (
+              <Empty
+                title="No saved contacts yet"
+                detail="Create a group and choose a phone contact to add someone."
+              />
+            )}
+          </YStack>
         );
       }}
     </DataScreen>

@@ -159,8 +159,18 @@ export async function createApp() {
       return;
     }
     const memberships = await db.ledgerMember.findMany({
-      where: { userId, leftAt: null, ledger: { group: { is: { deletedAt: null } } } },
-      select: { ledger: { select: { members: { where: { leftAt: null }, select: { userId: true } } } } },
+      where: {
+        userId,
+        leftAt: null,
+        ledger: { group: { is: { deletedAt: null } } },
+      },
+      select: {
+        ledger: {
+          select: {
+            members: { where: { leftAt: null }, select: { userId: true } },
+          },
+        },
+      },
     });
     const recipients = new Set([
       userId,
@@ -658,7 +668,11 @@ export async function createApp() {
           403,
         );
       if (actorMembership.group.deletedAt)
-        throw new DomainError("GROUP_DELETED", "This deleted group is read-only.", 409);
+        throw new DomainError(
+          "GROUP_DELETED",
+          "This deleted group is read-only.",
+          409,
+        );
       const memberIds = new Set<string>();
       for (const memberId of b.memberIds) {
         if (memberId === userId) continue;
@@ -835,7 +849,11 @@ export async function createApp() {
           403,
         );
       if (actorMembership.group.deletedAt)
-        throw new DomainError("GROUP_DELETED", "This deleted group is read-only.", 409);
+        throw new DomainError(
+          "GROUP_DELETED",
+          "This deleted group is read-only.",
+          409,
+        );
       if (memberId === userId)
         throw new DomainError(
           "OWNER",
@@ -898,8 +916,15 @@ export async function createApp() {
   });
   app.delete("/groups/:id", async (req) => {
     const { userId } = await actor(req);
-    const groupId = pathId(req);
+    const requestedId = pathId(req);
     return atomic(async (tx) => {
+      // Older clients used the ledger id in this route. Resolve it here so a
+      // group delete remains safe and idempotent across app versions.
+      const ledger = await tx.ledger.findUnique({
+        where: { id: requestedId },
+        select: { groupId: true },
+      });
+      const groupId = ledger?.groupId ?? requestedId;
       const membership = await tx.groupMember.findUnique({
         where: { groupId_userId: { groupId, userId } },
         include: { group: true },
@@ -1206,7 +1231,11 @@ export async function createApp() {
     return atomic(async (tx) => {
       const identity = await tx.phoneIdentity.findUnique({ where: { userId } });
       if (!identity)
-        throw new DomainError("PHONE", "This account has no phone number.", 404);
+        throw new DomainError(
+          "PHONE",
+          "This account has no phone number.",
+          404,
+        );
       if (identity.phone === phone) return { phone };
       if (identity.changedAt)
         throw new DomainError(

@@ -147,7 +147,8 @@ async function enqueueMutation(
       );
     })
     .finally(() => {
-      if (queueChanges.get(accountId) === change) queueChanges.delete(accountId);
+      if (queueChanges.get(accountId) === change)
+        queueChanges.delete(accountId);
     });
   queueChanges.set(accountId, change);
   await change;
@@ -614,7 +615,11 @@ export class DemoRepository implements AppRepository {
         version: transaction.version + 1,
         allocations:
           input.type === "SHARED_EXPENSE"
-            ? splitExpense(input.amountMinor, input.participants, input.splitMethod)
+            ? splitExpense(
+                input.amountMinor,
+                input.participants,
+                input.splitMethod,
+              )
             : [],
       });
       d.activity.unshift({
@@ -960,7 +965,11 @@ function extraDashboardUpdate(
         version: transaction.version + 1,
         allocations:
           input.type === "SHARED_EXPENSE"
-            ? splitExpense(input.amountMinor, input.participants, input.splitMethod)
+            ? splitExpense(
+                input.amountMinor,
+                input.participants,
+                input.splitMethod,
+              )
             : [],
       });
     };
@@ -970,6 +979,16 @@ function extraDashboardUpdate(
       dashboard.transactions.forEach((transaction) => {
         if (selected.has(transaction.id)) transaction.ledgerId = body.ledgerId;
       });
+    };
+  const deletedGroupMatch = path.match(/^\/groups\/([^/]+)$/);
+  if (deletedGroupMatch && method === "DELETE")
+    return (dashboard: Dashboard) => {
+      const ledger = dashboard.ledgers.find(
+        (entry) =>
+          entry.groupId === deletedGroupMatch[1] ||
+          entry.id === deletedGroupMatch[1],
+      );
+      if (ledger) ledger.deleted = true;
     };
   if (path === "/profile" && method === "PATCH")
     return (dashboard: Dashboard) => {
