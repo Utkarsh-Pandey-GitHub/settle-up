@@ -32,7 +32,7 @@ Do not put `JWT_SECRET`, `OTP_PEPPER`, database credentials, Supabase secret/ser
 
 Before inviting Play testers, rotate every credential that has ever been pasted into chat or another public channel, including the database password, Supabase secret key, Stytch secret, OpenRouter key, `JWT_SECRET`, and `OTP_PEPPER`. Update Render with the rotated values, add `OPENROUTER_API_KEY` and `BILL_VISION_MODEL=openrouter/free`, and set `NODE_ENV=production`. Keep secrets only in Render's encrypted environment settings.
 
-Use the Supabase session-pooler URL for `DATABASE_URL`, run `npm run db:migrate`, and verify `https://settleup-api-j248.onrender.com/health` after deployment. Set `PUBLIC_APP_URL` and `CORS_ORIGIN` to the deployed HTTPS web origin rather than localhost. A sleeping free Render instance can delay account loading and Truecaller/OTP callbacks; use an always-on instance or another always-on host before a public launch.
+Use the Supabase session-pooler URL for `DATABASE_URL`, run `npm run db:migrate`, and verify `https://settleup-api-j248.onrender.com/health` after deployment. Set both `PUBLIC_APP_URL` and `CORS_ORIGIN` to `https://settleup.tinkrs.space`. A sleeping free Render instance can delay account loading and Truecaller/OTP callbacks; use an always-on instance or another always-on host before a public launch.
 
 ### First store build
 

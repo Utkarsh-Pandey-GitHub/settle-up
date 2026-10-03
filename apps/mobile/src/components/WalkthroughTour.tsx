@@ -13,9 +13,11 @@ export const TourMeasureContext = createContext<(rect: TourRect) => void>(
 export function TourGroup({
   step,
   children,
+  padding = 0,
 }: {
   step: number;
   children: React.ReactNode;
+  padding?: number;
 }) {
   const active = useContext(TourStepContext) === step;
   const report = useContext(TourMeasureContext);
@@ -23,32 +25,28 @@ export function TourGroup({
   const { width, height } = useWindowDimensions();
   const measure = () => {
     if (active)
-      ref.current?.measureInWindow((x, y, width, height) =>
-        report({ x, y, width, height }),
+      ref.current?.measureInWindow((x, y, measuredWidth, measuredHeight) =>
+        report({
+          x: Math.max(0, x - padding),
+          y: Math.max(0, y - padding),
+          width: measuredWidth + padding * 2,
+          height: measuredHeight + padding * 2,
+        }),
       );
   };
   useEffect(() => {
-    const frame = requestAnimationFrame(measure);
-    return () => cancelAnimationFrame(frame);
-  }, [active, width, height]);
+    let secondFrame = 0;
+    const frame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(measure);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (secondFrame) cancelAnimationFrame(secondFrame);
+    };
+  }, [active, width, height, padding]);
   return (
     <View ref={ref} collapsable={false} onLayout={measure}>
       {children}
-      {active && (
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            borderWidth: 3,
-            borderColor: "#F5F5EF",
-            borderRadius: 18,
-          }}
-        />
-      )}
     </View>
   );
 }
@@ -133,7 +131,9 @@ export function WalkthroughTour({
   const y = Math.max(0, rect?.y ?? 0);
   const right = Math.min(width, x + (rect?.width ?? 0));
   const bottom = Math.min(height, y + (rect?.height ?? 0));
-  const above = index === 1 || (index !== 2 && y > height / 2);
+  const roomAbove = y - topInset;
+  const roomBelow = height - bottom - bottomInset;
+  const above = index === 1 || (roomBelow < 270 && roomAbove > roomBelow);
   const edgeGap = 7;
   const rows =
     desktop && index === 1
@@ -204,7 +204,7 @@ export function WalkthroughTour({
               ? { bottom: Math.max(bottomInset + 8, height - y + edgeGap) }
               : {
                   top: Math.min(
-                    height - bottomInset - 210,
+                    height - bottomInset - 300,
                     Math.max(topInset + 8, bottom + edgeGap),
                   ),
                 }),

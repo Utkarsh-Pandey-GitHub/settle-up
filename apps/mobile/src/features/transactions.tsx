@@ -1,7 +1,13 @@
 import { chooseContact, chooseContacts } from "../services/device";
 import { DateTime } from "luxon";
 import React, { useEffect, useRef, useState } from "react";
-import { View, Alert, Modal, Pressable, ScrollView } from "react-native";
+import {
+  View,
+  Modal,
+  Pressable,
+  ScrollView,
+  useWindowDimensions,
+} from "react-native";
 import { XStack, YStack } from "tamagui";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useForm, Controller } from "react-hook-form";
@@ -36,6 +42,7 @@ import {
   useColors,
   SearchPicker,
   SearchBar,
+  ActionDialog,
   type IconName,
 } from "../components/ui";
 const expenseForm = z.object({
@@ -63,6 +70,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     }>(),
     router = useRouter(),
     action = useAction();
+  const { width } = useWindowDimensions();
   const editing = params.edit
     ? d.transactions.find((transaction) => transaction.id === params.edit)
     : undefined;
@@ -88,6 +96,10 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     [picker, setPicker] = useState<"ledger" | "participants" | "tags" | null>(
       null,
     ),
+    [infoDialog, setInfoDialog] = useState<{
+      title: string;
+      detail: string;
+    } | null>(null),
     [key, setKey] = useState(uuid());
   const [photo, setPhoto] = useState<BillPhoto | null>(null);
   const [lines, setLines] = useState<BillLine[]>(
@@ -109,10 +121,13 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     resolver: zodResolver(expenseForm),
     defaultValues: {
       title: params.title ?? editing?.title ?? "",
-      amount: params.amount ?? (editing ? String(editing.amountMinor / 100) : ""),
+      amount:
+        params.amount ?? (editing ? String(editing.amountMinor / 100) : ""),
       notes: editing?.notes ?? "",
       date: editing
-        ? DateTime.fromISO(editing.occurredAt).setZone("Asia/Kolkata").toFormat("yyyy-MM-dd HH:mm")
+        ? DateTime.fromISO(editing.occurredAt)
+            .setZone("Asia/Kolkata")
+            .toFormat("yyyy-MM-dd HH:mm")
         : DateTime.now().setZone("Asia/Kolkata").toFormat("yyyy-MM-dd HH:mm"),
     },
   });
@@ -140,17 +155,18 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
           group.members.some((member) => member.id === contactId),
         );
     if (!target) {
-      Alert.alert(
-        "No shared group yet",
-        "Add this contact as a member of a group before splitting a transaction with them.",
-      );
+      setInfoDialog({
+        title: "No shared group yet",
+        detail:
+          "Add this contact as a member of a group before splitting a transaction with them.",
+      });
       return;
     }
     if (ledger && ledger.id !== target.id) {
-      Alert.alert(
-        "Choose their group",
-        `${d.savedContacts.find((contact) => contact.id === contactId)?.name ?? "This contact"} is not a member of ${ledger.name}.`,
-      );
+      setInfoDialog({
+        title: "Choose their group",
+        detail: `${d.savedContacts.find((contact) => contact.id === contactId)?.name ?? "This contact"} is not a member of ${ledger.name}.`,
+      });
       return;
     }
     if (!ledger) setLedgerId(target.id);
@@ -183,67 +199,72 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   const submit = handleSubmit(async (values) => {
     if (saving.current || scanning) return;
     saving.current = true;
-    const ok = await action.run(async () => {
-      const amountMinor = parseMoney(values.amount, d.account.currency);
-      const localDate = DateTime.fromFormat(values.date, "yyyy-MM-dd HH:mm", {
-        zone: "Asia/Kolkata",
-      });
-      if (!localDate.isValid)
-        throw new Error(
-          "Use a valid date and time, for example 2026-09-10 18:30.",
-        );
-      const occurredAt = localDate.toUTC().toISO()!;
-      const input: CreateTransaction = {
-        idempotencyKey: key,
-        title: values.title,
-        amountMinor,
-        currency: d.account.currency,
-        type,
-        status: params.pending === "1" ? "PENDING" : "SETTLED",
-        occurredAt,
-        notes: values.notes,
-        icon: transactionIcon,
-        ledgerId: ledgerId || undefined,
-        tagIds,
-        items: isExpense
-          ? lines.map((line) => ({
-              name: line.name,
-              quantity: Number(line.quantity),
-              amountMinor:
-                parseMoney(
-                  line.amount.replace(/^-/, ""),
-                  d.account.currency,
-                  true,
-                ) * (line.amount.startsWith("-") ? -1 : 1),
-            }))
-          : undefined,
-        splitMethod: method,
-        participants:
-          type === "SHARED_EXPENSE"
-            ? splitMembers.map((userId) => ({
-                userId,
-                value:
-                  method === "EXACT"
-                    ? parseMoney(
-                        weights[userId] || "0",
-                        d.account.currency,
-                        true,
-                      )
-                    : method === "PERCENTAGE"
-                      ? Math.round(Number(weights[userId] || 0) * 100)
-                      : Number(weights[userId] || 1),
+    const ok = await action.run(
+      async () => {
+        const amountMinor = parseMoney(values.amount, d.account.currency);
+        const localDate = DateTime.fromFormat(values.date, "yyyy-MM-dd HH:mm", {
+          zone: "Asia/Kolkata",
+        });
+        if (!localDate.isValid)
+          throw new Error(
+            "Use a valid date and time, for example 2026-09-10 18:30.",
+          );
+        const occurredAt = localDate.toUTC().toISO()!;
+        const input: CreateTransaction = {
+          idempotencyKey: key,
+          title: values.title,
+          amountMinor,
+          currency: d.account.currency,
+          type,
+          status: params.pending === "1" ? "PENDING" : "SETTLED",
+          occurredAt,
+          notes: values.notes,
+          icon: transactionIcon,
+          ledgerId: ledgerId || undefined,
+          tagIds,
+          items: isExpense
+            ? lines.map((line) => ({
+                name: line.name,
+                quantity: Number(line.quantity),
+                amountMinor:
+                  parseMoney(
+                    line.amount.replace(/^-/, ""),
+                    d.account.currency,
+                    true,
+                  ) * (line.amount.startsWith("-") ? -1 : 1),
               }))
-            : [],
-      };
-      if (editing)
-        await extra(
-          d.account.id,
-          `/transactions/${editing.id}`,
-          { version: editing.version, transaction: input },
-          "PATCH",
-        );
-      else await repository.create(d.account.id, input);
-    }, editing ? "Transaction updated." : "Expense saved. One less thing to keep in your head.");
+            : undefined,
+          splitMethod: method,
+          participants:
+            type === "SHARED_EXPENSE"
+              ? splitMembers.map((userId) => ({
+                  userId,
+                  value:
+                    method === "EXACT"
+                      ? parseMoney(
+                          weights[userId] || "0",
+                          d.account.currency,
+                          true,
+                        )
+                      : method === "PERCENTAGE"
+                        ? Math.round(Number(weights[userId] || 0) * 100)
+                        : Number(weights[userId] || 1),
+                }))
+              : [],
+        };
+        if (editing)
+          await extra(
+            d.account.id,
+            `/transactions/${editing.id}`,
+            { version: editing.version, transaction: input },
+            "PATCH",
+          );
+        else await repository.create(d.account.id, input);
+      },
+      editing
+        ? "Transaction updated."
+        : "Expense saved. One less thing to keep in your head.",
+    );
     saving.current = false;
     if (ok) {
       setKey(uuid());
@@ -258,7 +279,12 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
         style={{ opacity: action.busy ? 0.72 : 1 }}
       >
         <YStack gap={14}>
-          <XStack alignItems="center" justifyContent="space-between" gap={12}>
+          <XStack
+            alignItems="center"
+            justifyContent="space-between"
+            gap={12}
+            flexWrap={width < 340 ? "wrap" : "nowrap"}
+          >
             <Label muted flex={1}>
               Add the details or scan a bill.
             </Label>
@@ -421,8 +447,16 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   ))}
                 </XStack>
               </YStack>
-              <XStack gap={10} alignItems="flex-end">
-                <YStack flex={1} gap={6}>
+              <XStack
+                gap={10}
+                alignItems="flex-end"
+                flexDirection={width < 330 ? "column" : "row"}
+              >
+                <YStack
+                  flex={1}
+                  width={width < 330 ? "100%" : undefined}
+                  gap={6}
+                >
                   <Label size={13} bold>
                     Group
                   </Label>
@@ -434,10 +468,15 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                       if (!params.ledger) setPicker("ledger");
                     }}
                   >
-                    {ledger?.name ?? "Optional"}{params.ledger ? " · fixed" : ""}
+                    {ledger?.name ?? "Optional"}
+                    {params.ledger ? " · fixed" : ""}
                   </Button>
                 </YStack>
-                <YStack flex={1} gap={6}>
+                <YStack
+                  flex={1}
+                  width={width < 330 ? "100%" : undefined}
+                  gap={6}
+                >
                   <Label size={13} bold>
                     Tags
                   </Label>
@@ -479,10 +518,11 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                             digits,
                         );
                         if (!saved) {
-                          Alert.alert(
-                            "Add them to a group first",
-                            "Create a group with this phone contact, then you can split transactions together.",
-                          );
+                          setInfoDialog({
+                            title: "Add them to a group first",
+                            detail:
+                              "Create a group with this phone contact, then you can split transactions together.",
+                          });
                           return;
                         }
                         addFriend(saved.id);
@@ -615,11 +655,13 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             title="Groups"
             options={[
               { id: "__personal", label: "No group" },
-              ...d.ledgers.filter((entry) => !entry.deleted).map((entry) => ({
-                id: entry.id,
-                label: entry.name,
-                detail: `${entry.members.length} members · ${entry.currency}`,
-              })),
+              ...d.ledgers
+                .filter((entry) => !entry.deleted)
+                .map((entry) => ({
+                  id: entry.id,
+                  label: entry.name,
+                  detail: `${entry.members.length} members · ${entry.currency}`,
+                })),
             ]}
             selected={[ledgerId || "__personal"]}
             onSelect={(id) => setLedgerId(id === "__personal" ? "" : id)}
@@ -667,6 +709,19 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             onClear={() => setTagIds([])}
             onClose={() => setPicker(null)}
           />
+          <ActionDialog
+            visible={!!infoDialog}
+            icon="groups"
+            title={infoDialog?.title ?? "Contact unavailable"}
+            detail={infoDialog?.detail ?? "Choose another contact."}
+            onClose={() => setInfoDialog(null)}
+            actions={[
+              {
+                label: "Got it",
+                onPress: () => setInfoDialog(null),
+              },
+            ]}
+          />
         </YStack>
       </View>
     </YStack>
@@ -689,7 +744,13 @@ export function TransactionScreen() {
           );
         const perform = () =>
           action.run(() =>
-            repository.action(d.account.id, id, "complete", t.version, "completed"),
+            repository.action(
+              d.account.id,
+              id,
+              "complete",
+              t.version,
+              "completed",
+            ),
           );
         return (
           <YStack maxWidth={760} width="100%" alignSelf="center" gap={22}>
@@ -1053,7 +1114,8 @@ export function GroupsScreen() {
                   compact
                   onPress={() => setSavedContactsOpen(true)}
                 >
-                  Choose saved contacts{members.length ? ` · ${members.length}` : ""}
+                  Choose saved contacts
+                  {members.length ? ` · ${members.length}` : ""}
                 </Button>
                 <XStack gap={8} flexWrap="wrap">
                   {contacts.map((contact) => (
@@ -1111,7 +1173,9 @@ export function GroupsScreen() {
             selected={contacts.map((contact) => contact.phone)}
             multiple
             onSelect={(phone) => {
-              const picked = phoneContacts.find((contact) => contact.phone === phone);
+              const picked = phoneContacts.find(
+                (contact) => contact.phone === phone,
+              );
               if (!picked) return;
               setContacts((current) =>
                 current.some((contact) => contact.phone === phone)
@@ -1148,76 +1212,83 @@ export function GroupsScreen() {
           {d.ledgers
             .filter((ledger) => !!ledger.deleted === showDeleted)
             .map((l, index) => (
-            <Pressable
-              key={l.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Open ledger ${l.name}`}
-              onPress={() => router.push(`/group/${l.id}` as any)}
-            >
-              <Card
-                style={{
-                  padding: 10,
-                  borderLeftWidth: 4,
-                  borderLeftColor: ["#6652A3", "#9981BF", "#B9A7D5"][index % 3],
-                  backgroundColor: c.card,
-                }}
+              <Pressable
+                key={l.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ledger ${l.name}`}
+                onPress={() => router.push(`/group/${l.id}` as any)}
               >
-                <XStack gap={10} alignItems="center">
-                  <View
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 12,
-                      backgroundColor: ["#F0ECF8", "#EEE8F8", "#F2EEF9"][
-                        index % 3
-                      ],
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Icon
-                      name={(["plane", "home", "coffee"] as const)[index % 3]}
-                      color="#555269"
-                      size={20}
-                    />
-                  </View>
-                  <YStack flex={1} gap={3}>
-                    <XStack justifyContent="space-between" alignItems="center">
-                      <Heading size={16}>{l.name}</Heading>
-                      <Label muted size={10}>
-                        {l.currency}
-                      </Label>
-                    </XStack>
-                    <Label muted size={11} numberOfLines={1}>
-                      {l.description}
-                    </Label>
-                    <XStack gap={-4} alignItems="center">
-                      {l.members.slice(0, 5).map((m) => (
-                        <Avatar
-                          key={m.id}
-                          name={m.name}
-                          avatar={m.avatar}
-                          size={27}
-                        />
-                      ))}
-                      {l.members.length > 5 && (
-                        <Label muted size={12} marginLeft={8}>
-                          +{l.members.length - 5} more
+                <Card
+                  style={{
+                    padding: 10,
+                    borderLeftWidth: 4,
+                    borderLeftColor: ["#6652A3", "#9981BF", "#B9A7D5"][
+                      index % 3
+                    ],
+                    backgroundColor: c.card,
+                  }}
+                >
+                  <XStack gap={10} alignItems="center">
+                    <View
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 12,
+                        backgroundColor: ["#F0ECF8", "#EEE8F8", "#F2EEF9"][
+                          index % 3
+                        ],
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Icon
+                        name={(["plane", "home", "coffee"] as const)[index % 3]}
+                        color="#555269"
+                        size={20}
+                      />
+                    </View>
+                    <YStack flex={1} gap={3}>
+                      <XStack
+                        justifyContent="space-between"
+                        alignItems="center"
+                      >
+                        <Heading size={16}>{l.name}</Heading>
+                        <Label muted size={10}>
+                          {l.currency}
                         </Label>
-                      )}
-                      <Label muted size={10} marginLeft={8}>
-                        {l.members.length} members
+                      </XStack>
+                      <Label muted size={11} numberOfLines={1}>
+                        {l.description}
                       </Label>
-                    </XStack>
-                  </YStack>
-                  <Icon name="chevron" size={15} color={c.muted} />
-                </XStack>
-              </Card>
-            </Pressable>
-          ))}
+                      <XStack gap={-4} alignItems="center">
+                        {l.members.slice(0, 5).map((m) => (
+                          <Avatar
+                            key={m.id}
+                            name={m.name}
+                            avatar={m.avatar}
+                            size={27}
+                          />
+                        ))}
+                        {l.members.length > 5 && (
+                          <Label muted size={12} marginLeft={8}>
+                            +{l.members.length - 5} more
+                          </Label>
+                        )}
+                        <Label muted size={10} marginLeft={8}>
+                          {l.members.length} members
+                        </Label>
+                      </XStack>
+                    </YStack>
+                    <Icon name="chevron" size={15} color={c.muted} />
+                  </XStack>
+                </Card>
+              </Pressable>
+            ))}
           {!d.ledgers.some((ledger) => !!ledger.deleted === showDeleted) && (
             <Empty
-              title={showDeleted ? "No deleted groups" : "Start something together"}
+              title={
+                showDeleted ? "No deleted groups" : "Start something together"
+              }
               detail={
                 showDeleted
                   ? "Groups you delete remain safely available as read-only history."
@@ -1238,6 +1309,7 @@ export function GroupScreen() {
     router = useRouter(),
     c = useColors(),
     action = useAction(),
+    { width, height } = useWindowDimensions(),
     [simplified, setSimplified] = useState(false),
     [view, setView] = useState<"records" | "balances">("records"),
     [membersOpen, setMembersOpen] = useState(false),
@@ -1247,7 +1319,12 @@ export function GroupScreen() {
     >([]),
     [pendingContacts, setPendingContacts] = useState<string[]>([]),
     [memberContactsOpen, setMemberContactsOpen] = useState(false),
-    [memberSearch, setMemberSearch] = useState("");
+    [memberSearch, setMemberSearch] = useState(""),
+    [deleteGroupOpen, setDeleteGroupOpen] = useState(false),
+    [removeMember, setRemoveMember] = useState<{
+      id: string;
+      name: string;
+    } | null>(null);
   return (
     <DataScreen>
       {(d) => {
@@ -1265,19 +1342,22 @@ export function GroupScreen() {
           : debts
               .filter((o) => o.remainingMinor > 0)
               .map((o) => ({ ...o, amountMinor: o.remainingMinor }));
-        const personalByMember = [...d.transactions
-          .filter(
-            (transaction) =>
-              transaction.ledgerId === id &&
-              transaction.type === "PERSONAL_EXPENSE",
-          )
-          .reduce((totals, transaction) => {
-            totals.set(
-              transaction.sourceId,
-              (totals.get(transaction.sourceId) ?? 0) + transaction.amountMinor,
-            );
-            return totals;
-          }, new Map<string, number>())];
+        const personalByMember = [
+          ...d.transactions
+            .filter(
+              (transaction) =>
+                transaction.ledgerId === id &&
+                transaction.type === "PERSONAL_EXPENSE",
+            )
+            .reduce((totals, transaction) => {
+              totals.set(
+                transaction.sourceId,
+                (totals.get(transaction.sourceId) ?? 0) +
+                  transaction.amountMinor,
+              );
+              return totals;
+            }, new Map<string, number>()),
+        ];
         const name = (id: string) =>
           l.members.find((m) => m.id === id)?.name ?? "Member";
         const currentMember = l.members.find(
@@ -1296,9 +1376,9 @@ export function GroupScreen() {
               borderRadius={20}
               backgroundColor={c.soft}
             >
-              <XStack gap={12} alignItems="center">
+              <XStack gap={width < 360 ? 8 : 12} alignItems="center">
                 <Icon name="groups" size={32} color="#7770A4" />
-                <YStack flex={1} gap={5} alignItems="flex-start">
+                <YStack flex={1} minWidth={72} gap={5} alignItems="flex-start">
                   <Heading>{l.name}</Heading>
                   <Label muted size={12}>
                     {l.description} · {l.currency}
@@ -1309,7 +1389,7 @@ export function GroupScreen() {
                   style={{
                     borderRadius: 13,
                     backgroundColor: c.card,
-                    paddingHorizontal: 11,
+                    paddingHorizontal: width < 360 ? 8 : 11,
                     paddingVertical: 9,
                     flexDirection: "row",
                     gap: 6,
@@ -1318,51 +1398,16 @@ export function GroupScreen() {
                 >
                   <Icon name="groups" size={15} color="#7770A4" />
                   <Label bold size={12}>
-                    {l.members.length} members
+                    {width < 360
+                      ? l.members.length
+                      : `${l.members.length} members`}
                   </Label>
                 </Pressable>
                 {currentMember?.role === "OWNER" && !l.deleted && (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`Delete ${l.name}`}
-                    onPress={() =>
-                      Alert.alert(
-                        "Delete this group?",
-                        "Choose whether its transactions should remain in your history.",
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          {
-                            text: "Keep transactions",
-                            onPress: () =>
-                              void action.run(
-                                () =>
-                                  extra(
-                                    d.account.id,
-                                    `/groups/${l.groupId}`,
-                                    { deleteTransactions: false },
-                                    "DELETE",
-                                  ),
-                                "Group deleted. Transactions were kept.",
-                              ),
-                          },
-                          {
-                            text: "Delete transactions too",
-                            style: "destructive",
-                            onPress: () =>
-                              void action.run(
-                                () =>
-                                  extra(
-                                    d.account.id,
-                                    `/groups/${l.groupId}`,
-                                    { deleteTransactions: true },
-                                    "DELETE",
-                                  ),
-                                "Group and its transactions were deleted.",
-                              ),
-                          },
-                        ],
-                      )
-                    }
+                    onPress={() => setDeleteGroupOpen(true)}
                     style={{ padding: 9 }}
                   >
                     <Icon name="trash" size={17} color={c.muted} />
@@ -1465,7 +1510,8 @@ export function GroupScreen() {
                     <YStack gap={8} paddingTop={14}>
                       <Heading size={16}>Personal expenses by member</Heading>
                       <Label muted size={11}>
-                        These records have no split and do not affect who owes who.
+                        These records have no split and do not affect who owes
+                        who.
                       </Label>
                       {personalByMember.map(([memberId, amountMinor]) => (
                         <XStack
@@ -1483,34 +1529,34 @@ export function GroupScreen() {
               </YStack>
             )}
             {!l.deleted && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add transaction"
-              onPress={() =>
-                router.push({ pathname: "/add", params: { ledger: id } })
-              }
-              style={{
-                position: "absolute",
-                right: 2,
-                bottom: 4,
-                height: 54,
-                paddingHorizontal: 18,
-                borderRadius: 18,
-                backgroundColor: "#59458F",
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                shadowColor: "#26214A",
-                shadowOpacity: 0.2,
-                shadowRadius: 12,
-                elevation: 8,
-              }}
-            >
-              <Icon name="plus" color="#FFFFFF" size={20} />
-              <Label color="#FFFFFF" bold>
-                Add transaction
-              </Label>
-            </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add transaction"
+                onPress={() =>
+                  router.push({ pathname: "/add", params: { ledger: id } })
+                }
+                style={{
+                  position: "absolute",
+                  right: 2,
+                  bottom: 4,
+                  height: 54,
+                  paddingHorizontal: 18,
+                  borderRadius: 18,
+                  backgroundColor: "#59458F",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  shadowColor: "#26214A",
+                  shadowOpacity: 0.2,
+                  shadowRadius: 12,
+                  elevation: 8,
+                }}
+              >
+                <Icon name="plus" color="#FFFFFF" size={20} />
+                <Label color="#FFFFFF" bold>
+                  Add transaction
+                </Label>
+              </Pressable>
             )}
             <Modal
               visible={membersOpen}
@@ -1536,12 +1582,17 @@ export function GroupScreen() {
                     width: "100%",
                     maxWidth: 520,
                     alignSelf: "center",
-                    maxHeight: "72%",
-                    height: 520,
+                    maxHeight: height - 48,
+                    height: Math.min(520, height - 48),
                   }}
                 >
                   <YStack gap={14}>
-                    <XStack justifyContent="space-between" alignItems="center">
+                    <XStack
+                      justifyContent="space-between"
+                      alignItems="center"
+                      gap={8}
+                      flexWrap="wrap"
+                    >
                       <Heading size={20}>Members</Heading>
                       <XStack gap={7}>
                         {canManageMembers && !l.deleted && (
@@ -1600,37 +1651,18 @@ export function GroupScreen() {
                               {m.role.toLowerCase()}
                             </Label>
                           </YStack>
-                          {canManageMembers && !l.deleted &&
+                          {canManageMembers &&
+                            !l.deleted &&
                             m.id !== d.account.id &&
                             m.role !== "OWNER" && (
                               <Button
                                 secondary
                                 compact
                                 disabled={action.busy}
-                                onPress={() =>
-                                  Alert.alert(
-                                    "Remove member?",
-                                    `${m.name} will lose access. Past records stay visible.`,
-                                    [
-                                      { text: "Cancel", style: "cancel" },
-                                      {
-                                        text: "Remove",
-                                        style: "destructive",
-                                        onPress: () =>
-                                          void action.run(
-                                            () =>
-                                              extra(
-                                                d.account.id,
-                                                `/groups/${l.groupId}/members/${m.id}`,
-                                                undefined,
-                                                "DELETE",
-                                              ),
-                                            `${m.name} removed from the group`,
-                                          ),
-                                      },
-                                    ],
-                                  )
-                                }
+                                onPress={() => {
+                                  setMembersOpen(false);
+                                  setRemoveMember({ id: m.id, name: m.name });
+                                }}
                               >
                                 Remove
                               </Button>
@@ -1676,6 +1708,96 @@ export function GroupScreen() {
                     `${selectedContacts.length} member${selectedContacts.length === 1 ? "" : "s"} added`,
                   );
               }}
+            />
+            <ActionDialog
+              visible={deleteGroupOpen}
+              icon="trash"
+              title="Delete this group?"
+              detail="Choose whether its transactions should remain in your history. The deleted group becomes read-only and hidden."
+              onClose={() => setDeleteGroupOpen(false)}
+              actions={[
+                {
+                  label: "Cancel",
+                  secondary: true,
+                  onPress: () => setDeleteGroupOpen(false),
+                },
+                {
+                  label: "Keep transactions",
+                  secondary: true,
+                  loading: action.busy,
+                  onPress: () => {
+                    setDeleteGroupOpen(false);
+                    void action.run(
+                      () =>
+                        extra(
+                          d.account.id,
+                          `/groups/${l.groupId}`,
+                          { deleteTransactions: false },
+                          "DELETE",
+                        ),
+                      "Group deleted. Transactions were kept.",
+                    );
+                  },
+                },
+                {
+                  label: "Delete all",
+                  destructive: true,
+                  loading: action.busy,
+                  onPress: () => {
+                    setDeleteGroupOpen(false);
+                    void action.run(
+                      () =>
+                        extra(
+                          d.account.id,
+                          `/groups/${l.groupId}`,
+                          { deleteTransactions: true },
+                          "DELETE",
+                        ),
+                      "Group and its transactions were deleted.",
+                    );
+                  },
+                },
+              ]}
+            />
+            <ActionDialog
+              visible={!!removeMember}
+              icon="groups"
+              title="Remove member?"
+              detail={`${removeMember?.name ?? "This member"} will lose access. Past records stay visible.`}
+              onClose={() => {
+                setRemoveMember(null);
+                setMembersOpen(true);
+              }}
+              actions={[
+                {
+                  label: "Cancel",
+                  secondary: true,
+                  onPress: () => {
+                    setRemoveMember(null);
+                    setMembersOpen(true);
+                  },
+                },
+                {
+                  label: "Remove",
+                  destructive: true,
+                  loading: action.busy,
+                  onPress: () => {
+                    const member = removeMember;
+                    setRemoveMember(null);
+                    if (!member) return;
+                    void action.run(
+                      () =>
+                        extra(
+                          d.account.id,
+                          `/groups/${l.groupId}/members/${member.id}`,
+                          undefined,
+                          "DELETE",
+                        ),
+                      `${member.name} removed from the group`,
+                    );
+                  },
+                },
+              ]}
             />
           </YStack>
         );

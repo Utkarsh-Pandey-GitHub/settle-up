@@ -146,7 +146,7 @@ test("bill photo and itemisation persist, with scan centred in the phone tray", 
   page,
 }, info) => {
   await page.goto("/add");
-  if (info.project.name === "phone") {
+  if (info.project.name.includes("phone")) {
     const scan = page.getByRole("button", { name: "Scan & pay", exact: true });
     const box = await scan.boundingBox();
     expect(

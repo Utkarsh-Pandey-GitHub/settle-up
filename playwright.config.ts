@@ -20,6 +20,14 @@ export default defineConfig({
       name: "phone",
       use: { ...devices["iPhone 13"], defaultBrowserType: "chromium" },
     },
+    {
+      name: "compact-phone",
+      use: {
+        ...devices["iPhone 13"],
+        defaultBrowserType: "chromium",
+        viewport: { width: 320, height: 568 },
+      },
+    },
   ],
   webServer: {
     command: "npm run web -w @settleup/mobile -- --clear",

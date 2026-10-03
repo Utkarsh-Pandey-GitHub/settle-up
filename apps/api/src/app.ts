@@ -60,7 +60,10 @@ export async function createApp() {
     },
   });
   await app.register(cors, {
-    origin: process.env.CORS_ORIGIN?.split(",") ?? ["http://localhost:8081"],
+    origin: process.env.CORS_ORIGIN?.split(",") ?? [
+      "https://settleup.tinkrs.space",
+      "http://localhost:8081",
+    ],
   });
   await app.register(helmet);
   await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
@@ -290,7 +293,7 @@ export async function createApp() {
               authorization: `Bearer ${apiKey}`,
               "content-type": "application/json",
               "http-referer":
-                process.env.PUBLIC_APP_URL || "https://settleup.app",
+                process.env.PUBLIC_APP_URL || "https://settleup.tinkrs.space",
               "x-title": "SettleUp bill scanner",
             },
             body: JSON.stringify({
@@ -954,7 +957,9 @@ export async function createApp() {
         await tx.group.update({ where: { id: groupId }, data: { deletedAt } });
       if (transactions.length)
         await tx.transaction.updateMany({
-          where: { id: { in: transactions.map((transaction) => transaction.id) } },
+          where: {
+            id: { in: transactions.map((transaction) => transaction.id) },
+          },
           data: { deletedAt, version: { increment: 1 } },
         });
       for (const ledger of ledgers)

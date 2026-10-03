@@ -1,5 +1,8 @@
 import { Platform, PermissionsAndroid, Linking } from "react-native";
-import { requireOptionalNativeModule } from "expo-modules-core";
+import {
+  requireOptionalNativeModule,
+  type EventSubscription,
+} from "expo-modules-core";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import * as Contacts from "expo-contacts";
@@ -19,16 +22,23 @@ export type SmsDecision = {
   title?: string;
   amountMinor?: number;
 };
+export type DeviceSmsMessage = {
+  id: string;
+  body: string;
+  timestamp: number;
+};
+type TransactionSmsNative = {
+  readRange(start: number, end: number): Promise<DeviceSmsMessage[]>;
+  addListener(
+    event: "onFinancialSms",
+    listener: (message: DeviceSmsMessage) => void,
+  ): EventSubscription;
+};
 export class AndroidSmsProvider implements TransactionImportProvider {
   constructor(private accountId: string) {}
   private native =
     Platform.OS === "android"
-      ? requireOptionalNativeModule<{
-          readRange(
-            start: number,
-            end: number,
-          ): Promise<{ id: string; body: string; timestamp: number }[]>;
-        }>("TransactionSms")
+      ? requireOptionalNativeModule<TransactionSmsNative>("TransactionSms")
       : null;
   available() {
     return Platform.OS === "android" && !!this.native;
@@ -83,28 +93,45 @@ export class AndroidSmsProvider implements TransactionImportProvider {
   handled() {
     return this.records();
   }
-  async review(range?: { from: string; through: string }) {
-    if (!this.native)
-      throw new Error("SMS review requires an Android development build.");
+  subscribe(listener: (message: DeviceSmsMessage) => void): EventSubscription {
+    return (
+      this.native?.addListener("onFinancialSms", listener) ?? {
+        remove() {},
+      }
+    );
+  }
+  private async suggestion(message: DeviceSmsMessage) {
+    const parsed = parseExpenseSms(message.body, message.timestamp);
+    if (!parsed) return null;
     const key = `settleup.sms.salt.${this.accountId}`;
     let salt = await SecureStore.getItemAsync(key);
     if (!salt) {
       salt = Crypto.randomUUID();
       await SecureStore.setItemAsync(key, salt);
     }
+    const fingerprint = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      `${salt}:${message.id}:${message.timestamp}:${message.body}`,
+    );
+    return { ...parsed, fingerprint } satisfies ImportSuggestion;
+  }
+  async reviewMessage(message: DeviceSmsMessage) {
+    const suggestion = await this.suggestion(message);
+    if (!suggestion) return null;
+    const handled = await this.handled();
+    return handled[suggestion.fingerprint] ? null : suggestion;
+  }
+  async review(range?: { from: string; through: string }) {
+    if (!this.native)
+      throw new Error("SMS review requires an Android development build.");
     const handled = await this.handled();
     const bounds = smsRange(range?.from, range?.through);
     const messages = await this.native.readRange(bounds.start, bounds.end);
     const suggestions: ImportSuggestion[] = [];
     for (const message of messages) {
-      const parsed = parseExpenseSms(message.body, message.timestamp);
-      if (!parsed) continue;
-      const fingerprint = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        `${salt}:${message.id}:${message.timestamp}:${message.body}`,
-      );
-      if (range || !handled[fingerprint])
-        suggestions.push({ ...parsed, fingerprint });
+      const suggestion = await this.suggestion(message);
+      if (suggestion && (range || !handled[suggestion.fingerprint]))
+        suggestions.push(suggestion);
     }
     return suggestions;
   }
@@ -206,8 +233,7 @@ export async function chooseContacts() {
       }));
   }
   const permission = await Contacts.requestPermissionsAsync();
-  if (!permission.granted)
-    throw new Error("Contact permission was declined.");
+  if (!permission.granted) throw new Error("Contact permission was declined.");
   const result = await Contacts.getContactsAsync({
     fields: [Contacts.Fields.PhoneNumbers],
     sort: Contacts.SortTypes.FirstName,

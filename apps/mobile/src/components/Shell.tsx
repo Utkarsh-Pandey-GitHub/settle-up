@@ -53,18 +53,32 @@ export function Shell({
   useEffect(() => {
     if (!tourActive) return;
     setTourRect(null);
+    let secondFrame = 0;
     const frame = requestAnimationFrame(() => {
-      const target =
-        tourStep === 0
-          ? headerRef
-          : tourStep === 1 && !desktop
-            ? navigationRef
-            : null;
-      target?.current?.measureInWindow((x, y, width, height) =>
-        setTourRect({ x, y, width, height }),
-      );
+      secondFrame = requestAnimationFrame(() => {
+        const target =
+          tourStep === 0
+            ? headerRef
+            : tourStep === 1 && !desktop
+              ? navigationRef
+              : null;
+        target?.current?.measureInWindow(
+          (x, y, measuredWidth, measuredHeight) => {
+            const scanOverflow = tourStep === 1 && !desktop ? 28 : 0;
+            setTourRect({
+              x,
+              y: Math.max(0, y - scanOverflow),
+              width: measuredWidth,
+              height: measuredHeight + scanOverflow,
+            });
+          },
+        );
+      });
     });
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      if (secondFrame) cancelAnimationFrame(secondFrame);
+    };
   }, [tourActive, tourStep, width, desktop]);
   useEffect(() => {
     setTourStep(0);
@@ -328,9 +342,6 @@ export function Shell({
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
-                ...(tourActive && tourStep === 0
-                  ? { borderWidth: 3, borderColor: "#F5F5EF", borderRadius: 18 }
-                  : {}),
               }}
             >
               <XStack alignItems="center" gap={10}>
@@ -456,13 +467,6 @@ export function Shell({
                   borderTopWidth: 1,
                   borderColor: c.line,
                   backgroundColor: c.card,
-                  ...(tourActive && tourStep === 1
-                    ? {
-                        borderWidth: 3,
-                        borderTopWidth: 3,
-                        borderColor: "#F5F5EF",
-                      }
-                    : {}),
                 }}
               >
                 {[
@@ -522,6 +526,9 @@ export function Shell({
                       size={width < 360 ? 10 : 11}
                       bold={path === n.path}
                       color={c.text}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.78}
                     >
                       {n.label}
                     </Label>

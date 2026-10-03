@@ -36,20 +36,49 @@ class TransactionSmsReceiver : BroadcastReceiver() {
     val timestamp = messages.first().timestampMillis
     val prefs = context.getSharedPreferences("settleup_transaction_sms", Context.MODE_PRIVATE)
     val pending = try { JSONArray(prefs.getString("pending", "[]")) } catch (_: Exception) { JSONArray() }
+    val messageId = "received:${timestamp}:${body.hashCode()}"
     pending.put(
       JSONObject()
-        .put("id", "received:${timestamp}:${body.hashCode()}")
+        .put("id", messageId)
         .put("body", body)
         .put("timestamp", timestamp)
     )
     while (pending.length() > 100) pending.remove(0)
     prefs.edit().putString("pending", pending.toString()).apply()
+    TransactionSmsModule.notifyMessage(
+      mapOf("id" to messageId, "body" to body, "timestamp" to timestamp.toDouble())
+    )
   }
 }
 
 class TransactionSmsModule : Module() {
+  companion object {
+    private val observers = mutableSetOf<(Map<String, Any>) -> Unit>()
+
+    fun notifyMessage(message: Map<String, Any>) {
+      observers.toList().forEach { it(message) }
+    }
+  }
+
+  private var messageObserver: ((Map<String, Any>) -> Unit)? = null
+
   override fun definition() = ModuleDefinition {
     Name("TransactionSms")
+    Events("onFinancialSms")
+    OnStartObserving("onFinancialSms") {
+      if (messageObserver == null) {
+        messageObserver = { message -> sendEvent("onFinancialSms", message) }
+        observers.add(messageObserver!!)
+      }
+    }
+    OnStopObserving("onFinancialSms") {
+      messageObserver?.let(observers::remove)
+      messageObserver = null
+    }
+    OnDestroy {
+      messageObserver?.let(observers::remove)
+      messageObserver = null
+    }
     // Permission is requested from the JS service only after the in-app explanation.
     AsyncFunction("readRange") { start: Double, end: Double ->
       val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()

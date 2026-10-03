@@ -757,6 +757,7 @@ export class PrismaDashboardRepository implements DashboardRepository {
             id: userId,
             name: user.profile!.name,
             phone: user.phone!.phone,
+            email: user.profile!.email ?? undefined,
             currency: user.profile!.currency,
             avatar: user.profile!.avatar ?? user.profile!.name.slice(0, 2),
           },

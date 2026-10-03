@@ -100,9 +100,7 @@ export function useAppSync() {
       };
       socket.onmessage = (event) => {
         try {
-          if (
-            JSON.parse(String(event.data)).type === "data_changed"
-          )
+          if (JSON.parse(String(event.data)).type === "data_changed")
             queueAccountRefresh(query, id);
         } catch {
           // Ignore malformed keepalive/provider messages.
@@ -133,6 +131,7 @@ export function useAppSync() {
         sessionAccount &&
         (sessionAccount.name !== result.data.account.name ||
           sessionAccount.avatar !== result.data.account.avatar ||
+          sessionAccount.email !== result.data.account.email ||
           sessionAccount.currency !== result.data.account.currency)
       )
         void useSession.getState().updateAccount(result.data.account);

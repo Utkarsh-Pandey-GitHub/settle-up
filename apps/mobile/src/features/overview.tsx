@@ -1,11 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Pressable,
-  useWindowDimensions,
-  Image,
-  Alert,
-} from "react-native";
+import { View, Pressable, useWindowDimensions, Image } from "react-native";
 import { Redirect, useRouter, useLocalSearchParams } from "expo-router";
 import { XStack, YStack } from "tamagui";
 import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
@@ -36,6 +30,7 @@ import {
   FilterDropdownTrigger,
   FilterDropdownPanel,
   SearchPicker,
+  ActionDialog,
   useColors,
   type IconName,
   Skeleton,
@@ -466,7 +461,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
           </YStack>
         </XStack>
       </Card>
-      <TourGroup step={2}>
+      <TourGroup step={2} padding={4}>
         <XStack gap={width < 360 ? 8 : 12} flexWrap="wrap">
           {(
             [
@@ -570,6 +565,7 @@ export function ActivityScreen() {
     [status, setStatus] = useState(""),
     [ledgerFilter, setLedgerFilter] = useState("");
   const [isSelecting, setIsSelecting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [assignIds, setAssignIds] = useState<string[]>([]);
   const [openDropdown, setOpenDropdown] = useState<
@@ -578,6 +574,7 @@ export function ActivityScreen() {
   const action = useAction();
   const c = useColors();
   const router = useRouter();
+  const { width } = useWindowDimensions();
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -618,34 +615,7 @@ export function ActivityScreen() {
 
         const handleDelete = () => {
           if (selectedIds.length === 0) return;
-          Alert.alert(
-            "Delete Transactions",
-            `Are you sure you want to delete ${selectedIds.length} transaction${selectedIds.length > 1 ? "s" : ""}?`,
-            [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Delete",
-                style: "destructive",
-                onPress: () => {
-                  action
-                    .run(
-                      () =>
-                        repository.deleteTransactions(
-                          d.account.id,
-                          selectedIds,
-                        ),
-                      `${selectedIds.length} transaction${selectedIds.length > 1 ? "s" : ""} deleted`,
-                    )
-                    .then((ok) => {
-                      if (ok) {
-                        setSelectedIds([]);
-                        setIsSelecting(false);
-                      }
-                    });
-                },
-              },
-            ],
-          );
+          setDeleteOpen(true);
         };
         const eligibleLedgers = d.ledgers.filter((ledger) =>
           assignIds.every((id) => {
@@ -666,8 +636,13 @@ export function ActivityScreen() {
         return (
           <YStack gap={14}>
             {/* Title & Action Bar */}
-            <XStack justifyContent="space-between" alignItems="center">
-              <YStack gap={2}>
+            <XStack
+              justifyContent="space-between"
+              alignItems="center"
+              gap={8}
+              flexWrap={width < 350 && isSelecting ? "wrap" : "nowrap"}
+            >
+              <YStack gap={2} flex={1} minWidth={120}>
                 <Heading size={22}>Transactions</Heading>
                 <Label muted size={12}>
                   {filtered.length} transaction
@@ -736,7 +711,7 @@ export function ActivityScreen() {
 
             {/* Dropdown Filter Triggers */}
             <YStack gap={8}>
-              <XStack gap={6} alignItems="center">
+              <XStack gap={width < 360 ? 4 : 6} alignItems="center">
                 <FilterDropdownTrigger
                   compact
                   label={
@@ -786,7 +761,7 @@ export function ActivityScreen() {
                     }}
                     style={{
                       height: 36,
-                      paddingHorizontal: 10,
+                      paddingHorizontal: width < 360 ? 7 : 10,
                       backgroundColor: "#FCE8E6",
                       borderRadius: 12,
                       justifyContent: "center",
@@ -794,7 +769,7 @@ export function ActivityScreen() {
                     }}
                   >
                     <Label size={11} bold color="#D9381E">
-                      Clear
+                      {width < 360 ? "×" : "Clear"}
                     </Label>
                   </Pressable>
                 )}
@@ -991,6 +966,40 @@ export function ActivityScreen() {
                     }
                   });
               }}
+            />
+            <ActionDialog
+              visible={deleteOpen}
+              icon="trash"
+              title="Delete transactions?"
+              detail={`This removes ${selectedIds.length} transaction${selectedIds.length === 1 ? "" : "s"} from your records.`}
+              onClose={() => setDeleteOpen(false)}
+              actions={[
+                {
+                  label: "Cancel",
+                  secondary: true,
+                  onPress: () => setDeleteOpen(false),
+                },
+                {
+                  label: "Delete",
+                  destructive: true,
+                  loading: action.busy,
+                  onPress: () => {
+                    const ids = [...selectedIds];
+                    setDeleteOpen(false);
+                    void action
+                      .run(
+                        () => repository.deleteTransactions(d.account.id, ids),
+                        `${ids.length} transaction${ids.length === 1 ? "" : "s"} deleted`,
+                      )
+                      .then((ok) => {
+                        if (ok) {
+                          setSelectedIds([]);
+                          setIsSelecting(false);
+                        }
+                      });
+                  },
+                },
+              ]}
             />
           </YStack>
         );

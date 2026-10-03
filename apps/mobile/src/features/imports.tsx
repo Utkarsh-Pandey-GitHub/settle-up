@@ -6,6 +6,7 @@ import {
   StyleSheet,
   AppState,
   Animated,
+  useWindowDimensions,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
@@ -52,6 +53,16 @@ export function ScanScreen() {
   const action = useAction();
   const router = useRouter();
   const c = useColors();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const scannerTopInset = Platform.OS === "ios" ? 110 : 96;
+  const scannerBottomInset = pasteMode ? 250 : 174;
+  const scannerSpace = Math.max(
+    170,
+    screenHeight - scannerTopInset - scannerBottomInset,
+  );
+  const scanSize = Math.min(300, screenWidth * 0.76, scannerSpace);
+  const scanLeft = (screenWidth - scanSize) / 2;
+  const scanTop = scannerTopInset + Math.max(0, (scannerSpace - scanSize) / 2);
   const inspect = (value: string) => {
     try {
       if (processed) return;
@@ -128,26 +139,39 @@ export function ScanScreen() {
               SettleUp needs camera access to read QR codes. Your camera feed is
               never stored or transmitted.
             </Label>
-            <Button
-              icon="camera"
-              onPress={() =>
-                action.run(async () => {
-                  const p = await requestPermission();
-                  if (!p.granted)
-                    throw new Error(
-                      "Camera permission was declined. You can enable it in Settings.",
-                    );
-                }, "Camera enabled")
-              }
-            >
-              Allow camera access
-            </Button>
-            <Button secondary icon="image" onPress={pickImage}>
-              Choose QR photo from gallery
-            </Button>
-            <Button secondary onPress={() => setPasteMode(true)}>
-              Enter UPI ID instead
-            </Button>
+            <YStack gap={10} width="100%">
+              <Button
+                icon="camera"
+                style={{ width: "100%", minHeight: 50 }}
+                onPress={() =>
+                  action.run(async () => {
+                    const p = await requestPermission();
+                    if (!p.granted)
+                      throw new Error(
+                        "Camera permission was declined. You can enable it in Settings.",
+                      );
+                  }, "Camera enabled")
+                }
+              >
+                Allow camera access
+              </Button>
+              <Button
+                secondary
+                icon="image"
+                style={{ width: "100%", minHeight: 50 }}
+                onPress={pickImage}
+              >
+                Choose QR photo from gallery
+              </Button>
+              <Button
+                secondary
+                icon="edit"
+                style={{ width: "100%", minHeight: 50 }}
+                onPress={() => setPasteMode(true)}
+              >
+                Enter UPI ID instead
+              </Button>
+            </YStack>
             {pasteMode && (
               <YStack gap={12} width="100%">
                 <Field
@@ -378,50 +402,44 @@ export function ScanScreen() {
       />
 
       {/* Dark overlay with transparent cutout */}
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          { justifyContent: "center", alignItems: "center" },
-        ]}
-        pointerEvents="none"
-      >
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <View
           style={{
             position: "absolute",
             top: 0,
             left: 0,
             right: 0,
-            height: "28%",
+            height: scanTop,
             backgroundColor: "rgba(0,0,0,0.55)",
           }}
         />
         <View
           style={{
             position: "absolute",
+            top: scanTop + scanSize,
             bottom: 0,
             left: 0,
             right: 0,
-            height: "32%",
             backgroundColor: "rgba(0,0,0,0.55)",
           }}
         />
         <View
           style={{
             position: "absolute",
-            top: "28%",
+            top: scanTop,
             left: 0,
-            width: "12%",
-            bottom: "32%",
+            width: scanLeft,
+            height: scanSize,
             backgroundColor: "rgba(0,0,0,0.55)",
           }}
         />
         <View
           style={{
             position: "absolute",
-            top: "28%",
+            top: scanTop,
             right: 0,
-            width: "12%",
-            bottom: "32%",
+            width: scanLeft,
+            height: scanSize,
             backgroundColor: "rgba(0,0,0,0.55)",
           }}
         />
@@ -429,10 +447,11 @@ export function ScanScreen() {
         {/* Scan frame corners */}
         <View
           style={{
-            width: "76%",
-            aspectRatio: 1,
-            maxWidth: 300,
-            maxHeight: 300,
+            position: "absolute",
+            top: scanTop,
+            left: scanLeft,
+            width: scanSize,
+            height: scanSize,
           }}
         >
           <View
@@ -498,7 +517,7 @@ export function ScanScreen() {
           left: 0,
           right: 0,
           paddingTop: Platform.OS === "ios" ? 54 : 40,
-          paddingHorizontal: 20,
+          paddingHorizontal: screenWidth < 360 ? 14 : 20,
           paddingBottom: 16,
           flexDirection: "row",
           alignItems: "center",
@@ -530,7 +549,7 @@ export function ScanScreen() {
       <View
         style={{
           position: "absolute",
-          top: "22%",
+          top: Math.max(96, scanTop - 38),
           left: 0,
           right: 0,
           alignItems: "center",
@@ -550,7 +569,7 @@ export function ScanScreen() {
           right: 0,
           paddingBottom: Platform.OS === "ios" ? 36 : 24,
           paddingTop: 16,
-          paddingHorizontal: 24,
+          paddingHorizontal: screenWidth < 360 ? 14 : 24,
           backgroundColor: "rgba(0,0,0,0.65)",
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
@@ -636,8 +655,14 @@ export function ScanScreen() {
           </Label>
         </Pressable>
         {pasteMode && (
-          <XStack gap={8} alignItems="flex-end">
-            <View style={{ flex: 1 }}>
+          <XStack
+            gap={8}
+            alignItems="flex-end"
+            flexDirection={screenWidth < 340 ? "column" : "row"}
+          >
+            <View
+              style={{ flex: 1, width: screenWidth < 340 ? "100%" : undefined }}
+            >
               <Field
                 label="UPI ID or payment link"
                 placeholder="merchant@upi"
@@ -645,7 +670,11 @@ export function ScanScreen() {
                 onChangeText={setUri}
               />
             </View>
-            <Button compact onPress={() => inspectEntry(uri)}>
+            <Button
+              compact
+              style={{ width: screenWidth < 340 ? "100%" : undefined }}
+              onPress={() => inspectEntry(uri)}
+            >
               Review
             </Button>
           </XStack>
@@ -771,6 +800,7 @@ function SmsContent({ accountId }: { accountId: string }) {
     action = useAction(),
     router = useRouter(),
     c = useColors();
+  const { width } = useWindowDimensions();
   const [suggestions, setSuggestions] = useState<ImportSuggestion[]>([]),
     [enabled, setEnabled] = useState(false),
     [custom, setCustom] = useState(false),
@@ -828,7 +858,7 @@ function SmsContent({ accountId }: { accountId: string }) {
     };
   }, [provider]);
   useEffect(() => {
-    if (!enabled || custom || action.busy || editing) return;
+    if (!enabled || custom) return;
     let live = true;
     const refresh = async () => {
       try {
@@ -843,22 +873,42 @@ function SmsContent({ accountId }: { accountId: string }) {
       }
     };
     void refresh();
-    // The native receiver records new financial SMS immediately. Refresh the
-    // visible review list often enough that an incoming message feels live.
-    const timer = setInterval(refresh, 10000);
+    const incoming = provider.subscribe((message) => {
+      void provider
+        .reviewMessage(message)
+        .then((item) => {
+          if (!live || !item) return;
+          setSuggestions((current) => [
+            item,
+            ...current.filter(
+              (suggestion) => suggestion.fingerprint !== item.fingerprint,
+            ),
+          ]);
+        })
+        .catch((error) => {
+          if (live) action.setError((error as Error).message);
+        });
+    });
     const listener = AppState.addEventListener("change", (state) => {
+      // The receiver persists background messages. Reconcile once when the
+      // app returns instead of polling or rereading the inbox on every render.
       if (state === "active") void refresh();
     });
     return () => {
       live = false;
-      clearInterval(timer);
+      incoming.remove();
       listener.remove();
     };
-  }, [enabled, custom, provider, action.busy, editing]);
+  }, [enabled, custom, provider]);
 
   return (
     <YStack gap={12} maxWidth={760} width="100%" alignSelf="center">
-      <XStack gap={10} alignItems="flex-start" justifyContent="space-between">
+      <XStack
+        gap={10}
+        alignItems="flex-start"
+        justifyContent="space-between"
+        flexWrap={width < 350 ? "wrap" : "nowrap"}
+      >
         <YStack gap={2} flex={1}>
           <Heading size={24}>Bank SMS review</Heading>
           <Label muted size={12}>
@@ -1054,7 +1104,7 @@ function SmsContent({ accountId }: { accountId: string }) {
               >
                 <Icon name="up" size={18} color="#626078" />
               </View>
-              <YStack flex={1} gap={2}>
+              <YStack flex={1} minWidth={0} gap={2}>
                 {editing === s.fingerprint ? (
                   <Field
                     label="Transaction title"
@@ -1091,11 +1141,18 @@ function SmsContent({ accountId }: { accountId: string }) {
                 style={{
                   backgroundColor: c.soft,
                   borderRadius: 12,
-                  paddingHorizontal: 11,
+                  maxWidth: width < 360 ? 108 : 150,
+                  paddingHorizontal: width < 360 ? 8 : 11,
                   paddingVertical: 8,
                 }}
               >
-                <Label bold size={16} color="#514B8F">
+                <Label
+                  bold
+                  size={width < 360 ? 14 : 16}
+                  color="#514B8F"
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
                   {money(s.amountMinor)}
                 </Label>
               </View>

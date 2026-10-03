@@ -13,6 +13,7 @@ import {
   Modal,
   ScrollView,
   type ViewStyle,
+  useWindowDimensions,
 } from "react-native";
 import { Text, YStack, XStack } from "tamagui";
 import Svg, { Path, Circle, Rect, Ellipse, G } from "react-native-svg";
@@ -219,6 +220,7 @@ export function Card({
   style?: any;
 }) {
   const c = useColors();
+  const { width } = useWindowDimensions();
   return (
     <View
       style={[
@@ -227,7 +229,7 @@ export function Card({
           borderWidth: 0,
           borderColor: c.line,
           borderRadius: 16,
-          padding: 18,
+          padding: width < 360 ? 13 : 18,
         },
         style,
       ]}
@@ -300,6 +302,7 @@ export function Button({
   style?: ViewStyle;
 }) {
   const c = useColors();
+  const { width } = useWindowDimensions();
   const unavailable = disabled || loading;
   return (
     <Pressable
@@ -311,7 +314,14 @@ export function Button({
       style={({ pressed }) => [
         {
           minHeight: 48,
-          paddingHorizontal: compact ? 14 : 20,
+          minWidth: 0,
+          paddingHorizontal: compact
+            ? width < 360
+              ? 10
+              : 14
+            : width < 360
+              ? 14
+              : 20,
           paddingVertical: 11,
           borderRadius: 15,
           borderBottomWidth: 1,
@@ -338,7 +348,13 @@ export function Button({
       ) : !!icon ? (
         <Icon name={icon} size={20} color={secondary ? c.text : c.onPrimary} />
       ) : null}
-      <Label bold size={15} color={secondary ? c.text : c.onPrimary}>
+      <Label
+        bold
+        size={width < 360 ? 14 : 15}
+        color={secondary ? c.text : c.onPrimary}
+        flexShrink={1}
+        textAlign="center"
+      >
         {children}
       </Label>
     </Pressable>
@@ -1294,6 +1310,7 @@ export function SearchPicker({
   selectionIcon?: IconName;
 }) {
   const c = useColors();
+  const { width, height } = useWindowDimensions();
   const [search, setSearch] = useState("");
   useEffect(() => {
     if (!visible) setSearch("");
@@ -1315,7 +1332,7 @@ export function SearchPicker({
           flex: 1,
           justifyContent: "center",
           alignItems: "center",
-          padding: 20,
+          padding: width < 360 ? 10 : 20,
           backgroundColor: "rgba(22, 24, 28, 0.48)",
         }}
       >
@@ -1323,8 +1340,8 @@ export function SearchPicker({
           style={{
             width: "100%",
             maxWidth: 520,
-            maxHeight: 560,
-            padding: 20,
+            maxHeight: Math.max(280, height - (height < 650 ? 28 : 64)),
+            padding: width < 360 ? 14 : 20,
             gap: 14,
             borderRadius: 24,
             backgroundColor: c.card,
@@ -1397,7 +1414,7 @@ export function SearchPicker({
             )}
           </ScrollView>
           {multiple && (
-            <XStack gap={8}>
+            <XStack gap={8} flexWrap="wrap">
               {!!selected.length && !!onClear && (
                 <Button secondary compact onPress={onClear}>
                   Deselect all
@@ -1409,6 +1426,147 @@ export function SearchPicker({
           )}
         </View>
       </View>
+    </Modal>
+  );
+}
+
+export type DialogAction = {
+  label: string;
+  onPress(): void;
+  destructive?: boolean;
+  secondary?: boolean;
+  loading?: boolean;
+};
+
+export function ActionDialog({
+  visible,
+  title,
+  detail,
+  icon = "wallet",
+  actions,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  detail: string;
+  icon?: IconName;
+  actions: DialogAction[];
+  onClose(): void;
+}) {
+  const c = useColors();
+  const { width, height } = useWindowDimensions();
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Close dialog"
+        onPress={onClose}
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          padding: width < 360 ? 10 : 20,
+          backgroundColor: "rgba(22,24,28,0.58)",
+        }}
+      >
+        <Pressable
+          accessibilityRole="alert"
+          onPress={() => {}}
+          style={{
+            width: "100%",
+            maxWidth: 460,
+            maxHeight: Math.max(260, height - 32),
+            borderRadius: 26,
+            padding: width < 360 ? 14 : 20,
+            gap: 16,
+            backgroundColor: c.card,
+            borderWidth: 1,
+            borderColor: c.line,
+            shadowColor: "#25202E",
+            shadowOpacity: 0.18,
+            shadowRadius: 24,
+            shadowOffset: { width: 0, height: 10 },
+            elevation: 14,
+          }}
+        >
+          <XStack gap={13} alignItems="flex-start">
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 15,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: c.soft,
+              }}
+            >
+              <Icon name={icon} size={22} color={c.text} />
+            </View>
+            <YStack flex={1} gap={5} paddingTop={1}>
+              <Heading size={19}>{title}</Heading>
+              <Label muted size={12} lineHeight={18}>
+                {detail}
+              </Label>
+            </YStack>
+            <IconButton name="close" label="Close" onPress={onClose} />
+          </XStack>
+          <XStack gap={8} flexWrap="wrap" justifyContent="flex-end">
+            {actions.map((action) => (
+              <Pressable
+                key={action.label}
+                accessibilityRole="button"
+                accessibilityState={{ busy: !!action.loading }}
+                disabled={action.loading}
+                onPress={action.onPress}
+                style={({ pressed }) => ({
+                  minHeight: 44,
+                  minWidth: width < 360 ? "100%" : 96,
+                  flexGrow: width < 360 ? 1 : 0,
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                  borderRadius: 14,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 1,
+                  borderColor: action.destructive
+                    ? "#B65B68"
+                    : action.secondary
+                      ? c.line
+                      : c.primary,
+                  backgroundColor: action.destructive
+                    ? "#A74757"
+                    : action.secondary
+                      ? c.card
+                      : c.primary,
+                  opacity: action.loading ? 0.6 : pressed ? 0.82 : 1,
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                })}
+              >
+                {action.loading ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={action.secondary ? c.text : "#FFFFFF"}
+                  />
+                ) : (
+                  <Label
+                    bold
+                    size={13}
+                    color={action.secondary ? c.text : "#FFFFFF"}
+                  >
+                    {action.label}
+                  </Label>
+                )}
+              </Pressable>
+            ))}
+          </XStack>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }

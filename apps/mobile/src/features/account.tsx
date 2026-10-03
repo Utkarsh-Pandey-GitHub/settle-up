@@ -556,8 +556,8 @@ export function AuthScreen() {
                 {!!truecallerHint && <Notice>{truecallerHint}</Notice>}
                 <Label muted size={11}>
                   Truecaller confirms the number directly. Google confirms your
-                  Google identity and binds it to the number you entered. You can
-                  link both methods to the same number.
+                  Google identity and binds it to the number you entered. You
+                  can link both methods to the same number.
                 </Label>
               </>
             )}
@@ -824,6 +824,7 @@ export function SettingsScreen() {
     [blockOpen, setBlockOpen] = useState(false);
   const dark = useSession((s) => s.dark),
     router = useRouter(),
+    c = useColors(),
     action = useAction();
   return (
     <DataScreen>
@@ -916,13 +917,35 @@ export function SettingsScreen() {
               <Button secondary onPress={() => router.push("/accounts")}>
                 Manage saved accounts
               </Button>
-              <GoogleSignInButton
-                endpoint="/profile/google"
-                disabled={action.busy}
-                onSession={async (session) => {
-                  await useSession.getState().add(session);
-                }}
-              />
+              {d.account.email ? (
+                <XStack
+                  minHeight={52}
+                  paddingHorizontal={14}
+                  gap={11}
+                  alignItems="center"
+                  borderRadius={15}
+                  backgroundColor={c.soft}
+                >
+                  <GoogleMark />
+                  <YStack flex={1} gap={2}>
+                    <Label bold size={12}>
+                      Google account connected
+                    </Label>
+                    <Label muted size={11} numberOfLines={1}>
+                      {d.account.email}
+                    </Label>
+                  </YStack>
+                  <Icon name="check" size={18} color="#43816E" />
+                </XStack>
+              ) : (
+                <GoogleSignInButton
+                  endpoint="/profile/google"
+                  disabled={action.busy}
+                  onSession={async (session) => {
+                    await useSession.getState().add(session);
+                  }}
+                />
+              )}
             </YStack>
           </Card>
           <Card style={{ borderRadius: 20, padding: 18 }}>
