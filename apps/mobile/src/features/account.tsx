@@ -4,6 +4,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
 import { Redirect, useRouter } from "expo-router";
 import { XStack, YStack } from "tamagui";
+import Svg, { Circle, Path } from "react-native-svg";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@settleup/contracts";
 import { normalizePhone } from "@settleup/domain";
@@ -40,6 +41,49 @@ import {
 } from "../services/device";
 WebBrowser.maybeCompleteAuthSession();
 
+function GoogleMark() {
+  return (
+    <Svg width={21} height={21} viewBox="0 0 24 24">
+      <Path
+        fill="#4285F4"
+        d="M21.6 12.23c0-.71-.06-1.4-.18-2.06H12v3.9h5.38a4.6 4.6 0 0 1-2 2.93v2.53h3.24c1.9-1.75 2.98-4.33 2.98-7.3Z"
+      />
+      <Path
+        fill="#34A853"
+        d="M12 22c2.7 0 4.97-.9 6.62-2.47L15.38 17c-.9.6-2.05.96-3.38.96-2.6 0-4.81-1.76-5.6-4.13H3.06v2.6A10 10 0 0 0 12 22Z"
+      />
+      <Path
+        fill="#FBBC05"
+        d="M6.4 13.83A6 6 0 0 1 6.08 12c0-.64.11-1.26.32-1.83v-2.6H3.06A10 10 0 0 0 2 12c0 1.61.39 3.14 1.06 4.43l3.34-2.6Z"
+      />
+      <Path
+        fill="#EA4335"
+        d="M12 6.04c1.47 0 2.79.5 3.83 1.5l2.86-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.94 5.57l3.34 2.6A5.96 5.96 0 0 1 12 6.04Z"
+      />
+    </Svg>
+  );
+}
+
+function TruecallerMark() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24">
+      <Circle cx="12" cy="12" r="11" fill="#168CFF" />
+      <Path
+        d="M8.1 5.9c.4-.25.88-.12 1.13.26l1.27 1.95c.22.34.18.78-.1 1.07l-.92.94a10.1 10.1 0 0 0 4.4 4.4l.94-.92c.29-.28.73-.32 1.07-.1l1.95 1.27c.38.25.5.73.26 1.13l-.78 1.3c-.35.57-1.01.88-1.68.78-4.98-.77-8.85-4.64-9.62-9.62-.1-.67.21-1.33.78-1.68l1.3-.78Z"
+        fill="#FFFFFF"
+      />
+      <Path
+        d="m15.2 6.5 1.15 1.15 2.35-2.3"
+        fill="none"
+        stroke="#FFFFFF"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 function GoogleSignInButton({
   disabled,
   onSession,
@@ -63,16 +107,22 @@ function GoogleSignInButton({
   const googleConfigured = Object.values(googleClientIds).some(
     (clientId) => clientId !== "unconfigured",
   );
+  const webRedirectUri =
+    Platform.OS === "web" && typeof window !== "undefined"
+      ? window.location.origin
+      : undefined;
   const [googleRequest, , promptGoogle] = Google.useIdTokenAuthRequest({
     androidClientId: googleClientIds.android,
     iosClientId: googleClientIds.ios,
     webClientId: googleClientIds.web,
+    ...(webRedirectUri ? { redirectUri: webRedirectUri } : {}),
     selectAccount: true,
   });
   return (
     <YStack gap={8}>
       <Button
         secondary
+        leading={<GoogleMark />}
         loading={busy}
         disabled={disabled || busy || !googleRequest || !googleConfigured}
         onPress={async () => {
@@ -404,7 +454,7 @@ export function AuthScreen() {
               />
               <Heading size={23}>
                 {stage === "phone"
-                  ? "Let's get you signed in."
+                  ? "Continue with your phone."
                   : stage === "profile"
                     ? "A few details about you."
                     : stage === "permissions"
@@ -413,7 +463,7 @@ export function AuthScreen() {
               </Heading>
               <Label muted size={13}>
                 {stage === "phone"
-                  ? "Sign in or create an account to manage your spending and shared bills."
+                  ? "Use Truecaller in one tap, or enter your number and continue with Google."
                   : stage === "profile"
                     ? "Just the essentials. You can change these later."
                     : stage === "permissions"
@@ -433,8 +483,34 @@ export function AuthScreen() {
           <YStack gap={16}>
             {stage === "phone" && (
               <>
+                {truecallerAvailable && !DEMO && (
+                  <>
+                    <Button
+                      secondary
+                      leading={<TruecallerMark />}
+                      loading={truecallerBusy}
+                      disabled={action.busy || truecallerBusy}
+                      onPress={continueWithTruecaller}
+                    >
+                      {truecallerBusy
+                        ? "Opening Truecaller…"
+                        : "Continue instantly with Truecaller"}
+                    </Button>
+                    <XStack alignItems="center" gap={12}>
+                      <View
+                        style={{ flex: 1, height: 1, backgroundColor: c.line }}
+                      />
+                      <Label muted size={11}>
+                        OR ENTER YOUR NUMBER
+                      </Label>
+                      <View
+                        style={{ flex: 1, height: 1, backgroundColor: c.line }}
+                      />
+                    </XStack>
+                  </>
+                )}
                 <Field
-                  label="Phone number"
+                  label="Mobile number"
                   placeholder="+91 98765 43210"
                   keyboardType="phone-pad"
                   textContentType="telephoneNumber"
@@ -442,48 +518,17 @@ export function AuthScreen() {
                   onChangeText={setPhone}
                   editable={!action.busy && !truecallerBusy}
                 />
-                {truecallerAvailable && !DEMO && (
-                  <>
-                    <XStack alignItems="center" gap={12}>
-                      <View
-                        style={{ flex: 1, height: 1, backgroundColor: c.line }}
-                      />
-                      <Label muted size={11}>
-                        OR
-                      </Label>
-                      <View
-                        style={{ flex: 1, height: 1, backgroundColor: c.line }}
-                      />
-                    </XStack>
-                    <Button
-                      secondary
-                      loading={truecallerBusy}
-                      disabled={action.busy || truecallerBusy}
-                      onPress={continueWithTruecaller}
-                    >
-                      {truecallerBusy
-                        ? "Opening Truecaller…"
-                        : "Continue with Truecaller"}
-                    </Button>
-                  </>
-                )}
-                {!DEMO &&
-                  !!(Platform.OS === "android"
-                    ? process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
-                    : Platform.OS === "ios"
-                      ? process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
-                      : process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID) && (
-                    <GoogleSignInButton
-                      disabled={action.busy || truecallerBusy || !phone.trim()}
-                      phone={phone}
-                      label="Confirm phone and sign in with Google"
-                      onSession={acceptSession}
-                    />
-                  )}
+                <GoogleSignInButton
+                  disabled={action.busy || truecallerBusy || !phone.trim()}
+                  phone={phone}
+                  label="Continue with Google"
+                  onSession={acceptSession}
+                />
                 {!!truecallerHint && <Notice>{truecallerHint}</Notice>}
                 <Label muted size={11}>
-                  Truecaller verifies your number. With Google, the number is
-                  tied to that Google account and can only be changed once.
+                  Truecaller confirms the number directly. Google confirms your
+                  Google identity and binds it to the number you entered. You can
+                  link both methods to the same number.
                 </Label>
               </>
             )}

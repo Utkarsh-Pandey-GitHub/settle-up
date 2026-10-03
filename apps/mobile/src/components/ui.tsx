@@ -283,6 +283,7 @@ export function Button({
   onPress,
   secondary,
   icon,
+  leading,
   disabled,
   compact,
   loading,
@@ -292,6 +293,7 @@ export function Button({
   onPress?: () => void;
   secondary?: boolean;
   icon?: IconName;
+  leading?: React.ReactNode;
   disabled?: boolean;
   compact?: boolean;
   loading?: boolean;
@@ -331,6 +333,8 @@ export function Button({
           size="small"
           color={secondary ? c.text : c.onPrimary}
         />
+      ) : leading ? (
+        leading
       ) : !!icon ? (
         <Icon name={icon} size={20} color={secondary ? c.text : c.onPrimary} />
       ) : null}

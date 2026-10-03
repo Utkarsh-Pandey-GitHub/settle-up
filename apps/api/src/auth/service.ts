@@ -176,7 +176,7 @@ export class AuthService {
         if (occupied?.verifiedAt)
           throw new DomainError(
             "PHONE_VERIFICATION_REQUIRED",
-            "This phone is already verified. Continue with Truecaller first.",
+            "This number is already verified. Continue with Truecaller once, then link Google from Settings.",
             409,
           );
         if (occupied?.user.google)
@@ -424,7 +424,7 @@ export class AuthService {
     const phone = normalizePhone(rawPhone);
     let identity = await tx.phoneIdentity.findUnique({
       where: { phone: phone },
-      include: { user: true },
+      include: { user: { include: { profile: true } } },
     });
     if (identity?.user.deletedAt) return null;
     if (!identity) {
@@ -447,11 +447,11 @@ export class AuthService {
       });
       identity = await tx.phoneIdentity.findUniqueOrThrow({
         where: { userId: user.id },
-        include: { user: true },
+        include: { user: { include: { profile: true } } },
       });
     }
-    const needsOnboarding = !identity.verifiedAt;
-    if (needsOnboarding) {
+    const newlyVerified = !identity.verifiedAt;
+    if (newlyVerified) {
       // Reached only after OTP or Truecaller proof has been verified.
       await tx.phoneIdentity.update({
         where: { userId: identity.userId },
@@ -463,6 +463,7 @@ export class AuthService {
         update: {},
       });
       await tx.tag.createMany({
+        skipDuplicates: true,
         data: [
           "Food",
           "Transport",
@@ -477,6 +478,7 @@ export class AuthService {
         })),
       });
     }
+    const needsOnboarding = identity.user.profile?.name === "New friend";
     const session = await this.newSession(tx, identity.userId, randomUUID());
     return needsOnboarding ? { ...session, needsOnboarding: true } : session;
   }

@@ -45,7 +45,7 @@ class TruecallerAuthActivity : FragmentActivity() {
         }
         override fun onVerificationRequired(error: TcOAuthError?) {
           error?.let { Log.w("SettleUpTruecaller", "Verification required type=${it.javaClass.simpleName} code=${it.errorCode} message=${it.errorMessage}") }
-          fail("TRUECALLER_VERIFICATION_REQUIRED", "Truecaller could not verify that number. Enter the number in the phone form below and use a code instead.")
+          fail("TRUECALLER_VERIFICATION_REQUIRED", "Truecaller could not verify that number. Enter it in the phone form and continue with Google.")
         }
       }
       val options = TcSdkOptions.Builder(this, callback)
