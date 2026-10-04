@@ -8,8 +8,25 @@ export type ExtractedBillItem = {
 
 export type ExtractedBillResult = {
   merchantName?: string;
+  merchantAddress?: string;
+  taxId?: string;
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  documentType: string;
+  isHandwritten: boolean;
   items: ExtractedBillItem[];
-  totalMinor?: number;
+  taxes: {
+    type: string;
+    label: string;
+    rate?: number;
+    amountMinor: number;
+  }[];
+  subtotalMinor?: number;
+  taxableValueMinor?: number;
+  totalTaxMinor?: number;
+  totalMinor: number;
+  confidence?: number;
+  warnings: string[];
 };
 
 async function uriToBase64(uri: string): Promise<string> {
@@ -32,7 +49,7 @@ export async function extractBillWithOpenRouter(
 ): Promise<ExtractedBillResult> {
   onStatus?.("Preparing your bill…");
   const image = await uriToBase64(uri);
-  onStatus?.("Reading items, taxes and total…");
+  onStatus?.("Reading company, items, quantities and taxes…");
   return request<ExtractedBillResult>("/bill/extract", {
     accountId,
     body: { image, currency },

@@ -314,7 +314,7 @@ export default function PrivacyScreen() {
         <BodyText>
           Questions about this policy or your data? Reach out:
         </BodyText>
-        <Bullet>Email: theutkarshmail@gmail.com</Bullet>
+        <Bullet>Email: up714279@gmail.com</Bullet>
         <Bullet>Developer: Utkarsh Pandey</Bullet>
       </Card>
 

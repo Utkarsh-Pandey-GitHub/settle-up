@@ -4,7 +4,7 @@ import { YStack } from "tamagui";
 import { Shell } from "../src/components/Shell";
 import { Heading, Label, Card, Button, useColors } from "../src/components/ui";
 
-const SUPPORT_EMAIL = "theutkarshmail@gmail.com";
+const SUPPORT_EMAIL = "up714279@gmail.com";
 
 export default function DeleteAccountPage() {
   const c = useColors();

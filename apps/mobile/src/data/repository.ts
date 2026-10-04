@@ -251,13 +251,15 @@ export async function request<T>(
   const timeoutMs =
     path === "/bill/extract"
       ? 65000
-      : path.startsWith("/payment-links")
-        ? 75000
-        : path === "/auth/truecaller"
-          ? 30000
-          : path.startsWith("/auth/")
-            ? 90000
-            : 15000;
+      : path === "/sms/classify"
+        ? 30000
+        : path.startsWith("/payment-links")
+          ? 75000
+          : path === "/auth/truecaller"
+            ? 30000
+            : path.startsWith("/auth/")
+              ? 90000
+              : 15000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   let result: any;
@@ -689,7 +691,10 @@ export class DemoRepository implements AppRepository {
     } else if (path.match(/^\/contacts\/[^/]+$/) && method === "PATCH") {
       const contactId = path.split("/")[2];
       const contact = d.savedContacts.find((entry) => entry.id === contactId);
-      if (contact) contact.name = body.name;
+      if (contact) {
+        if (contact.verified) contact.contactName = body.name;
+        else contact.name = body.name;
+      }
     } else if (path === "/tags")
       d.tags.push({ id: uuid(), ...body, archived: false });
     else if (path.startsWith("/tags/")) {
@@ -1143,7 +1148,10 @@ function extraDashboardUpdate(
       const contact = dashboard.savedContacts.find(
         (entry) => entry.id === contactMatch[1],
       );
-      if (contact) contact.name = body.name;
+      if (contact) {
+        if (contact.verified) contact.contactName = body.name;
+        else contact.name = body.name;
+      }
       for (const ledger of dashboard.ledgers) {
         const member = ledger.members.find(
           (entry) => entry.id === contactMatch[1],

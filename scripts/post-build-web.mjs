@@ -314,7 +314,7 @@ const privacyHtml = `<!DOCTYPE html>
       <h2>Contact Us</h2>
       <p>Questions about this policy or your data? Reach out:</p>
       <ul>
-        <li>Email: theutkarshmail@gmail.com</li>
+        <li>Email: up714279@gmail.com</li>
         <li>Developer: Utkarsh Pandey</li>
       </ul>
     </main>
@@ -601,14 +601,14 @@ const deleteAccountHtml = `<!DOCTYPE html>
       <p>If you have uninstalled the app, cannot log in, or prefer to submit a deletion request online:</p>
       <div class="step-box">
         <ol>
-          <li>Send an email to our support email: <strong>theutkarshmail@gmail.com</strong></li>
+          <li>Send an email to our support email: <strong>up714279@gmail.com</strong></li>
           <li>Use the subject line: <code>SettleUp - Account Deletion Request</code></li>
           <li>In the body of the message, provide your <strong>registered phone number</strong> (with country code) or your <strong>associated Google account email</strong>.</li>
           <li>Our team will verify the request and complete the deletion within <strong>30 days</strong>, sending you a final confirmation email.</li>
         </ol>
       </div>
 
-      <a class="btn" href="mailto:theutkarshmail@gmail.com?subject=SettleUp%20-%20Account%20Deletion%20Request&amp;body=Hello%2C%0A%0AI%20would%20like%20to%20request%20the%20deletion%20of%20my%20SettleUp%20account%20and%20associated%20data.%0A%0AMy%20registered%20phone%20number%20or%20Google%20email%20is%3A%20%0A%0AThank%20you.">
+      <a class="btn" href="mailto:up714279@gmail.com?subject=SettleUp%20-%20Account%20Deletion%20Request&amp;body=Hello%2C%0A%0AI%20would%20like%20to%20request%20the%20deletion%20of%20my%20SettleUp%20account%20and%20associated%20data.%0A%0AMy%20registered%20phone%20number%20or%20Google%20email%20is%3A%20%0A%0AThank%20you.">
         Request deletion by email
       </a>
 
@@ -643,7 +643,7 @@ const deleteAccountHtml = `<!DOCTYPE html>
       <ul>
         <li>Developer: <strong>Utkarsh Pandey</strong></li>
         <li>Application: <strong>SettleUp</strong></li>
-        <li>Email: <a href="mailto:theutkarshmail@gmail.com" style="color:var(--accent);">theutkarshmail@gmail.com</a></li>
+        <li>Email: <a href="mailto:up714279@gmail.com" style="color:var(--accent);">up714279@gmail.com</a></li>
       </ul>
     </main>
 

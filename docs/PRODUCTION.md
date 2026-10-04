@@ -48,7 +48,7 @@ The bundle is written to `apps/mobile/android/app/build/outputs/bundle/release/a
 
 ### Play Console declarations
 
-- Complete the SMS and Call Log Permissions Declaration for `READ_SMS`, selecting **SMS-based money management**. Explain that SettleUp reads a bounded seven-day window on-device, filters financial debit/credit messages, uploads no raw SMS, requires review before creating a transaction, and retains only a salted handled-message fingerprint for the seven-day window.
+- Complete the SMS and Call Log Permissions Declaration for `READ_SMS`, selecting **SMS-based money management**. Explain that SettleUp reads a bounded seven-day window, excludes OTPs on-device, sends monetary candidates through the authenticated API for no-retention AI debit classification, requires review before creating a transaction, and retains only a salted handled-message fingerprint for the seven-day window.
 - Publish the operator-completed privacy policy from `docs/PRIVACY.md` at a public HTTPS URL. Add the operator identity, support email, deletion request route, retention periods, subprocessors, and jurisdiction before publishing.
 - Complete Data safety for phone number/account data, user-created financial entries, selected contacts, one-time bill processing, notification tokens, and optional SMS access. Match the answers to actual production providers and retention.
 - Complete App access with a working reviewer account or review instructions, Content rating, Target audience, Ads declaration, Financial features declaration where shown, and the account deletion URL.

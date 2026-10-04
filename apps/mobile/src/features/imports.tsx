@@ -775,13 +775,14 @@ function SmsPrivacyExplainer({ onClose }: { onClose(): void }) {
         <XStack gap={10} alignItems="center">
           <Mascot size={78} mood="reading" />
           <YStack flex={1} gap={7}>
-            <Heading size={16}>Pip checks only bank-like messages</Heading>
+            <Heading size={16}>Pip checks monetary messages</Heading>
             <Label muted size={11} lineHeight={16}>
-              SettleUp suggests expenses from bank SMS on this phone. Nothing
-              becomes a transaction until you accept it.
+              After you allow SMS access, monetary messages are checked by the
+              configured AI for confirmed spending. OTPs are excluded and
+              nothing becomes a transaction until you accept it.
             </Label>
             <XStack gap={6} flexWrap="wrap">
-              {["Read locally", "7-day window", "You approve each one"].map(
+              {["OTPs excluded", "7-day window", "You approve each one"].map(
                 (item) => (
                   <View
                     key={item}
@@ -1023,8 +1024,9 @@ function SmsContent({ accountId }: { accountId: string }) {
                   <Icon name="sms" size={18} color="#626078" />
                 </View>
                 <Label muted size={11} flex={1} lineHeight={16}>
-                  Messages stay on this phone. The weekly inbox covers today and
-                  the previous six days.
+                  The weekly inbox covers today and the previous six days. SMS
+                  bodies are not stored by SettleUp, and AI provider data
+                  collection is disabled.
                 </Label>
               </XStack>
               <XStack gap={8} flexWrap="wrap">

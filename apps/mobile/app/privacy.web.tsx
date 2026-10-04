@@ -182,7 +182,7 @@ export default function PrivacyPolicyWeb() {
         <Bullet text="Account deletion removes your phone and Google identities, profile, sessions, private links, preferences, personal-only transactions, goals, and tags." />
         <Bullet text="Shared records remain available to other participants under the non-identifying label 'Deleted member'." />
         <Bullet text="A minimal deletion audit is retained for up to 12 months; encrypted backup remnants rotate out within 90 days." />
-        <Bullet text="Request account & data deletion online without the app: visit our Account Deletion page (/delete-account) or email theutkarshmail@gmail.com." />
+        <Bullet text="Request account & data deletion online without the app: visit our Account Deletion page (/delete-account) or email up714279@gmail.com." />
 
         <Text style={styles.sectionHeading}>Third-Party Services</Text>
         <Bullet text="Truecaller (optional verification) — truecaller.com/privacy-policy" />
@@ -204,7 +204,7 @@ export default function PrivacyPolicyWeb() {
         <Text style={styles.body}>
           Questions about this policy or your data? Reach out:
         </Text>
-        <Bullet text="Email: theutkarshmail@gmail.com" />
+        <Bullet text="Email: up714279@gmail.com" />
         <Bullet text="Developer: Utkarsh Pandey" />
       </View>
 

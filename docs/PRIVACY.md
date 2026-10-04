@@ -13,7 +13,7 @@ Account sessions are stored independently. On native devices, tokens use operati
 - Camera: requested when you enable UPI QR scanning. A payment app opens only after your confirmation.
 - Contacts: requested when you choose a contact. Manual entry remains available if permission is declined.
 - Notifications: optional and requested from Settings.
-- Android SMS: available only in a supported custom build, requested only when you enable review. The app checks a bounded set of recent messages on-device and locally captures newly received financial-looking messages for review. It never sends raw SMS to the server. iOS cannot read your SMS inbox.
+- Android SMS: available only in a supported custom build and requested only when you enable review. The app reads monetary messages from the chosen period and captures new monetary messages. OTPs are excluded on-device. Remaining candidates may be sent through the authenticated SettleUp API to the configured AI provider solely to identify confirmed debits; provider data collection is disabled and message bodies are not stored by SettleUp. iOS cannot read your SMS inbox.
 
 SMS suggestions can be inaccurate. Accept, edit, or reject each suggestion. Account-specific salted fingerprints retain the handled decision for seven days. Expired native fingerprints are removed when review runs; expired server fingerprints are deleted by the scheduled cleanup worker. Android process scheduling cannot guarantee an exact deletion instant while the device is off or the app is not running.
 

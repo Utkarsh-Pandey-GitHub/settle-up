@@ -237,6 +237,8 @@ export type Dashboard = {
   savedContacts: {
     id: string;
     name: string;
+    /** The private address-book label saved by the current user. */
+    contactName?: string;
     phone?: string;
     verified: boolean;
     avatar?: string;

@@ -15,6 +15,7 @@ import {
   normalizePhone,
   parseUpi,
 } from "@settleup/domain";
+import { request } from "../data/repository";
 export type SmsDecision = {
   decision: "ACCEPTED" | "REJECTED";
   occurredAt: string;
@@ -100,23 +101,68 @@ export class AndroidSmsProvider implements TransactionImportProvider {
       }
     );
   }
-  private async suggestion(message: DeviceSmsMessage) {
-    const parsed = parseExpenseSms(message.body, message.timestamp);
-    if (!parsed) return null;
+  private async fingerprint(message: DeviceSmsMessage) {
     const key = `settleup.sms.salt.${this.accountId}`;
     let salt = await SecureStore.getItemAsync(key);
     if (!salt) {
       salt = Crypto.randomUUID();
       await SecureStore.setItemAsync(key, salt);
     }
-    const fingerprint = await Crypto.digestStringAsync(
+    return Crypto.digestStringAsync(
       Crypto.CryptoDigestAlgorithm.SHA256,
       `${salt}:${message.id}:${message.timestamp}:${message.body}`,
     );
-    return { ...parsed, fingerprint } satisfies ImportSuggestion;
+  }
+  private async classify(messages: DeviceSmsMessage[]) {
+    const suggestions: ImportSuggestion[] = [];
+    for (let index = 0; index < messages.length; index += 30) {
+      const batch = messages.slice(index, index + 30);
+      try {
+        const result = await request<{
+          suggestions: {
+            id: string;
+            title: string;
+            amountMinor: number;
+            accountSuffix?: string | null;
+            reference?: string | null;
+          }[];
+        }>("/sms/classify", {
+          accountId: this.accountId,
+          body: {
+            messages: batch.map(({ id, body }) => ({ id, body })),
+          },
+        });
+        const byId = new Map(batch.map((message) => [message.id, message]));
+        for (const item of result.suggestions) {
+          const message = byId.get(item.id);
+          if (!message) continue;
+          suggestions.push({
+            fingerprint: await this.fingerprint(message),
+            title: item.title,
+            amountMinor: item.amountMinor,
+            occurredAt: new Date(message.timestamp).toISOString(),
+            direction: "DEBIT",
+            accountSuffix: item.accountSuffix ?? undefined,
+            reference: item.reference ?? undefined,
+          });
+        }
+      } catch {
+        // Free model routing can be rate-limited. Preserve the offline parser
+        // as a fallback so SMS review remains usable during provider outages.
+        for (const message of batch) {
+          const parsed = parseExpenseSms(message.body, message.timestamp);
+          if (parsed)
+            suggestions.push({
+              ...parsed,
+              fingerprint: await this.fingerprint(message),
+            });
+        }
+      }
+    }
+    return suggestions;
   }
   async reviewMessage(message: DeviceSmsMessage) {
-    const suggestion = await this.suggestion(message);
+    const [suggestion] = await this.classify([message]);
     if (!suggestion) return null;
     const handled = await this.handled();
     return handled[suggestion.fingerprint] ? null : suggestion;
@@ -127,13 +173,12 @@ export class AndroidSmsProvider implements TransactionImportProvider {
     const handled = await this.handled();
     const bounds = smsRange(range?.from, range?.through);
     const messages = await this.native.readRange(bounds.start, bounds.end);
-    const suggestions: ImportSuggestion[] = [];
+    const pending: DeviceSmsMessage[] = [];
     for (const message of messages) {
-      const suggestion = await this.suggestion(message);
-      if (suggestion && (range || !handled[suggestion.fingerprint]))
-        suggestions.push(suggestion);
+      const fingerprint = await this.fingerprint(message);
+      if (range || !handled[fingerprint]) pending.push(message);
     }
-    return suggestions;
+    return this.classify(pending);
   }
   async markHandled(
     fingerprint: string,

@@ -44,7 +44,9 @@ The repository's installed Expo SDK provides the authoritative compatible packag
 
 ## Bill vision
 
-Set `OPENROUTER_API_KEY` only on the API server. `BILL_VISION_MODEL` defaults to `openrouter/free`, which routes to currently available free models that support the request. Free routing is rate-limited and availability can vary. The mobile app sends an authenticated JPEG or PNG data URL to `/bill/extract`; the server forwards it once with provider data collection disabled, returns structured items, taxes, discounts, and total, and does not persist the image. Rotate any OpenRouter key that was ever embedded in or shipped with a mobile build.
+Set `OPENROUTER_API_KEY` only on the API server. `BILL_VISION_MODEL` defaults to `openrouter/free`, which routes to currently available free models that support the request. Free routing is rate-limited and availability can vary. The mobile app sends an authenticated JPEG or PNG data URL to `/bill/extract`; the server forwards it once with provider data collection disabled, returns company and invoice metadata, structured quantity-aware items, separated CGST/SGST/IGST/cess/VAT/fees/discounts, confidence and reconciliation warnings, and does not persist the image. Printed and handwritten bills use the same schema with stricter uncertainty rules for handwriting. Rotate any OpenRouter key that was ever embedded in or shipped with a mobile build.
+
+The same server key can power SMS classification. Set `SMS_CLASSIFIER_MODEL=openrouter/free`. After Android permission is granted, monetary SMS candidates (excluding OTP messages) are sent in authenticated batches to `/sms/classify`. The model returns only confirmed debits/expenses; credits, reversals, failures, pending payments and promotions are discarded. OpenRouter data collection is disabled, the API does not persist message bodies, and local parsing is used when the free route is unavailable.
 
 ## Truecaller onboarding
 

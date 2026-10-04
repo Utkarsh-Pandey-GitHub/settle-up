@@ -30,6 +30,7 @@ export function BillEditor({
   lines,
   onLines,
   onAmount,
+  onMerchantName,
   photo,
   onPhoto,
   onBusy,
@@ -43,6 +44,7 @@ export function BillEditor({
   lines: BillLine[];
   onLines(lines: BillLine[]): void;
   onAmount(amount: string): void;
+  onMerchantName?(name: string): void;
   photo: BillPhoto | null;
   onPhoto(photo: BillPhoto | null): void;
   onBusy(busy: boolean): void;
@@ -114,7 +116,7 @@ export function BillEditor({
     task(async () => {
       const picked = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
-        quality: 0.85,
+        quality: 1,
       });
       if (picked.canceled) return;
       const asset = picked.assets[0];
@@ -230,7 +232,7 @@ export function BillEditor({
                 Scan your bill
               </Label>
               <Label size={12} color="rgba(255,255,255,0.82)">
-                Keep every edge inside the frame
+                Keep every edge inside the frame · flatten folds · avoid glare
               </Label>
             </View>
             <View
@@ -255,7 +257,7 @@ export function BillEditor({
                       for (let attempt = 0; attempt < 20; attempt++) {
                         try {
                           capture = await cameraRef.current?.takePictureAsync({
-                            quality: 0.85,
+                            quality: 0.95,
                             imageType: "jpg",
                           });
                           break;
@@ -375,18 +377,55 @@ export function BillEditor({
           >
             <PipFeedback
               mood="success"
-              message="Found a few details. Give them a quick check."
+              message={
+                result.isHandwritten
+                  ? "I read the handwriting. Please check every line."
+                  : "I reconciled the visible bill details."
+              }
             />
+            <YStack gap={2}>
+              <Label bold size={15}>
+                {result.merchantName || "Company name not clear"}
+              </Label>
+              <Label muted size={11}>
+                {[result.documentType, result.invoiceNumber, result.invoiceDate]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Label>
+              {!!result.taxId && (
+                <Label muted size={11}>
+                  Tax ID / GSTIN: {result.taxId}
+                </Label>
+              )}
+            </YStack>
             <Label bold>
-              {result.totalMinor !== undefined
-                ? `Detected total: ${money(result.totalMinor, currency)}`
-                : "No clear total found. Enter the bill total manually."}
+              Detected total: {money(result.totalMinor, currency)}
             </Label>
             <Label muted size={12}>
               {result.items.length} suggested lines. Using these replaces your
-              current items
-              {result.totalMinor !== undefined ? " and amount" : ""}.
+              current items and amount.
             </Label>
+            {!!result.taxes.length && (
+              <XStack gap={7} flexWrap="wrap">
+                {result.taxes.map((tax, index) => (
+                  <View
+                    key={`${tax.type}-${index}`}
+                    style={{
+                      paddingHorizontal: 9,
+                      paddingVertical: 6,
+                      borderRadius: 10,
+                      backgroundColor: c.card,
+                    }}
+                  >
+                    <Label size={10} bold>
+                      {tax.type}
+                      {tax.rate !== undefined ? ` ${tax.rate}%` : ""} ·{" "}
+                      {money(tax.amountMinor, currency)}
+                    </Label>
+                  </View>
+                ))}
+              </XStack>
+            )}
             {result.items.slice(0, 5).map((item, i) => (
               <XStack key={i} gap={12} justifyContent="space-between">
                 <Label size={12} flex={1}>
@@ -400,6 +439,9 @@ export function BillEditor({
                 And {result.items.length - 5} more lines to review.
               </Label>
             )}
+            {result.warnings.slice(0, 3).map((warning, index) => (
+              <Notice key={`${warning}-${index}`}>{warning}</Notice>
+            ))}
             <Button
               onPress={() => {
                 const factor =
@@ -417,6 +459,7 @@ export function BillEditor({
                 );
                 if (result.totalMinor !== undefined)
                   onAmount(String(result.totalMinor / factor));
+                if (result.merchantName) onMerchantName?.(result.merchantName);
                 setResult(null);
                 onPhoto(null);
               }}

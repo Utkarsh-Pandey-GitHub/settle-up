@@ -7,7 +7,7 @@ import { API_URL } from "../src/data/repository";
 import { Field, Button } from "../src/components/ui";
 
 const UPDATED = "4 October 2026";
-const SUPPORT_EMAIL = "theutkarshmail@gmail.com";
+const SUPPORT_EMAIL = "up714279@gmail.com";
 const MAILTO_HREF = `mailto:${SUPPORT_EMAIL}?subject=SettleUp%20-%20Account%20Deletion%20Request&body=Hello%2C%0A%0AI%20would%20like%20to%20request%20the%20deletion%20of%20my%20SettleUp%20account%20and%20associated%20data.%0A%0AMy%20registered%20phone%20number%20or%20Google%20email%20is%3A%20%0A%0AThank%20you.`;
 
 export default function DeleteAccountWeb() {

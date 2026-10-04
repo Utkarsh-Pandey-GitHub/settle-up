@@ -81,11 +81,11 @@ Analytics query: `start`, `end`, `currency`, optional `zone`, `ledgerId`, `tagId
 
 ## Imports, sharing, and bill itemisation
 
-Native SMS review does not upload raw messages. `/imports/handled` supports GET and POST (`{fingerprint,decision}`), is account-scoped, and expires fingerprints after seven days. Local parsing creates no financial record; only acceptance invokes the ordinary idempotent transaction endpoint.
+Native SMS review reads monetary candidates only after Android permission. OTP messages are excluded on-device; remaining candidates can be sent to authenticated `POST /sms/classify` in batches of up to 30 for confirmed-debit classification. The API does not persist message bodies and falls back to local parsing when the configured free model is unavailable. `/imports/handled` supports GET and POST (`{fingerprint,decision}`), is account-scoped, and expires fingerprints after seven days. Classification creates no financial record; only acceptance invokes the ordinary idempotent transaction endpoint.
 
 `POST /shares` takes start/end/currency, optional ledger/tag scope arrays, `includeTransactions`, `showDescriptions`, optional `recipientPhone`, and `expiresInHours` (1–168, default 24). It returns `{id,url,expiresAt}`. `GET /shares` lists the owner's links without raw bearer tokens. `DELETE /shares/:id` revokes an owned link. `GET /shared/:token` is public only when the link is public; private links require authentication. The API always checks expiration immediately, independently of worker availability. The link token is never stored or logged in clear text.
 
-`POST /bill/extract` accepts an authenticated JPEG/PNG data URL and currency, forwards it once to the configured vision model, and returns editable item lines and a total. The request is size- and rate-limited. The image is not written to the database or retained as a transaction attachment.
+`POST /bill/extract` accepts an authenticated JPEG/PNG data URL and currency, forwards it once to the configured vision model, and returns supplier/invoice metadata, editable item lines, separated GST/VAT/fee/discount adjustments, confidence, review warnings, and an arithmetically reconciled total. The request is size- and rate-limited. The image is not written to the database or retained as a transaction attachment. See `docs/BILL_EXTRACTION.md` for supported layouts and reconciliation rules.
 
 `POST /transactions/assign-group` accepts `{ids,ledgerId}`. The caller must have write access, must have created every selected transaction, and every transaction participant must be an active member of the target ledger. Settlement and reversal records cannot be reassigned.
 

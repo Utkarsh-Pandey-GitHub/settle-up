@@ -363,6 +363,10 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                     onAmount={(value) =>
                       setValue("amount", value, { shouldValidate: true })
                     }
+                    onMerchantName={(value) => {
+                      if (!watch("title").trim())
+                        setValue("title", value, { shouldValidate: true });
+                    }}
                     photo={photo}
                     onPhoto={setPhoto}
                     onBusy={setScanning}
@@ -622,6 +626,26 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                           />
                         ))}
                     </YStack>
+                  )}
+                  {method === "EQUAL" && preview.length > 0 && (
+                    <Field
+                      label={`${memberName(payerId)} · ${payerId === d.account.id ? "your share" : "payer share"} · ${d.account.currency}`}
+                      value={String(
+                        (preview.find((item) => item.userId === payerId)
+                          ?.amountMinor ?? 0) / 100,
+                      )}
+                      keyboardType="decimal-pad"
+                      onChangeText={(value) => {
+                        const equalWeights = Object.fromEntries(
+                          preview.map((item) => [
+                            item.userId,
+                            String(item.amountMinor / 100),
+                          ]),
+                        );
+                        setWeights({ ...equalWeights, [payerId]: value });
+                        setMethod("EXACT");
+                      }}
+                    />
                   )}
                   {!!splitError && <Notice error>{splitError}</Notice>}
                   {preview.map((a) => (
@@ -1226,7 +1250,14 @@ export function GroupsScreen() {
             options={d.savedContacts.map((contact) => ({
               id: contact.id,
               label: contact.name,
-              detail: contact.phone,
+              detail: [
+                contact.contactName
+                  ? `Saved as ${contact.contactName}`
+                  : undefined,
+                contact.phone,
+              ]
+                .filter(Boolean)
+                .join(" · "),
             }))}
             selected={members}
             multiple

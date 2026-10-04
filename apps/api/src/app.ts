@@ -23,12 +23,16 @@ import {
   normalizePhone,
   SMS_TTL_MS,
   parseUpi,
-  parseMoney,
 } from "@settleup/domain";
 import { analytics } from "@settleup/domain/src/analytics";
 import { AuthService, validateConfig } from "./auth/service";
 import { FinanceService, PrismaDashboardRepository } from "./finance/service";
 import { SharingService } from "./sharing/service";
+import {
+  BILL_EXTRACTION_SYSTEM_PROMPT,
+  billExtractionRequest,
+  normalizeBillExtraction,
+} from "./bill/extraction";
 import {
   db,
   atomic,
@@ -301,15 +305,14 @@ export async function createApp() {
               messages: [
                 {
                   role: "system",
-                  content:
-                    "You are a receipt-vision extraction engine. Inspect the supplied image pixels directly; do not use outside knowledge and do not invent obscured text. Return one JSON object only. Amounts must be decimal numbers in the receipt currency. An item's amount is the printed full line total, not the unit price. Preserve separate tax, fee, discount and rounding lines. Reconcile the printed grand total against subtotal plus adjustments, but always prefer the clearly printed grand total. If uncertain, omit the uncertain line instead of guessing.",
+                  content: BILL_EXTRACTION_SYSTEM_PROMPT,
                 },
                 {
                   role: "user",
                   content: [
                     {
                       type: "text",
-                      text: `Extract this ${body.currency} receipt from the image. Return {"merchantName":string,"items":[{"name":string,"quantity":number,"amount":number}],"taxAmount":number|null,"totalAmount":number|null}. Read every visible purchased item once. Use quantity 1 when no quantity is printed. Put GST, VAT, service charge, delivery, packing, tip, discount and rounding adjustments in their own lines; discounts must be negative. Check that the line amounts are plausible against the printed total before responding.`,
+                      text: billExtractionRequest(body.currency),
                     },
                     {
                       type: "image_url",
@@ -320,8 +323,8 @@ export async function createApp() {
               ],
               response_format: { type: "json_object" },
               provider: { data_collection: "deny" },
-              temperature: 0.1,
-              max_tokens: 2200,
+              temperature: 0,
+              max_tokens: 3600,
             }),
             signal: controller.signal,
           },
@@ -361,57 +364,123 @@ export async function createApp() {
           "The bill result was incomplete. Please try a clearer photo.",
         );
       }
-      const amountMinor = (value: unknown) => {
-        const cleaned = String(value ?? "").replace(/[^0-9.-]/g, "");
-        if (!cleaned) return undefined;
-        try {
-          const negative = cleaned.startsWith("-");
-          const parsedAmount = parseMoney(
-            cleaned.replace(/^-/, ""),
-            body.currency,
-            true,
-          );
-          return negative ? -parsedAmount : parsedAmount;
-        } catch {
-          return undefined;
-        }
-      };
-      const items = Array.isArray(parsed.items)
-        ? parsed.items
-            .map((item: any) => ({
-              name: String(item?.name || "")
-                .trim()
-                .slice(0, 120),
-              quantity: Math.max(0.01, Number(item?.quantity) || 1),
-              amountMinor: amountMinor(item?.amount),
-            }))
-            .filter((item: any) => item.name && item.amountMinor !== undefined)
-            .slice(0, 99)
-        : [];
-      const tax = amountMinor(parsed.taxAmount ?? parsed.tax);
-      if (
-        tax !== undefined &&
-        tax !== 0 &&
-        !items.some((item: any) => /tax|gst|vat|cgst|sgst/i.test(item.name))
-      )
-        items.push({ name: "Tax", quantity: 1, amountMinor: tax });
-      const detectedTotal = amountMinor(
-        parsed.totalAmount ?? parsed.grandTotal ?? parsed.total,
-      );
-      if (!items.length && detectedTotal === undefined)
+      return normalizeBillExtraction(parsed, body.currency);
+    },
+  );
+  app.post(
+    "/sms/classify",
+    { config: { rateLimit: { max: 60, timeWindow: "15 minutes" } } },
+    async (req) => {
+      await actor(req);
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      if (!apiKey)
         throw new DomainError(
-          "BILL_AI_RESULT",
-          "No clear items or total were found. Please try a clearer photo.",
+          "SMS_AI_DISABLED",
+          "AI-assisted SMS review is not configured yet.",
+          503,
         );
+      const body = z
+        .object({
+          messages: z
+            .array(
+              z.object({
+                id: z.string().min(1).max(160),
+                body: z.string().trim().min(1).max(1200),
+              }),
+            )
+            .min(1)
+            .max(30),
+        })
+        .parse(req.body);
+      const allowedIds = new Set(body.messages.map((message) => message.id));
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 25_000);
+      let response: Response;
+      try {
+        response = await fetch(
+          "https://openrouter.ai/api/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${apiKey}`,
+              "content-type": "application/json",
+              "http-referer":
+                process.env.PUBLIC_APP_URL || "https://settleup.tinkrs.space",
+              "x-title": "SettleUp SMS expense classifier",
+            },
+            body: JSON.stringify({
+              model: process.env.SMS_CLASSIFIER_MODEL || "openrouter/free",
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "You classify Indian financial SMS messages. Return JSON only. Include a message only when it confirms that money was already spent, sent, withdrawn, paid, or deducted from the user's account/card/wallet. Exclude credits/incoming money, refunds, reversals, failures, pending transactions, OTPs, balance-only alerts, bills due, reminders, offers, and ambiguous messages. Never infer an amount or merchant that is not stated. amountMinor is the exact spent amount in paise (INR multiplied by 100).",
+                },
+                {
+                  role: "user",
+                  content: `Classify these SMS messages. Return {"expenses":[{"id":string,"title":string,"amountMinor":integer,"accountSuffix":string|null,"reference":string|null}]}. Use a short merchant/payee title. Messages: ${JSON.stringify(body.messages)}`,
+                },
+              ],
+              response_format: { type: "json_object" },
+              provider: { data_collection: "deny" },
+              temperature: 0,
+              max_tokens: 1800,
+            }),
+            signal: controller.signal,
+          },
+        );
+      } catch (error) {
+        throw new DomainError(
+          "SMS_AI_UNAVAILABLE",
+          error instanceof Error && error.name === "AbortError"
+            ? "SMS classification timed out. Local review will be used."
+            : "SMS classification is temporarily unavailable. Local review will be used.",
+          503,
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!response.ok)
+        throw new DomainError(
+          "SMS_AI_UNAVAILABLE",
+          "SMS classification is temporarily unavailable. Local review will be used.",
+          503,
+        );
+      const providerResult = (await response.json()) as any;
+      const rawContent = providerResult?.choices?.[0]?.message?.content;
+      const content = Array.isArray(rawContent)
+        ? rawContent.map((part: any) => part?.text || "").join("")
+        : rawContent;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        throw new DomainError(
+          "SMS_AI_RESULT",
+          "The SMS classifier returned an invalid result.",
+          503,
+        );
+      }
+      const result = z
+        .object({
+          expenses: z
+            .array(
+              z.object({
+                id: z.string().min(1).max(160),
+                title: z.string().trim().min(1).max(80),
+                amountMinor: z.number().int().positive().max(100000000000),
+                accountSuffix: z
+                  .string()
+                  .regex(/^\d{2,8}$/)
+                  .nullable(),
+                reference: z.string().trim().min(3).max(40).nullable(),
+              }),
+            )
+            .max(body.messages.length),
+        })
+        .parse(parsed);
       return {
-        merchantName:
-          String(parsed.merchantName || "")
-            .trim()
-            .slice(0, 120) || undefined,
-        items,
-        totalMinor:
-          detectedTotal ??
-          items.reduce((sum: number, item: any) => sum + item.amountMinor, 0),
+        suggestions: result.expenses.filter((item) => allowedIds.has(item.id)),
       };
     },
   );

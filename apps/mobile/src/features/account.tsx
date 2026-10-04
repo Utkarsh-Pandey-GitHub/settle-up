@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Platform, Share, View, Pressable } from "react-native";
+import { Platform, View, Pressable } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
 import {
@@ -331,6 +331,9 @@ export function AuthScreen() {
   const [verifiedId, setVerifiedId] = useState(
     active?.name === "New friend" ? active.id : "",
   );
+  const verifiedSession = useRef<Session | null>(
+    active ? (getTokenSession(active.id) ?? null) : null,
+  );
   const pendingPayment = useSession((s) => s.pendingPayment);
   const resumePayment = async () => {
     const token = useSession.getState().pendingPayment;
@@ -340,6 +343,7 @@ export function AuthScreen() {
   const acceptSession = async (
     session: Session & { suggestedName?: string },
   ) => {
+    verifiedSession.current = session;
     await useSession.getState().add(session);
     if (session.needsOnboarding) {
       setVerifiedId(session.account.id);
@@ -600,8 +604,12 @@ export function AuthScreen() {
                         method: "PATCH",
                         body: { name: name.trim(), currency, avatar },
                       });
-                      const session = getTokenSession(verifiedId);
-                      if (!session) throw new Error("Please sign in again.");
+                      const session =
+                        getTokenSession(verifiedId) ?? verifiedSession.current;
+                      if (!session || session.account.id !== verifiedId)
+                        throw new Error(
+                          "Your sign-in session was interrupted. Continue with Google or Truecaller again.",
+                        );
                       await useSession.getState().add({
                         ...session,
                         account: {
@@ -819,7 +827,6 @@ export function SettingsScreen() {
     [phone, setPhone] = useState(""),
     [avatar, setAvatar] = useState(""),
     [deleteText, setDeleteText] = useState(""),
-    [exported, setExported] = useState(""),
     [blockSearch, setBlockSearch] = useState(""),
     [blockPage, setBlockPage] = useState(0),
     [blockOpen, setBlockOpen] = useState(false),
@@ -983,8 +990,9 @@ export function SettingsScreen() {
                 </Chip>
               </XStack>
               <Label muted size={12}>
-                Notifications are optional. Enable them for budget threshold
-                updates. You can disable them in system settings at any time.
+                Goal notifications warn you as spending approaches the limits
+                you create in Analytics → Goals. If you have no active goal, no
+                goal alert is sent.
               </Label>
               <XStack alignItems="center" gap={8}>
                 <View
@@ -1079,7 +1087,7 @@ export function SettingsScreen() {
                   />
                   {d.savedContacts
                     .filter((contact) =>
-                      `${contact.name} ${contact.phone ?? ""}`
+                      `${contact.name} ${contact.contactName ?? ""} ${contact.phone ?? ""}`
                         .toLowerCase()
                         .includes(blockSearch.toLowerCase()),
                     )
@@ -1093,6 +1101,11 @@ export function SettingsScreen() {
                       >
                         <YStack flex={1}>
                           <Label bold>{contact.name}</Label>
+                          {!!contact.contactName && (
+                            <Label muted size={10} numberOfLines={1}>
+                              Saved as {contact.contactName}
+                            </Label>
+                          )}
                           {!!contact.phone && (
                             <Label muted size={11}>
                               {contact.phone}
@@ -1142,80 +1155,6 @@ export function SettingsScreen() {
                   </XStack>
                 </YStack>
               )}
-            </YStack>
-          </Card>
-          <Card style={{ borderRadius: 20, padding: 18 }}>
-            <YStack gap={16}>
-              <SectionTitle title="Privacy & security" />
-              <Notice>
-                We do not upload your address book or raw SMS. Your financial
-                data stays scoped to your account. Shared analytics is opt-in,
-                read-only, and expires.
-              </Notice>
-              <Button
-                secondary
-                onPress={() =>
-                  action.run(
-                    () =>
-                      extra(
-                        d.account.id,
-                        "/profile",
-                        { discoverable: false },
-                        "PATCH",
-                      ),
-                    "Contact discovery disabled",
-                  )
-                }
-              >
-                Disable contact discovery
-              </Button>
-              <Label bold size={13}>
-                Block a saved contact
-              </Label>
-              <XStack gap={8} flexWrap="wrap">
-                {d.savedContacts.map((p) => (
-                  <Chip
-                    key={p.id}
-                    onPress={() =>
-                      action.run(
-                        () => extra(d.account.id, "/blocks", { userId: p.id }),
-                        "Saved contact blocked",
-                      )
-                    }
-                  >
-                    {p.name}
-                  </Chip>
-                ))}
-              </XStack>
-              <Button
-                secondary
-                icon="download"
-                onPress={() =>
-                  action.run(async () => {
-                    const result = await extra(d.account.id, "/account/export");
-                    const text = JSON.stringify(result, null, 2);
-                    if (Platform.OS === "web") {
-                      const blob = new Blob([text], {
-                        type: "application/json",
-                      });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = "settleup-export.json";
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    } else
-                      await Share.share({
-                        message: text,
-                        title: "Your SettleUp data",
-                      });
-                    setExported("Your export is ready.");
-                  }, "Export prepared")
-                }
-              >
-                Export my data
-              </Button>
-              {!!exported && <Label muted>{exported}</Label>}
             </YStack>
           </Card>
           <Card style={{ borderRadius: 20, padding: 18 }}>
@@ -1274,7 +1213,7 @@ export function ContactsScreen() {
     <DataScreen>
       {(d) => {
         const contacts = d.savedContacts.filter((contact) =>
-          `${contact.name} ${contact.phone ?? ""}`
+          `${contact.name} ${contact.contactName ?? ""} ${contact.phone ?? ""}`
             .toLowerCase()
             .includes(search.trim().toLowerCase()),
         );
@@ -1298,6 +1237,11 @@ export function ContactsScreen() {
                   <Avatar name={p.name} avatar={p.avatar} />
                   <YStack flex={1}>
                     <Label bold>{p.name}</Label>
+                    {!!p.contactName && (
+                      <Label muted size={10} numberOfLines={1}>
+                        Saved as {p.contactName}
+                      </Label>
+                    )}
                     <Label muted size={12}>
                       {p.phone ?? "Shared transaction"} ·{" "}
                       {p.verified ? "Verified" : "Not verified yet"}

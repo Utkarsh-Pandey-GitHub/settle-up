@@ -4,6 +4,7 @@ import { smsRange, smsDecisionExpiry, parseExpenseSms } from "@settleup/domain";
 const state = vi.hoisted(() => ({
   storage: new Map<string, string>(),
   readRange: vi.fn(),
+  classify: vi.fn(),
 }));
 vi.mock("react-native", () => ({
   Platform: { OS: "android" },
@@ -30,12 +31,17 @@ vi.mock("expo-crypto", () => ({
   digestStringAsync: async (_: string, value: string) => value,
 }));
 vi.mock("expo-contacts", () => ({}));
+vi.mock("../apps/mobile/src/data/repository", () => ({
+  request: state.classify,
+}));
 import { AndroidSmsProvider } from "../apps/mobile/src/services/device";
 
 describe("bank SMS review", () => {
   beforeEach(() => {
     state.storage.clear();
     state.readRange.mockReset();
+    state.classify.mockReset();
+    state.classify.mockRejectedValue(new Error("classifier unavailable"));
   });
   it("uses today plus six calendar days and rejects future/reversed dates", () => {
     const zone = Settings.defaultZone;
@@ -123,5 +129,37 @@ describe("bank SMS review", () => {
     expect(await provider.handled()).toEqual({});
     await provider.markHandled("stale", "ACCEPTED", "2020-01-01");
     expect(await provider.handled()).toEqual({});
+  });
+  it("uses the authenticated AI result for monetary messages missed by local wording", async () => {
+    const timestamp = Date.now() - 1000;
+    state.readRange.mockResolvedValue([
+      {
+        id: "unusual",
+        timestamp,
+        body: "INR 120.50 reduced from wallet ending 7788 for METRO MART",
+      },
+    ]);
+    state.classify.mockResolvedValue({
+      suggestions: [
+        {
+          id: "unusual",
+          title: "Metro Mart",
+          amountMinor: 12050,
+          accountSuffix: "7788",
+          reference: null,
+        },
+      ],
+    });
+    const [suggestion] = await new AndroidSmsProvider("a").review();
+    expect(suggestion).toMatchObject({
+      title: "Metro Mart",
+      amountMinor: 12050,
+      direction: "DEBIT",
+      accountSuffix: "7788",
+    });
+    expect(state.classify).toHaveBeenCalledWith(
+      "/sms/classify",
+      expect.objectContaining({ accountId: "a" }),
+    );
   });
 });

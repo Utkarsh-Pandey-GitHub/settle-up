@@ -841,16 +841,25 @@ export class PrismaDashboardRepository implements DashboardRepository {
           })),
           savedContacts: savedContacts
             .filter((contact) => !preferences.get(contact.id)?.hiddenAt)
-            .map((contact) => ({
-              id: contact.id,
-              name:
-                preferences.get(contact.id)?.alias ??
-                contact.profile?.name ??
-                "Saved contact",
-              phone: contact.phone?.phone,
-              verified: !!contact.phone?.verifiedAt,
-              avatar: contact.profile?.avatar ?? undefined,
-            })),
+            .map((contact) => {
+              const alias = preferences.get(contact.id)?.alias?.trim();
+              const profileName = contact.profile?.name?.trim();
+              const hasProfileName =
+                !!profileName && profileName !== "New friend";
+              return {
+                id: contact.id,
+                name: hasProfileName
+                  ? profileName
+                  : alias || profileName || "Saved contact",
+                contactName:
+                  hasProfileName && alias && alias !== profileName
+                    ? alias
+                    : undefined,
+                phone: contact.phone?.phone,
+                verified: !!contact.phone?.verifiedAt,
+                avatar: contact.profile?.avatar ?? undefined,
+              };
+            }),
         });
         const { analytics } = await import("@settleup/domain/src/analytics");
         data.goals.forEach((g) => {
