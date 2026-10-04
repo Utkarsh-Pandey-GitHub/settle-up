@@ -150,7 +150,6 @@ export function Shell({
     "/analytics",
     "/groups",
     "/goals",
-    "/scan",
     "/tags",
     "/sms",
     "/settings",

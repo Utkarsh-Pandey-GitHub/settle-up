@@ -318,6 +318,13 @@ export async function disableLocalNotifications(accountId: string) {
   if (Platform.OS !== "web")
     await SecureStore.deleteItemAsync(`settleup.notifications.${accountId}`);
 }
+export async function localNotificationsEnabled(accountId: string) {
+  if (Platform.OS === "web") return false;
+  return (
+    (await SecureStore.getItemAsync(`settleup.notifications.${accountId}`)) ===
+    "enabled"
+  );
+}
 export async function syncGoalNotifications(
   data: import("@settleup/contracts").Dashboard,
 ) {

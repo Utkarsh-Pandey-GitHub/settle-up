@@ -1,5 +1,7 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
 import {
+  BackHandler,
+  KeyboardAvoidingView,
   Platform,
   View,
   Pressable,
@@ -11,7 +13,7 @@ import {
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { YStack, XStack } from "tamagui";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   parseUpi,
   parseMoney,
@@ -63,6 +65,19 @@ export function ScanScreen() {
   const scanSize = Math.min(300, screenWidth * 0.76, scannerSpace);
   const scanLeft = (screenWidth - scanSize) / 2;
   const scanTop = scannerTopInset + Math.max(0, (scannerSpace - scanSize) / 2);
+  const closeScanner = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/");
+  }, [router]);
+  useFocusEffect(
+    useCallback(() => {
+      const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+        closeScanner();
+        return true;
+      });
+      return () => listener.remove();
+    }, [closeScanner]),
+  );
   const inspect = (value: string) => {
     try {
       if (processed) return;
@@ -393,7 +408,10 @@ export function ScanScreen() {
 
   // Full-screen camera scanner
   return (
-    <View style={{ flex: 1, backgroundColor: "#000" }}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1, backgroundColor: "#000" }}
+    >
       <CameraView
         style={StyleSheet.absoluteFill}
         facing="back"
@@ -527,7 +545,7 @@ export function ScanScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Go back"
-          onPress={() => router.back()}
+          onPress={closeScanner}
           style={{
             width: 40,
             height: 40,
@@ -680,7 +698,7 @@ export function ScanScreen() {
           </XStack>
         )}
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 export function SmsScreen() {
@@ -839,13 +857,41 @@ function SmsContent({ accountId }: { accountId: string }) {
     work: () => Promise<void>,
     success: string,
   ) => {
-    if (pending) return;
+    if (pending) return false;
     setPending({ kind, fingerprint });
     try {
-      await action.run(work, success);
+      return await action.run(work, success);
     } finally {
       setPending(null);
     }
+  };
+  const decideOptimistically = async (
+    kind: "accept" | "reject",
+    suggestion: ImportSuggestion,
+    work: () => Promise<void>,
+    success: string,
+  ) => {
+    let previousIndex = 0;
+    setSuggestions((current) => {
+      previousIndex = Math.max(
+        0,
+        current.findIndex(
+          (item) => item.fingerprint === suggestion.fingerprint,
+        ),
+      );
+      return current.filter(
+        (item) => item.fingerprint !== suggestion.fingerprint,
+      );
+    });
+    const saved = await perform(kind, suggestion.fingerprint, work, success);
+    if (!saved)
+      setSuggestions((current) => {
+        if (current.some((item) => item.fingerprint === suggestion.fingerprint))
+          return current;
+        const restored = [...current];
+        restored.splice(previousIndex, 0, suggestion);
+        return restored;
+      });
   };
   useEffect(() => {
     let live = true;
@@ -1162,15 +1208,11 @@ function SmsContent({ accountId }: { accountId: string }) {
                 secondary
                 compact
                 style={{ flex: 1, minHeight: 36, paddingVertical: 7 }}
-                loading={
-                  pending?.fingerprint === s.fingerprint &&
-                  pending.kind === "reject"
-                }
                 disabled={!!pending && pending.fingerprint !== s.fingerprint}
                 onPress={() =>
-                  perform(
+                  decideOptimistically(
                     "reject",
-                    s.fingerprint,
+                    s,
                     async () => {
                       if (!custom) {
                         await provider.markHandled(
@@ -1181,9 +1223,6 @@ function SmsContent({ accountId }: { accountId: string }) {
                         );
                         setHistory(await provider.handled());
                       }
-                      setSuggestions((items) =>
-                        items.filter((i) => i.fingerprint !== s.fingerprint),
-                      );
                     },
                     "Suggestion dismissed",
                   )
@@ -1194,15 +1233,11 @@ function SmsContent({ accountId }: { accountId: string }) {
               <Button
                 compact
                 style={{ flex: 1, minHeight: 36, paddingVertical: 7 }}
-                loading={
-                  pending?.fingerprint === s.fingerprint &&
-                  pending.kind === "accept"
-                }
                 disabled={!!pending && pending.fingerprint !== s.fingerprint}
                 onPress={() =>
-                  perform(
+                  decideOptimistically(
                     "accept",
-                    s.fingerprint,
+                    s,
                     async () => {
                       if (!keys.has(s.fingerprint))
                         keys.set(
@@ -1235,9 +1270,6 @@ function SmsContent({ accountId }: { accountId: string }) {
                         );
                         setHistory(await provider.handled());
                       }
-                      setSuggestions((items) =>
-                        items.filter((i) => i.fingerprint !== s.fingerprint),
-                      );
                     },
                     "Suggestion accepted",
                   )

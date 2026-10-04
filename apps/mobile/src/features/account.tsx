@@ -41,6 +41,7 @@ import { DataScreen, SectionTitle } from "./overview";
 import {
   enableNotifications,
   disableLocalNotifications,
+  localNotificationsEnabled,
   requestOnboardingPermissions,
 } from "../services/device";
 WebBrowser.maybeCompleteAuthSession();
@@ -814,18 +815,32 @@ export function AccountsScreen() {
   );
 }
 export function SettingsScreen() {
-  const [name, setName] = useState(""),
+  const [name, setName] = useState<string | null>(null),
     [phone, setPhone] = useState(""),
     [avatar, setAvatar] = useState(""),
     [deleteText, setDeleteText] = useState(""),
     [exported, setExported] = useState(""),
     [blockSearch, setBlockSearch] = useState(""),
     [blockPage, setBlockPage] = useState(0),
-    [blockOpen, setBlockOpen] = useState(false);
+    [blockOpen, setBlockOpen] = useState(false),
+    [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(
+      null,
+    );
   const dark = useSession((s) => s.dark),
     router = useRouter(),
     c = useColors(),
     action = useAction();
+  const activeId = useSession((s) => s.activeId);
+  useEffect(() => {
+    if (!activeId) return;
+    let live = true;
+    void localNotificationsEnabled(activeId).then((enabled) => {
+      if (live) setNotificationsEnabled(enabled);
+    });
+    return () => {
+      live = false;
+    };
+  }, [activeId]);
   return (
     <DataScreen>
       {(d) => (
@@ -839,9 +854,14 @@ export function SettingsScreen() {
               <SectionTitle title="Profile" />
               <Field
                 label="Display name"
-                value={name || d.account.name}
+                value={name ?? d.account.name}
                 onChangeText={setName}
               />
+              {name !== null && !name.trim() && (
+                <Label size={11} color="#B14D65">
+                  Display name cannot be empty.
+                </Label>
+              )}
               <Field
                 label="Phone number"
                 value={phone || d.account.phone}
@@ -882,9 +902,10 @@ export function SettingsScreen() {
               />
               <Button
                 secondary
+                disabled={name !== null && !name.trim()}
                 onPress={() =>
                   action.run(async () => {
-                    const nextName = name || d.account.name;
+                    const nextName = (name ?? d.account.name).trim();
                     const nextAvatar = avatar || d.account.avatar;
                     const previousAccount = { ...d.account };
                     const nextAccount = {
@@ -903,6 +924,7 @@ export function SettingsScreen() {
                         },
                         "PATCH",
                       );
+                      setName(nextName);
                     } catch (error) {
                       await useSession
                         .getState()
@@ -964,11 +986,35 @@ export function SettingsScreen() {
                 Notifications are optional. Enable them for budget threshold
                 updates. You can disable them in system settings at any time.
               </Label>
+              <XStack alignItems="center" gap={8}>
+                <View
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor:
+                      notificationsEnabled === null
+                        ? c.muted
+                        : notificationsEnabled
+                          ? "#43816E"
+                          : "#B14D65",
+                  }}
+                />
+                <Label bold size={12}>
+                  {notificationsEnabled === null
+                    ? "Checking notification status…"
+                    : notificationsEnabled
+                      ? "Notifications are enabled on this device"
+                      : "Notifications are disabled on this device"}
+                </Label>
+              </XStack>
               <Button
                 secondary
+                disabled={notificationsEnabled === true || action.busy}
                 onPress={() =>
                   action.run(async () => {
                     const pushToken = await enableNotifications(d.account.id);
+                    setNotificationsEnabled(true);
                     await extra(
                       d.account.id,
                       "/notifications",
@@ -982,9 +1028,11 @@ export function SettingsScreen() {
               </Button>
               <Button
                 secondary
+                disabled={notificationsEnabled === false || action.busy}
                 onPress={() =>
                   action.run(async () => {
                     await disableLocalNotifications(d.account.id);
+                    setNotificationsEnabled(false);
                     await extra(
                       d.account.id,
                       "/notifications",

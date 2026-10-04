@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   findNodeHandle,
   Keyboard,
@@ -29,29 +29,34 @@ export function KeyboardAwareScreen({
   keyboardShouldPersistTaps = "handled",
   keyboardDismissMode = Platform.OS === "ios" ? "interactive" : "on-drag",
   onFocus,
+  contentContainerStyle,
   ...scrollProps
 }: KeyboardAwareScreenProps) {
   const scrollRef = useRef<ScrollView>(null);
+  const [keyboardInset, setKeyboardInset] = useState(0);
 
-  const revealHandle = (handle: number | null) => {
-    if (handle == null) return;
-    const responder = (
-      scrollRef.current as ScrollView & {
-        getScrollResponder?: () => {
-          scrollResponderScrollNativeHandleToKeyboard?: (
-            node: number,
-            additionalOffset: number,
-            preventNegativeScrollOffset: boolean,
-          ) => void;
-        };
-      }
-    )?.getScrollResponder?.();
-    responder?.scrollResponderScrollNativeHandleToKeyboard?.(
-      handle,
-      focusedFieldOffset,
-      true,
-    );
-  };
+  const revealHandle = useCallback(
+    (handle: number | null) => {
+      if (handle == null) return;
+      const responder = (
+        scrollRef.current as ScrollView & {
+          getScrollResponder?: () => {
+            scrollResponderScrollNativeHandleToKeyboard?: (
+              node: number,
+              additionalOffset: number,
+              preventNegativeScrollOffset: boolean,
+            ) => void;
+          };
+        }
+      )?.getScrollResponder?.();
+      responder?.scrollResponderScrollNativeHandleToKeyboard?.(
+        handle,
+        focusedFieldOffset,
+        true,
+      );
+    },
+    [focusedFieldOffset],
+  );
 
   useEffect(() => {
     const revealFocusedField = () => {
@@ -65,22 +70,34 @@ export function KeyboardAwareScreen({
         revealHandle(handle);
       });
     };
-    const subscription = Keyboard.addListener(
-      "keyboardDidShow",
-      revealFocusedField,
+    const shown = Keyboard.addListener("keyboardDidShow", (event) => {
+      setKeyboardInset(event.endCoordinates.height);
+      revealFocusedField();
+    });
+    const hidden = Keyboard.addListener("keyboardDidHide", () =>
+      setKeyboardInset(0),
     );
-    return () => subscription.remove();
-  }, [focusedFieldOffset]);
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, [revealHandle]);
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={keyboardOffset}
       style={{ flex: 1 }}
     >
       <ScrollView
         ref={scrollRef}
         {...scrollProps}
+        contentContainerStyle={[
+          contentContainerStyle,
+          keyboardInset > 0 && {
+            paddingBottom: keyboardInset + focusedFieldOffset + 24,
+          },
+        ]}
         keyboardShouldPersistTaps={keyboardShouldPersistTaps}
         keyboardDismissMode={keyboardDismissMode}
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
@@ -88,6 +105,7 @@ export function KeyboardAwareScreen({
           onFocus?.(event);
           const handle = event.nativeEvent.target;
           setTimeout(() => revealHandle(handle), 80);
+          setTimeout(() => revealHandle(handle), 280);
         }}
       >
         {children}

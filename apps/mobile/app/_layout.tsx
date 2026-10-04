@@ -71,6 +71,14 @@ export default function Layout() {
               contentStyle: { backgroundColor: dark ? "#1C1922" : "#F5F4F7" },
             }}
           >
+            <Stack.Screen
+              name="scan"
+              options={{
+                gestureEnabled: true,
+                fullScreenGestureEnabled: true,
+                animation: "slide_from_right",
+              }}
+            />
             <Stack.Screen name="+not-found" />
           </Stack>
         </TamaguiProvider>

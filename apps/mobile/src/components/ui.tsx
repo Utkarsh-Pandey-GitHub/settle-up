@@ -9,6 +9,7 @@ import {
   AccessibilityInfo,
   Animated,
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   Modal,
   ScrollView,
@@ -1327,7 +1328,8 @@ export function SearchPicker({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{
           flex: 1,
           justifyContent: "center",
@@ -1425,7 +1427,7 @@ export function SearchPicker({
             </XStack>
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

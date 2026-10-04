@@ -137,6 +137,18 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   const splitMembers = selected.length
     ? [payerId, ...selected.filter((id) => id !== payerId)]
     : [];
+  const splitInputSuffix =
+    method === "EXACT"
+      ? d.account.currency
+      : method === "PERCENTAGE"
+        ? "%"
+        : "shares";
+  const memberName = (id: string) =>
+    id === d.account.id
+      ? d.account.name
+      : (ledger?.members.find((member) => member.id === id)?.name ??
+        d.savedContacts.find((contact) => contact.id === id)?.name ??
+        "Member");
   const type: CreateTransaction["type"] = selected.length
     ? "SHARED_EXPENSE"
     : "PERSONAL_EXPENSE";
@@ -580,18 +592,37 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                       ),
                     )}
                   </XStack>
-                  {method !== "EQUAL" &&
-                    splitMembers.map((id) => (
+                  {method !== "EQUAL" && (
+                    <YStack gap={10}>
                       <Field
-                        key={id}
-                        label={`${ledger?.members.find((m) => m.id === id)?.name} · ${method === "EXACT" ? d.account.currency : method === "PERCENTAGE" ? "%" : "shares"}`}
-                        value={weights[id] ?? ""}
+                        label={`${memberName(payerId)} · ${payerId === d.account.id ? "your share" : "payer share"} · ${splitInputSuffix}`}
+                        value={weights[payerId] ?? ""}
                         keyboardType="decimal-pad"
                         onChangeText={(value) =>
-                          setWeights((w) => ({ ...w, [id]: value }))
+                          setWeights((current) => ({
+                            ...current,
+                            [payerId]: value,
+                          }))
                         }
                       />
-                    ))}
+                      {selected
+                        .filter((id) => id !== payerId)
+                        .map((id) => (
+                          <Field
+                            key={id}
+                            label={`${memberName(id)} · ${splitInputSuffix}`}
+                            value={weights[id] ?? ""}
+                            keyboardType="decimal-pad"
+                            onChangeText={(value) =>
+                              setWeights((current) => ({
+                                ...current,
+                                [id]: value,
+                              }))
+                            }
+                          />
+                        ))}
+                    </YStack>
+                  )}
                   {!!splitError && <Notice error>{splitError}</Notice>}
                   {preview.map((a) => (
                     <XStack justifyContent="space-between" key={a.userId}>
