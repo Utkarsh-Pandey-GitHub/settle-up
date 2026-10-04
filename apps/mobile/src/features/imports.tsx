@@ -22,7 +22,6 @@ import {
 } from "@settleup/domain";
 import {
   AndroidSmsProvider,
-  addUpiTransactionReference,
   type SmsDecision,
   paymentLauncher,
   paymentRequest,
@@ -51,6 +50,8 @@ export function ScanScreen() {
     [track, setTrack] = useState(true),
     [amount, setAmount] = useState(""),
     [processed, setProcessed] = useState(false),
+    [paymentSource, setPaymentSource] = useState<"scan" | "manual">("scan"),
+    [paymentOutcome, setPaymentOutcome] = useState(""),
     [pasteMode, setPasteMode] = useState(false);
   const action = useAction();
   const router = useRouter();
@@ -78,11 +79,13 @@ export function ScanScreen() {
       return () => listener.remove();
     }, [closeScanner]),
   );
-  const inspect = (value: string) => {
+  const inspect = (value: string, source: "scan" | "manual" = "scan") => {
     try {
       if (processed) return;
       const result = parseUpi(value);
       setPayment(result);
+      setPaymentSource(source);
+      setPaymentOutcome("");
       setPayeeAddress(result.payeeAddress);
       setUri(result.uri);
       setAmount(result.amountMinor ? String(result.amountMinor / 100) : "");
@@ -96,7 +99,7 @@ export function ScanScreen() {
     const paymentUri = entered.toLowerCase().startsWith("upi:")
       ? entered
       : `upi://pay?pa=${encodeURIComponent(entered)}&pn=${encodeURIComponent(entered)}&cu=INR`;
-    inspect(paymentUri);
+    inspect(paymentUri, "manual");
   };
 
   const pickImage = async () => {
@@ -220,6 +223,7 @@ export function ScanScreen() {
                 onPress={() => {
                   setPayment(null);
                   setProcessed(false);
+                  setPaymentOutcome("");
                   action.setError("");
                 }}
                 style={{
@@ -264,40 +268,54 @@ export function ScanScreen() {
                     label="Payee UPI ID"
                     value={payeeAddress}
                     onChangeText={setPayeeAddress}
+                    editable={paymentSource === "manual"}
                     placeholder="e.g. merchant@upi or 9876543210@paytm"
                   />
-                  <XStack flexWrap="wrap" gap={6}>
-                    {[
-                      "@paytm",
-                      "@ybl",
-                      "@okicici",
-                      "@oksbi",
-                      "@upi",
-                      "@axl",
-                    ].map((ext) => (
-                      <Chip
-                        key={ext}
-                        selected={payeeAddress.endsWith(ext)}
-                        onPress={() => {
-                          const base = payeeAddress.includes("@")
-                            ? payeeAddress.split("@")[0]
-                            : payeeAddress;
-                          setPayeeAddress(`${base}${ext}`);
-                        }}
-                      >
-                        {ext}
-                      </Chip>
-                    ))}
-                  </XStack>
+                  {paymentSource === "manual" && (
+                    <XStack flexWrap="wrap" gap={6}>
+                      {[
+                        "@paytm",
+                        "@ybl",
+                        "@okicici",
+                        "@oksbi",
+                        "@upi",
+                        "@axl",
+                      ].map((ext) => (
+                        <Chip
+                          key={ext}
+                          selected={payeeAddress.endsWith(ext)}
+                          onPress={() => {
+                            const base = payeeAddress.includes("@")
+                              ? payeeAddress.split("@")[0]
+                              : payeeAddress;
+                            setPayeeAddress(`${base}${ext}`);
+                          }}
+                        >
+                          {ext}
+                        </Chip>
+                      ))}
+                    </XStack>
+                  )}
+                  {paymentSource === "scan" && (
+                    <Label muted size={11}>
+                      Locked to the payee encoded in the scanned QR.
+                    </Label>
+                  )}
                 </YStack>
 
                 <Field
                   label="Amount (INR)"
                   value={amount}
                   onChangeText={setAmount}
+                  editable={!payment.fixedAmount}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
                 />
+                {payment.fixedAmount && (
+                  <Label muted size={11}>
+                    This amount is fixed by the dynamic QR.
+                  </Label>
+                )}
 
                 {!!payment.note && (
                   <YStack gap={4}>
@@ -337,6 +355,8 @@ export function ScanScreen() {
 
                 {!!action.error && <Notice error>{action.error}</Notice>}
 
+                {!!paymentOutcome && <Notice>{paymentOutcome}</Notice>}
+
                 <Notice>
                   Opening the UPI app is not proof of payment. Tracked payments
                   stay pending until you confirm completion.
@@ -356,13 +376,14 @@ export function ScanScreen() {
                         "am",
                         (value / 100).toFixed(2),
                       );
+                      // Keep the QR issuer's transaction reference untouched.
+                      // SettleUp's idempotency key is local metadata and must not
+                      // be injected into the PSP payment URI.
+                      const launchUri = parseUpi(confirmed.toString()).uri;
+                      await paymentLauncher.ensureAvailable(launchUri);
                       const trackedRequest = await paymentRequest(
                         d.account.id,
-                        confirmed.toString(),
-                      );
-                      const launchUri = addUpiTransactionReference(
-                        confirmed.toString(),
-                        `${trackedRequest.occurredAt}:${trackedRequest.key}`,
+                        launchUri,
                       );
                       if (track)
                         await repository.create(d.account.id, {
@@ -382,8 +403,22 @@ export function ScanScreen() {
                           splitMethod: "EQUAL",
                         });
                       setProcessed(true);
-                      await paymentLauncher.open(launchUri);
-                    }, "Payment app opened. Confirm the pending entry after payment succeeds.")
+                      const result = await paymentLauncher
+                        .open(launchUri)
+                        .catch((error) => {
+                          setProcessed(false);
+                          throw error;
+                        });
+                      setPaymentOutcome(
+                        result.status === "SUCCESS"
+                          ? "The UPI app reported success. Check its receipt before confirming the pending transaction."
+                          : result.status === "FAILURE"
+                            ? "The UPI app reported that this payment failed. The SettleUp entry remains pending."
+                            : result.status === "CANCELLED"
+                              ? "Payment was closed or cancelled. The SettleUp entry remains pending."
+                              : "You returned from the UPI app. Check its receipt before confirming the pending transaction.",
+                      );
+                    }, "Returned from the payment app. Check its receipt before confirming.")
                   }
                 >
                   {amount ? `Pay ₹${amount}` : "Confirm & pay"}

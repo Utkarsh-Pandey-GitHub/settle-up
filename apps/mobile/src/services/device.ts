@@ -298,39 +298,43 @@ export async function chooseContacts() {
   }
   return [...unique.values()];
 }
+export type UpiLaunchResult = {
+  status: "SUCCESS" | "SUBMITTED" | "FAILURE" | "CANCELLED" | "UNKNOWN";
+  transactionId?: string;
+  response?: string;
+};
+type UpiPaymentNative = {
+  open(uri: string): Promise<UpiLaunchResult>;
+};
+const upiBridge =
+  Platform.OS === "android"
+    ? requireOptionalNativeModule<UpiPaymentNative>("UpiPayment")
+    : null;
 let lastPaymentLaunch: { uri: string; at: number } | undefined;
 export const paymentLauncher = {
-  async open(uri: string) {
+  async ensureAvailable(uri: string) {
     const safe = parseUpi(uri);
     if (Platform.OS === "web")
       throw new Error("Open a UPI app from an Android or iOS device.");
+    if (!(await Linking.canOpenURL(safe.uri)))
+      throw new Error("No UPI payment app is available on this phone.");
+    return safe.uri;
+  },
+  async open(uri: string): Promise<UpiLaunchResult> {
+    const safeUri = await this.ensureAvailable(uri);
     if (
-      lastPaymentLaunch?.uri === safe.uri &&
-      Date.now() - lastPaymentLaunch.at < 8000
+      lastPaymentLaunch?.uri === safeUri &&
+      Date.now() - lastPaymentLaunch.at < 15000
     )
       throw new Error(
         "The UPI app is already opening. Return here before trying again.",
       );
-    if (!(await Linking.canOpenURL(safe.uri)))
-      throw new Error("No UPI payment app is available on this phone.");
-    lastPaymentLaunch = { uri: safe.uri, at: Date.now() };
-    await Linking.openURL(safe.uri);
+    lastPaymentLaunch = { uri: safeUri, at: Date.now() };
+    if (upiBridge) return upiBridge.open(safeUri);
+    await Linking.openURL(safeUri);
+    return { status: "UNKNOWN" };
   },
 };
-
-export function addUpiTransactionReference(uri: string, seed: string) {
-  const payment = new URL(parseUpi(uri).uri);
-  if (!payment.searchParams.has("tr")) {
-    // NPCI caps `tr` at 35 digits. Keep it stable for one payment attempt so
-    // returning to SettleUp never creates a second PSP transaction reference.
-    const numericSeed = seed.replace(/\D/g, "");
-    const reference = numericSeed.slice(0, 35);
-    if (reference.length < 12)
-      throw new Error("Could not create a safe UPI transaction reference.");
-    payment.searchParams.set("tr", reference);
-  }
-  return parseUpi(payment.toString()).uri;
-}
 export async function enableNotifications(accountId: string) {
   if (Platform.OS === "web")
     throw new Error("Notifications are available in the native app.");

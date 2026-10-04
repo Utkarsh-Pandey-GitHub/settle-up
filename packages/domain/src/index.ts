@@ -240,7 +240,22 @@ export function parseUpi(input: string) {
     url.hash
   )
     throw new DomainError("UPI", "Only upi://pay links are supported.");
-  for (const key of ["pa", "pn", "am", "cu", "tn", "tr"])
+  const supportedFields = [
+    "pa",
+    "pn",
+    "mc",
+    "tid",
+    "tr",
+    "tn",
+    "am",
+    "mam",
+    "cu",
+    "mode",
+    "purpose",
+    "orgid",
+    "sign",
+  ] as const;
+  for (const key of supportedFields)
     if (url.searchParams.getAll(key).length > 1)
       throw new DomainError(
         "UPI",
@@ -253,20 +268,29 @@ export function parseUpi(input: string) {
   if (cu !== "INR") throw new DomainError("UPI", "UPI payments must use INR.");
   const pn = (url.searchParams.get("pn") ?? pa).slice(0, 120);
   const tn = (url.searchParams.get("tn") ?? "").slice(0, 250);
-  const tr = (url.searchParams.get("tr") ?? "").slice(0, 128);
+  const tr = (url.searchParams.get("tr") ?? "").slice(0, 35);
   const amountMinor = url.searchParams.has("am")
     ? parseMoney(url.searchParams.get("am")!, cu)
     : undefined;
+  const minimumAmountMinor = url.searchParams.has("mam")
+    ? parseMoney(url.searchParams.get("mam")!, cu)
+    : undefined;
+  if (
+    amountMinor !== undefined &&
+    minimumAmountMinor !== undefined &&
+    amountMinor < minimumAmountMinor
+  )
+    throw new DomainError("UPI", "UPI amount is below the required minimum.");
   const safe = new URL("upi://pay");
-  for (const [key, value] of Object.entries({
-    pa,
-    pn,
-    cu,
-    tn,
-    tr,
-    am: url.searchParams.get("am") ?? "",
-  }))
+  // Preserve standard merchant fields from the scanned QR. Dropping fields such
+  // as merchant category, transaction ID, mode or signature can make a valid
+  // QR behave differently across PSP apps. Unknown fields (especially callback
+  // URLs) remain stripped before the URI leaves SettleUp.
+  for (const key of supportedFields) {
+    const value = url.searchParams.get(key);
     if (value) safe.searchParams.set(key, value);
+  }
+  if (!safe.searchParams.has("cu")) safe.searchParams.set("cu", cu);
   return {
     payeeAddress: pa,
     payeeName: pn,
@@ -274,6 +298,7 @@ export function parseUpi(input: string) {
     currency: cu,
     note: tn,
     reference: tr,
+    fixedAmount: amountMinor !== undefined && !!tr,
     uri: safe.toString(),
   };
 }

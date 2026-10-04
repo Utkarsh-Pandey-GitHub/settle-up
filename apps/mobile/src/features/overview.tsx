@@ -387,7 +387,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
       >
         <Avatar name={d.account.name} avatar={d.account.avatar} size={40} />
         <YStack alignItems="flex-start" flex={1}>
-          <Heading size={26}>Hi,test {d.account.name.split(" ")[0]}</Heading>
+          <Heading size={26}>Hi {d.account.name.split(" ")[0]}</Heading>
           <Label muted size={12}>
             Your money at a glance
           </Label>
@@ -535,19 +535,30 @@ function HomeContent({ data: d }: { data: Dashboard }) {
           action="View all"
           onPress={() => go("/activity")}
         />
-        {d.transactions.slice(0, visibleRows).map((t) => (
-          <View
-            key={t.id}
-            style={{
-              backgroundColor: c.card,
-              borderRadius: 14,
-              paddingHorizontal: 14,
-            }}
-          >
-            <TransactionRow transaction={t} data={d} last compact />
-          </View>
-        ))}
-        {!d.transactions.length && (
+        {d.transactions
+          .filter(
+            (transaction) =>
+              transaction.type !== "PERSONAL_EXPENSE" ||
+              transaction.sourceId === d.account.id,
+          )
+          .slice(0, visibleRows)
+          .map((t) => (
+            <View
+              key={t.id}
+              style={{
+                backgroundColor: c.card,
+                borderRadius: 14,
+                paddingHorizontal: 14,
+              }}
+            >
+              <TransactionRow transaction={t} data={d} last compact />
+            </View>
+          ))}
+        {!d.transactions.some(
+          (transaction) =>
+            transaction.type !== "PERSONAL_EXPENSE" ||
+            transaction.sourceId === d.account.id,
+        ) && (
           <Empty
             title="A fresh start"
             detail="Add a transaction to start tracking your spending."
@@ -594,6 +605,7 @@ export function ActivityScreen() {
       {(d) => {
         const filtered = d.transactions.filter(
           (t) =>
+            (t.type !== "PERSONAL_EXPENSE" || t.sourceId === d.account.id) &&
             t.title.toLowerCase().includes(search.toLowerCase()) &&
             (!tag || t.tagIds.includes(tag)) &&
             (!status || t.status === status) &&

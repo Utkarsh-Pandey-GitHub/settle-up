@@ -180,6 +180,18 @@ describe("imports & UPI security", () => {
       "upi://pay?pa=cafe@okbank&pn=Little%20Cafe&am=120.50&cu=INR&tr=172001234567890",
     );
     expect(new URL(p.uri).searchParams.get("tr")).toBe("172001234567890");
+    expect(p.fixedAmount).toBe(true);
+  });
+  it("preserves standard merchant routing fields without callback URLs", () => {
+    const p = parseUpi(
+      "upi://pay?pa=shop@bank&pn=Shop&mc=5411&tid=SALE123&tr=172001234567890&am=42.00&mam=40.00&cu=INR&mode=02&purpose=00&orgid=000000&sign=abc123&url=https://evil.example",
+    );
+    const query = new URL(p.uri).searchParams;
+    expect(query.get("mc")).toBe("5411");
+    expect(query.get("tid")).toBe("SALE123");
+    expect(query.get("mode")).toBe("02");
+    expect(query.get("sign")).toBe("abc123");
+    expect(query.has("url")).toBe(false);
   });
   it.each([
     "https://evil.example",
