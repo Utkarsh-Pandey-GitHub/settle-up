@@ -387,7 +387,7 @@ function HomeContent({ data: d }: { data: Dashboard }) {
       >
         <Avatar name={d.account.name} avatar={d.account.avatar} size={40} />
         <YStack alignItems="flex-start" flex={1}>
-          <Heading size={26}>Hi, {d.account.name.split(" ")[0]}</Heading>
+          <Heading size={26}>Hi,test {d.account.name.split(" ")[0]}</Heading>
           <Label muted size={12}>
             Your money at a glance
           </Label>
