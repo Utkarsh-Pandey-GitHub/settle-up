@@ -192,6 +192,45 @@ describe.runIf(enabled)("PostgreSQL API integration", () => {
       ).statusCode,
     ).toBe(404);
   });
+  it("lets only the owner edit, delete, or share a personal group expense", async () => {
+    const personalInput = {
+      idempotencyKey: randomUUID(),
+      title: "Owner-only personal expense",
+      amountMinor: 900,
+      currency: "INR",
+      type: "PERSONAL_EXPENSE" as const,
+      status: "SETTLED" as const,
+      occurredAt: started,
+      ledgerId: ids.goa,
+      participants: [],
+      tagIds: [],
+      splitMethod: "EQUAL" as const,
+    };
+    const created = await post("/transactions", personalInput, a);
+    expect(created.statusCode).toBe(200);
+    const transactionId = created.json().id;
+    const editAs = (session: Session, transaction: any) =>
+      app.inject({
+        method: "PATCH",
+        url: `/transactions/${transactionId}`,
+        payload: { version: 1, transaction },
+        headers: { authorization: `Bearer ${session.accessToken}` },
+      });
+    expect((await editAs(b, personalInput)).statusCode).toBe(403);
+    expect(
+      (await post("/transactions/delete", { ids: [transactionId] }, b))
+        .statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await editAs(a, {
+          ...personalInput,
+          type: "SHARED_EXPENSE",
+          participants: [{ userId: ids.Utkarsh }, { userId: ids.rohan }],
+        })
+      ).statusCode,
+    ).toBe(200);
+  });
   it("authorizes specific debtor and records partial repayment atomically", async () => {
     const body = {
       idempotencyKey: randomUUID(),
@@ -427,7 +466,11 @@ describe.runIf(enabled)("PostgreSQL API integration", () => {
     );
     const after = (await app.inject(path)).json();
     expect(after.spendingMinor).toBe(before.spendingMinor + 6543);
-    expect(after.transactions.some((entry: any) => entry.description === "Not in existing snapshot")).toBe(true);
+    expect(
+      after.transactions.some(
+        (entry: any) => entry.description === "Not in existing snapshot",
+      ),
+    ).toBe(true);
   });
   it("records incoming adjustments without creating false spending or debt", async () => {
     const result = await post(

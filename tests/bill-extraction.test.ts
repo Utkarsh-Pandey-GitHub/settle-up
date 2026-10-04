@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { normalizeBillExtraction } from "../apps/api/src/bill/extraction";
+import {
+  billVisionModels,
+  normalizeBillExtraction,
+} from "../apps/api/src/bill/extraction";
 
 describe("bill extraction reconciliation", () => {
+  it("uses a generative free fallback for missing or decision-only models", () => {
+    expect(billVisionModels()).toEqual(["openrouter/free"]);
+    expect(billVisionModels("cloudflare/clef-flash")).toEqual([
+      "openrouter/free",
+    ]);
+    expect(billVisionModels("vendor/vision-model")).toEqual([
+      "vendor/vision-model",
+      "openrouter/free",
+    ]);
+  });
   it("keeps company details, quantities, CGST and SGST separate", () => {
     const result = normalizeBillExtraction(
       {

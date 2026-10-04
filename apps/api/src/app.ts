@@ -31,6 +31,7 @@ import { SharingService } from "./sharing/service";
 import {
   BILL_EXTRACTION_SYSTEM_PROMPT,
   billExtractionRequest,
+  billVisionModels,
   normalizeBillExtraction,
 } from "./bill/extraction";
 import {
@@ -193,7 +194,14 @@ export async function createApp() {
   });
   app.get("/health", async () => {
     await db.$queryRaw`SELECT 1`;
-    return { status: "ok" };
+    return {
+      status: "ok",
+      features: {
+        billScanner: process.env.OPENROUTER_API_KEY?.trim()
+          ? "ready"
+          : "not_configured",
+      },
+    };
   });
   app.post(
     "/auth/truecaller",
@@ -269,11 +277,11 @@ export async function createApp() {
     },
     async (req) => {
       await actor(req);
-      const apiKey = process.env.OPENROUTER_API_KEY;
+      const apiKey = process.env.OPENROUTER_API_KEY?.trim();
       if (!apiKey)
         throw new DomainError(
           "BILL_AI_DISABLED",
-          "Bill scanning is not configured yet.",
+          "Bill reading is temporarily unavailable.",
           503,
         );
       const body = z
@@ -285,62 +293,70 @@ export async function createApp() {
           currency: z.string().regex(/^[A-Z]{3}$/),
         })
         .parse(req.body);
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 55_000);
-      let response: Response;
-      try {
-        response = await fetch(
-          "https://openrouter.ai/api/v1/chat/completions",
-          {
-            method: "POST",
-            headers: {
-              authorization: `Bearer ${apiKey}`,
-              "content-type": "application/json",
-              "http-referer":
-                process.env.PUBLIC_APP_URL || "https://settleup.tinkrs.space",
-              "x-title": "SettleUp bill scanner",
+      const models = billVisionModels(process.env.BILL_VISION_MODEL);
+      let response: Response | undefined;
+      for (const model of models) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 55_000);
+        try {
+          response = await fetch(
+            "https://openrouter.ai/api/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${apiKey}`,
+                "content-type": "application/json",
+                "http-referer":
+                  process.env.PUBLIC_APP_URL || "https://settleup.tinkrs.space",
+                "x-title": "SettleUp bill scanner",
+              },
+              body: JSON.stringify({
+                model,
+                messages: [
+                  {
+                    role: "system",
+                    content: BILL_EXTRACTION_SYSTEM_PROMPT,
+                  },
+                  {
+                    role: "user",
+                    content: [
+                      {
+                        type: "text",
+                        text: billExtractionRequest(body.currency),
+                      },
+                      {
+                        type: "image_url",
+                        image_url: { url: body.image, detail: "high" },
+                      },
+                    ],
+                  },
+                ],
+                response_format: { type: "json_object" },
+                provider: { data_collection: "deny" },
+                temperature: 0,
+                max_tokens: 3600,
+              }),
+              signal: controller.signal,
             },
-            body: JSON.stringify({
-              model: process.env.BILL_VISION_MODEL || "openrouter/free",
-              messages: [
-                {
-                  role: "system",
-                  content: BILL_EXTRACTION_SYSTEM_PROMPT,
-                },
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "text",
-                      text: billExtractionRequest(body.currency),
-                    },
-                    {
-                      type: "image_url",
-                      image_url: { url: body.image, detail: "high" },
-                    },
-                  ],
-                },
-              ],
-              response_format: { type: "json_object" },
-              provider: { data_collection: "deny" },
-              temperature: 0,
-              max_tokens: 3600,
-            }),
-            signal: controller.signal,
-          },
-        );
-      } catch (error) {
-        throw new DomainError(
-          "BILL_AI_UNAVAILABLE",
-          error instanceof Error && error.name === "AbortError"
-            ? "Bill reading timed out. Please try again."
-            : "The bill reader is unavailable. Please try again.",
-          503,
-        );
-      } finally {
-        clearTimeout(timer);
+          );
+          if (response.ok) break;
+          req.log.warn(
+            { model, providerStatus: response.status },
+            "Bill vision provider rejected request",
+          );
+        } catch (error) {
+          req.log.warn(
+            { model },
+            error instanceof Error && error.name === "AbortError"
+              ? "Bill vision provider timed out"
+              : "Bill vision provider unavailable",
+          );
+          response = undefined;
+        } finally {
+          clearTimeout(timer);
+        }
       }
-      if (!response.ok)
+      if (!response?.ok)
         throw new DomainError(
           "BILL_AI_UNAVAILABLE",
           "The bill reader could not process this image. Please try again.",

@@ -74,6 +74,8 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   const editing = params.edit
     ? d.transactions.find((transaction) => transaction.id === params.edit)
     : undefined;
+  const editingSomeoneElsesPersonal =
+    editing?.type === "PERSONAL_EXPENSE" && editing.sourceId !== d.account.id;
   const [ledgerId, setLedgerId] = useState(
       params.ledger ?? editing?.ledgerId ?? "",
     ),
@@ -209,6 +211,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
       splitError = (e as Error).message;
     }
   const submit = handleSubmit(async (values) => {
+    if (editingSomeoneElsesPersonal) return;
     if (saving.current || scanning) return;
     saving.current = true;
     const ok = await action.run(
@@ -283,6 +286,24 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
       router.replace("/activity");
     }
   });
+  if (editingSomeoneElsesPersonal) {
+    const ownerName =
+      d.savedContacts.find((contact) => contact.id === editing.sourceId)
+        ?.name ?? "The person who recorded it";
+    const leave = () => router.replace(`/transaction/${editing.id}` as any);
+    return (
+      <YStack gap={14} maxWidth={620} width="100%" alignSelf="center">
+        <ActionDialog
+          visible
+          icon="wallet"
+          title="This is a personal expense"
+          detail={`${ownerName} owns this record. Only they can edit it, add a split, or make it shared with the group.`}
+          onClose={leave}
+          actions={[{ label: "Back to transaction", onPress: leave }]}
+        />
+      </YStack>
+    );
+  }
   return (
     <YStack gap={14} maxWidth={800} width="100%" alignSelf="center">
       <Heading>Add a transaction</Heading>
@@ -786,6 +807,7 @@ export function TransactionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>(),
     action = useAction();
   const router = useRouter();
+  const [ownerOnlyOpen, setOwnerOnlyOpen] = useState(false);
   return (
     <DataScreen>
       {(d) => {
@@ -807,6 +829,11 @@ export function TransactionScreen() {
               "completed",
             ),
           );
+        const ownerOnly =
+          t.type === "PERSONAL_EXPENSE" && t.sourceId !== d.account.id;
+        const ownerName =
+          d.savedContacts.find((contact) => contact.id === t.sourceId)?.name ??
+          "The person who recorded it";
         return (
           <YStack maxWidth={760} width="100%" alignSelf="center" gap={22}>
             <Heading>{t.title}</Heading>
@@ -864,8 +891,9 @@ export function TransactionScreen() {
               <YStack gap={16}>
                 <Heading size={18}>Manage transaction</Heading>
                 <Label muted size={12}>
-                  Group members can edit shared transactions. Every change is
-                  recorded in group changes.
+                  {ownerOnly
+                    ? `${ownerName} owns this personal expense. Only they can edit it or make it shared.`
+                    : "Group members can edit shared transactions. Every change is recorded in group changes."}
                 </Label>
                 {!!action.error && <Notice error>{action.error}</Notice>}
                 {!!action.success && <Notice>{action.success}</Notice>}
@@ -873,13 +901,18 @@ export function TransactionScreen() {
                   <Button
                     secondary
                     icon="edit"
-                    onPress={() =>
-                      router.push({ pathname: "/add", params: { edit: t.id } })
-                    }
+                    onPress={() => {
+                      if (ownerOnly) setOwnerOnlyOpen(true);
+                      else
+                        router.push({
+                          pathname: "/add",
+                          params: { edit: t.id },
+                        });
+                    }}
                   >
-                    Edit transaction
+                    {ownerOnly ? "Why can’t I edit?" : "Edit transaction"}
                   </Button>
-                  {t.status === "PENDING" && (
+                  {t.status === "PENDING" && !ownerOnly && (
                     <Button
                       loading={action.busy}
                       disabled={action.busy}
@@ -891,6 +924,19 @@ export function TransactionScreen() {
                 </XStack>
               </YStack>
             </Card>
+            <ActionDialog
+              visible={ownerOnlyOpen}
+              icon="wallet"
+              title="Personal expense belongs to its owner"
+              detail={`${ownerName} can edit this expense and choose group members to make it shared. Other group members can view it here but cannot change or delete it.`}
+              onClose={() => setOwnerOnlyOpen(false)}
+              actions={[
+                {
+                  label: "Got it",
+                  onPress: () => setOwnerOnlyOpen(false),
+                },
+              ]}
+            />
             <Card>
               <SectionTitle title="Transactions" />
               {d.activity

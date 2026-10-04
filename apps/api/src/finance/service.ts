@@ -196,6 +196,12 @@ export class FinanceService {
           409,
         );
       for (const record of records) {
+        if (record.type === "PERSONAL_EXPENSE" && record.sourceId !== userId)
+          throw new DomainError(
+            "PERSONAL_EXPENSE_OWNER_ONLY",
+            "Only the person who recorded this personal expense can change or delete it.",
+            403,
+          );
         if (record.ledgerId) {
           await requireMember(tx, record.ledgerId, userId, true);
           const people = [
@@ -341,6 +347,12 @@ export class FinanceService {
           "TYPE",
           "This transaction cannot be edited.",
           409,
+        );
+      if (record.type === "PERSONAL_EXPENSE" && record.sourceId !== userId)
+        throw new DomainError(
+          "PERSONAL_EXPENSE_OWNER_ONLY",
+          "Only the person who recorded this personal expense can edit it or make it shared.",
+          403,
         );
       if (record.ledgerId)
         await requireMember(tx, record.ledgerId, userId, true);

@@ -19,6 +19,18 @@ export function billExtractionRequest(currency: string) {
   return `Extract this ${currency} day-to-day bill using the required schema. Read the complete page in visual order, including small-print tax summaries and handwritten entries. Focus on the company, what the user bought, quantities, rates, line totals, discounts, charges, taxes and final payable amount. Return purchased items once each and adjustments once each. confidence must be between 0 and 1. Perform the arithmetic checks before emitting JSON.`;
 }
 
+export function billVisionModels(configured?: string) {
+  const requested = configured?.trim();
+  // Clef uses OpenRouter's Decisions API and cannot generate the bill JSON
+  // expected by this chat-completions route.
+  const generative = requested?.startsWith("cloudflare/clef")
+    ? undefined
+    : requested;
+  return [
+    ...new Set([generative, "openrouter/free"].filter(Boolean)),
+  ] as string[];
+}
+
 type FlatLine = { name: string; quantity: number; amountMinor: number };
 
 const taxKinds = new Set(["CGST", "SGST", "UTGST", "IGST", "CESS", "VAT"]);
