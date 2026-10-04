@@ -3,7 +3,7 @@
     "name": "SettleUp",
     "slug": "settleup",
     "scheme": ["settleup", "app.settleup.mobile"],
-    "version": "1.0.19",
+    "version": "1.0.20",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -40,7 +40,8 @@
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.WRITE_CONTACTS"
-      ]
+      ],
+      "versionCode": 20
     },
     "web": {
       "bundler": "metro",
@@ -82,7 +83,8 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.1006604995208-mfkii6r82inootnea7vk0l6p33gdi9to"
         }
-      ]
+      ],
+      "./with-release-version.js"
     ],
     "experiments": {
       "typedRoutes": true

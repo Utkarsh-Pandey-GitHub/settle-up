@@ -41,10 +41,10 @@ Run these commands locally from the repository root:
 ```bash
 npx expo-doctor
 cd apps/mobile/android
-./gradlew clean bundleRelease
+./gradlew :app:bundleRelease
 ```
 
-The bundle is written to `apps/mobile/android/app/build/outputs/bundle/release/app-release.aab`. Upload it manually to Internal testing, complete App content and the store listing, and test authentication, Truecaller, Google sign-in, SMS review, bill vision, contacts, payment links, widgets, account deletion, and OTA delivery on the Play-installed build. Increment both the visible version and Android `versionCode` before every later Play upload.
+The bundle is written to `apps/mobile/android/app/build/outputs/bundle/release/app-release.aab`. Upload it manually to Internal testing, complete App content and the store listing, and test authentication, Truecaller, Google sign-in, SMS review, bill vision, contacts, payment links, widgets, account deletion, and OTA delivery on the Play-installed build. Before each later Play upload, update `expo.version` and `expo.android.versionCode` in `apps/mobile/app.json`. The tracked `with-release-version.js` plugin makes local Gradle builds read the version name, version code, and generated `expo_runtime_version` from that file. Do not manually maintain a runtime string in Android resources. EAS uses local versioning with automatic increments disabled.
 
 ### Play Console declarations
 
@@ -74,7 +74,7 @@ npx eas-cli@latest update --channel production --environment production --messag
 
 Increase the rollout with `npx eas-cli@latest update:edit`. Roll back with `npx eas-cli@latest update:rollback` if needed.
 
-Create a new Play Store build whenever native code or native configuration changes, including Expo SDK upgrades, installed native modules, permissions, widgets, package identifiers, app icons, notification configuration, Truecaller configuration, or Android resources. Increment `expo.version`, `versionName`, and `versionCode` before that build so the `appVersion` runtime policy prevents incompatible OTA delivery.
+Create a new Play Store build whenever native code or native configuration changes, including Expo SDK upgrades, installed native modules, permissions, widgets, package identifiers, app icons, notification configuration, Truecaller configuration, or Android resources. Increment `expo.version` and `expo.android.versionCode` in `app.json` before that build; the native runtime and version name follow automatically. Keep that version unchanged for subsequent compatible OTAs. Version 1.0.20 uses runtime 1.0.20; older installed bundles with the stale 1.0.16 runtime must install the new Play release to receive 1.0.20 updates.
 
 ## Verified in this environment
 
