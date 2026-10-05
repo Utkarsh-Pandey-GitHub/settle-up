@@ -43,6 +43,7 @@ import {
   SearchPicker,
   SearchBar,
   ActionDialog,
+  IconButton,
   type IconName,
 } from "../components/ui";
 const expenseForm = z.object({
@@ -98,6 +99,9 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     [picker, setPicker] = useState<"ledger" | "participants" | "tags" | null>(
       null,
     ),
+    [tagCreatorOpen, setTagCreatorOpen] = useState(false),
+    [newTagName, setNewTagName] = useState(""),
+    [newTagColor, setNewTagColor] = useState("#8252E3"),
     [infoDialog, setInfoDialog] = useState<{
       title: string;
       detail: string;
@@ -156,34 +160,24 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     : "PERSONAL_EXPENSE";
   const isExpense = true;
   useEffect(() => {
-    setSelected((current) =>
-      current.filter((id) =>
-        ledger?.members.some((member) => member.id === id),
-      ),
-    );
+    if (ledger)
+      setSelected((current) =>
+        current.filter((id) =>
+          ledger.members.some((member) => member.id === id),
+        ),
+      );
   }, [ledgerId]);
   const addFriend = (contactId: string) => {
-    const target = ledger?.members.some((member) => member.id === contactId)
-      ? ledger
-      : d.ledgers.find((group) =>
-          group.members.some((member) => member.id === contactId),
-        );
-    if (!target) {
+    if (
+      ledger &&
+      !ledger.members.some((member) => member.id === contactId)
+    ) {
       setInfoDialog({
-        title: "No shared group yet",
-        detail:
-          "Add this contact as a member of a group before splitting a transaction with them.",
-      });
-      return;
-    }
-    if (ledger && ledger.id !== target.id) {
-      setInfoDialog({
-        title: "Choose their group",
+        title: "Not in this group",
         detail: `${d.savedContacts.find((contact) => contact.id === contactId)?.name ?? "This contact"} is not a member of ${ledger.name}.`,
       });
       return;
     }
-    if (!ledger) setLedgerId(target.id);
     setSelected((current) =>
       current.includes(contactId) ? current : [...current, contactId],
     );
@@ -517,11 +511,22 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   <Label size={13} bold>
                     Tags
                   </Label>
-                  <Button secondary onPress={() => setPicker("tags")}>
-                    {tagIds.length
-                      ? `${tagIds.length} ${tagIds.length === 1 ? "tag" : "tags"}`
-                      : "Choose tags"}
-                  </Button>
+                  <XStack gap={7} alignItems="center">
+                    <Button
+                      secondary
+                      style={{ flex: 1 }}
+                      onPress={() => setPicker("tags")}
+                    >
+                      {tagIds.length
+                        ? `${tagIds.length} ${tagIds.length === 1 ? "tag" : "tags"}`
+                        : "Choose tags"}
+                    </Button>
+                    <IconButton
+                      name="plus"
+                      label="Create a tag"
+                      onPress={() => setTagCreatorOpen(true)}
+                    />
+                  </XStack>
                 </YStack>
               </XStack>
               <YStack gap={8}>
@@ -556,9 +561,9 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                         );
                         if (!saved) {
                           setInfoDialog({
-                            title: "Add them to a group first",
+                            title: "Save this contact first",
                             detail:
-                              "Create a group with this phone contact, then you can split transactions together.",
+                              "Add this phone contact to Saved contacts, then choose them here.",
                           });
                           return;
                         }
@@ -597,7 +602,6 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   <Button
                     secondary
                     icon="groups"
-                    disabled={!ledger}
                     onPress={() => setPicker("participants")}
                   >
                     {selected.length
@@ -672,7 +676,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   {preview.map((a) => (
                     <XStack justifyContent="space-between" key={a.userId}>
                       <Label muted>
-                        {ledger?.members.find((m) => m.id === a.userId)?.name}
+                        {memberName(a.userId)}
                         {a.userId === d.account.id ? " (your share)" : ""}
                       </Label>
                       <Label bold>
@@ -748,11 +752,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             title="Add friends"
             options={(ledger
               ? ledger.members.filter((member) => member.id !== d.account.id)
-              : d.savedContacts.filter((contact) =>
-                  d.ledgers.some((group) =>
-                    group.members.some((member) => member.id === contact.id),
-                  ),
-                )
+              : d.savedContacts
             ).map((member) => ({ id: member.id, label: member.name }))}
             selected={selected}
             multiple
@@ -765,6 +765,76 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             }
             onClose={() => setPicker(null)}
           />
+          <Modal
+            visible={tagCreatorOpen}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setTagCreatorOpen(false)}
+          >
+            <View
+              style={{
+                flex: 1,
+                justifyContent: "center",
+                padding: 20,
+                backgroundColor: "rgba(22,24,28,0.5)",
+              }}
+            >
+              <Card style={{ width: "100%", maxWidth: 480, alignSelf: "center" }}>
+                <YStack gap={15}>
+                  <XStack justifyContent="space-between" alignItems="center">
+                    <Heading size={20}>Create a tag</Heading>
+                    <IconButton
+                      name="close"
+                      label="Close"
+                      onPress={() => setTagCreatorOpen(false)}
+                    />
+                  </XStack>
+                  <Field
+                    label="Tag name"
+                    placeholder="Food, travel, subscriptions…"
+                    value={newTagName}
+                    onChangeText={setNewTagName}
+                  />
+                  <XStack gap={8} flexWrap="wrap">
+                    {["#8252E3", "#ECA54C", "#8994D6", "#5EB69B", "#E8898C"].map(
+                      (color) => (
+                        <Chip
+                          key={color}
+                          selected={newTagColor === color}
+                          onPress={() => setNewTagColor(color)}
+                        >
+                          <Label color={color}>●</Label>
+                        </Chip>
+                      ),
+                    )}
+                  </XStack>
+                  {!!action.error && <Notice error>{action.error}</Notice>}
+                  <Button
+                    loading={action.busy}
+                    disabled={action.busy || !newTagName.trim()}
+                    onPress={async () => {
+                      await action.run(async () => {
+                        const created = await extra(
+                          d.account.id,
+                          "/tags",
+                          { name: newTagName.trim(), color: newTagColor },
+                          "POST",
+                        );
+                        if (created?.id)
+                          setTagIds((current) => [
+                            ...new Set([...current, created.id]),
+                          ]);
+                        setNewTagName("");
+                        setTagCreatorOpen(false);
+                      }, "Tag created and selected");
+                    }}
+                  >
+                    Create and select
+                  </Button>
+                </YStack>
+              </Card>
+            </View>
+          </Modal>
           <SearchPicker
             visible={picker === "tags"}
             title="Tags"
@@ -1122,7 +1192,7 @@ export function SettlementScreen() {
                           if (!selected) return;
                           await repository.settle(d.account.id, {
                             idempotencyKey: key,
-                            ledgerId: selected.ledgerId,
+                            ledgerId: selected.ledgerId ?? undefined,
                             debtorId: d.account.id,
                             creditorId: selected.creditorId,
                             amountMinor: parseMoney(amount, selected.currency),

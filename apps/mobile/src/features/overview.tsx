@@ -1,14 +1,33 @@
 import React, { useEffect, useState } from "react";
-import { View, Pressable, useWindowDimensions, Image } from "react-native";
+import {
+  View,
+  Pressable,
+  useWindowDimensions,
+  Image,
+  Animated,
+  Easing,
+} from "react-native";
 import { Redirect, useRouter, useLocalSearchParams } from "expo-router";
 import { XStack, YStack } from "tamagui";
-import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
+import Svg, {
+  Rect,
+  Line,
+  Circle,
+  Path,
+  Text as SvgText,
+} from "react-native-svg";
 import type { Dashboard, TransactionView } from "@settleup/contracts";
 import {
   analytics,
   type AnalyticsFilter,
 } from "@settleup/domain/src/analytics";
-import { money, periodRange, type Period } from "@settleup/domain";
+import {
+  money,
+  parseMoney,
+  periodRange,
+  goalProgress,
+  type Period,
+} from "@settleup/domain";
 import { useDashboard, useAction } from "../data/hooks";
 import { repository, extra } from "../data/repository";
 import { useSession } from "../data/session";
@@ -276,15 +295,30 @@ export function TransactionRow({
 export function SpendingChart({
   data,
   filter,
+  compare = false,
 }: {
   data: Dashboard;
   filter: AnalyticsFilter;
+  compare?: boolean;
 }) {
   const c = useColors();
   const stats = analytics(data, filter);
   const days = stats.byDay.slice(-10);
-  const max = Math.max(...days.map((d) => d.amountMinor), 100);
-  const barWidth = 28;
+  const duration = Date.parse(filter.end) - Date.parse(filter.start);
+  const previousDays = compare
+    ? analytics(data, {
+        ...filter,
+        start: new Date(Date.parse(filter.start) - duration).toISOString(),
+        end: filter.start,
+      }).byDay.slice(-10)
+    : [];
+  const slots = Math.max(days.length, previousDays.length, 1);
+  const max = Math.max(
+    ...days.map((d) => d.amountMinor),
+    ...previousDays.map((d) => d.amountMinor),
+    100,
+  );
+  const barWidth = Math.min(compare ? 15 : 26, 300 / slots);
   const chartWidth = 530;
   return (
     <View
@@ -309,37 +343,56 @@ export function SpendingChart({
             </SvgText>
           </React.Fragment>
         ))}
-        {days.map((d, i) => {
-          const x = 60 + i * (450 / Math.max(days.length, 1));
-          const h = Math.max(4, (d.amountMinor / max) * 100);
+        {Array.from({ length: slots }, (_, i) => {
+          const d = days[i];
+          const previous = previousDays[i];
+          const x = 60 + i * (450 / slots);
+          const h = d ? Math.max(4, (d.amountMinor / max) * 100) : 0;
+          const previousHeight = previous
+            ? Math.max(4, (previous.amountMinor / max) * 100)
+            : 0;
           return (
-            <React.Fragment key={d.date}>
-              <Rect
-                x={x}
-                y={124 - h}
-                width={barWidth}
-                height={h}
-                rx={6}
-                fill={i === days.length - 1 ? "#6652A3" : "#E7DEF7"}
-              />
+            <React.Fragment key={d?.date ?? previous?.date ?? i}>
+              {!!previous && (
+                <Rect
+                  x={x}
+                  y={124 - previousHeight}
+                  width={barWidth}
+                  height={previousHeight}
+                  rx={5}
+                  fill="#CFC8DC"
+                />
+              )}
+              {!!d && (
+                <>
+                  <Rect
+                    x={x + (compare ? barWidth + 3 : 0)}
+                    y={124 - h}
+                    width={barWidth}
+                    height={h}
+                    rx={5}
+                    fill={i === days.length - 1 ? "#6652A3" : "#A990DC"}
+                  />
+                  <SvgText
+                    x={x + (compare ? barWidth + 3 : 0) + barWidth / 2}
+                    y={Math.max(12, 118 - h)}
+                    textAnchor="middle"
+                    fill={c.text}
+                    fontSize={8}
+                    fontWeight="600"
+                  >
+                    {money(d.amountMinor, filter.currency).replace(".00", "")}
+                  </SvgText>
+                </>
+              )}
               <SvgText
-                x={x + barWidth / 2}
-                y={Math.max(12, 118 - h)}
-                textAnchor="middle"
-                fill={c.text}
-                fontSize={8}
-                fontWeight="600"
-              >
-                {money(d.amountMinor, filter.currency).replace(".00", "")}
-              </SvgText>
-              <SvgText
-                x={x + barWidth / 2}
+                x={x + (compare ? barWidth : 0) + barWidth / 2}
                 y={153}
                 textAnchor="middle"
                 fill={c.muted}
                 fontSize={10}
               >
-                {new Date(d.date).getDate()}
+                {d ? new Date(d.date).getDate() : i + 1}
               </SvgText>
             </React.Fragment>
           );
@@ -348,8 +401,77 @@ export function SpendingChart({
       {!days.length && <Label muted>No spending in this period.</Label>}
       <Label muted size={10}>
         Daily personal spending · {filter.currency} · Asia/Kolkata
+        {compare ? " · violet current, grey previous" : ""}
       </Label>
     </View>
+  );
+}
+
+function GoalTargetButton({ onPress }: { onPress(): void }) {
+  const motion = React.useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(motion, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(motion, {
+          toValue: 0,
+          duration: 900,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [motion]);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Set a spending goal"
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        minHeight: 46,
+        paddingHorizontal: 12,
+        borderRadius: 16,
+        backgroundColor: "#EEE9F8",
+        opacity: pressed ? 0.72 : 1,
+        gap: 8,
+      })}
+    >
+      <Animated.View
+        style={{
+          transform: [
+            {
+              translateY: motion.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, -2],
+              }),
+            },
+            {
+              scale: motion.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 1.06],
+              }),
+            },
+          ],
+        }}
+      >
+        <Svg width={34} height={34} viewBox="0 0 34 34">
+          <Circle cx={16} cy={18} r={12} fill="#FFFFFF" stroke="#17151C" strokeWidth={1.7} />
+          <Circle cx={16} cy={18} r={7.5} fill="#D9F2E7" stroke="#17151C" strokeWidth={1.5} />
+          <Circle cx={16} cy={18} r={3} fill="#F2C86B" stroke="#17151C" strokeWidth={1.3} />
+          <Path d="M27 5 16 18M23 5h4v4" stroke="#17151C" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      </Animated.View>
+      <Label bold size={12}>Set a goal</Label>
+    </Pressable>
   );
 }
 export function Overview() {
@@ -1028,7 +1150,16 @@ export function AnalyticsScreen() {
     [ledger, setLedger] = useState(""),
     [custom, setCustom] = useState(false),
     [start, setStart] = useState(new Date().toISOString().slice(0, 10)),
-    [end, setEnd] = useState(new Date().toISOString().slice(0, 10));
+    [end, setEnd] = useState(new Date().toISOString().slice(0, 10)),
+    [compare, setCompare] = useState(false),
+    [goalOpen, setGoalOpen] = useState(false),
+    [goalName, setGoalName] = useState(""),
+    [goalAmount, setGoalAmount] = useState(""),
+    [goalPeriod, setGoalPeriod] = useState<
+      "DAY" | "WEEK" | "MONTH" | "YEAR"
+    >("MONTH"),
+    [goalTags, setGoalTags] = useState<string[]>([]),
+    action = useAction();
   const [openFilter, setOpenFilter] = useState<
     "period" | "category" | "group" | null
   >(null);
@@ -1059,6 +1190,13 @@ export function AnalyticsScreen() {
           ledgerIds: ledger ? [ledger] : [],
         };
         const a = analytics(d, filter);
+        const comparisonChange = a.previousSpendingMinor
+          ? Math.round(
+              ((a.spendingMinor - a.previousSpendingMinor) /
+                a.previousSpendingMinor) *
+                100,
+            )
+          : null;
         return (
           <YStack gap={22}>
             <XStack justifyContent="space-between" gap={12} flexWrap="wrap">
@@ -1066,13 +1204,16 @@ export function AnalyticsScreen() {
                 <Heading>Your spending</Heading>
                 <Label muted>See where your money goes.</Label>
               </YStack>
-              <Button
-                secondary
-                icon="link"
-                onPress={() => router.push("/share")}
-              >
-                Share a snapshot
-              </Button>
+              <XStack gap={8} flexWrap="wrap">
+                <GoalTargetButton onPress={() => setGoalOpen((open) => !open)} />
+                <Button
+                  secondary
+                  icon="link"
+                  onPress={() => router.push("/share")}
+                >
+                  Share a snapshot
+                </Button>
+              </XStack>
             </XStack>
 
             {/* Analytics Dropdown Filter Triggers */}
@@ -1236,15 +1377,154 @@ export function AnalyticsScreen() {
                 ))}
               </FilterDropdownPanel>
             )}
+            {(goalOpen || d.goals.length > 0) && (
+              <Card>
+                <SectionTitle
+                  title="Spending goals"
+                  action="Manage all"
+                  onPress={() => router.push("/goals")}
+                />
+                {goalOpen && (
+                  <YStack gap={14} marginBottom={d.goals.length ? 20 : 0}>
+                    <Field
+                      label="Goal name"
+                      placeholder="Monthly essentials"
+                      value={goalName}
+                      onChangeText={setGoalName}
+                    />
+                    <Field
+                      label={`Budget · ${d.account.currency}`}
+                      placeholder="0.00"
+                      keyboardType="decimal-pad"
+                      value={goalAmount}
+                      onChangeText={setGoalAmount}
+                    />
+                    <YStack gap={8}>
+                      <Label size={12} bold>Time period</Label>
+                      <XStack gap={7} flexWrap="wrap">
+                        {(["DAY", "WEEK", "MONTH", "YEAR"] as const).map(
+                          (value) => (
+                            <Chip
+                              key={value}
+                              selected={goalPeriod === value}
+                              onPress={() => setGoalPeriod(value)}
+                            >
+                              {value.toLowerCase()}
+                            </Chip>
+                          ),
+                        )}
+                      </XStack>
+                    </YStack>
+                    <YStack gap={8}>
+                      <Label size={12} bold>
+                        Tags · leave empty for all spending
+                      </Label>
+                      <XStack gap={7} flexWrap="wrap">
+                        {d.tags
+                          .filter((item) => !item.archived)
+                          .map((item) => (
+                            <Chip
+                              key={item.id}
+                              selected={goalTags.includes(item.id)}
+                              onPress={() =>
+                                setGoalTags((current) =>
+                                  current.includes(item.id)
+                                    ? current.filter((id) => id !== item.id)
+                                    : [...current, item.id],
+                                )
+                              }
+                            >
+                              {item.name}
+                            </Chip>
+                          ))}
+                      </XStack>
+                    </YStack>
+                    {!!action.error && <Notice error>{action.error}</Notice>}
+                    <XStack gap={8} justifyContent="flex-end" flexWrap="wrap">
+                      <Button secondary onPress={() => setGoalOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        loading={action.busy}
+                        disabled={
+                          action.busy || !goalName.trim() || !goalAmount.trim()
+                        }
+                        onPress={async () => {
+                          const range = periodRange(goalPeriod, "Asia/Kolkata");
+                          const ok = await action.run(
+                            () =>
+                              repository.createGoal(d.account.id, {
+                                name: goalName.trim(),
+                                amountMinor: parseMoney(
+                                  goalAmount,
+                                  d.account.currency,
+                                ),
+                                currency: d.account.currency,
+                                ...range,
+                                period: goalPeriod,
+                                tagIds: goalTags,
+                                ledgerIds: [],
+                                thresholds: [50, 80, 100],
+                              }),
+                            "Goal created",
+                          );
+                          if (ok) {
+                            setGoalName("");
+                            setGoalAmount("");
+                            setGoalTags([]);
+                            setGoalOpen(false);
+                          }
+                        }}
+                      >
+                        Save goal
+                      </Button>
+                    </XStack>
+                  </YStack>
+                )}
+                {d.goals.slice(0, 3).map((goal) => {
+                  const progress = goalProgress(
+                    goal.amountMinor,
+                    goal.spentMinor,
+                    goal.start,
+                    goal.end,
+                  );
+                  return (
+                    <YStack key={goal.id} gap={7} marginTop={10}>
+                      <XStack justifyContent="space-between" gap={10}>
+                        <Label bold>{goal.name}</Label>
+                        <Label muted size={11}>
+                          {money(goal.spentMinor, goal.currency)} / {money(goal.amountMinor, goal.currency)}
+                        </Label>
+                      </XStack>
+                      <Progress
+                        value={progress.percentage}
+                        color={progress.percentage >= 100 ? "#D66169" : "#8252E3"}
+                      />
+                    </YStack>
+                  );
+                })}
+              </Card>
+            )}
             <Card>
-              <Label muted>Total personal spending</Label>
-              <Heading size={36}>{money(a.spendingMinor, a.currency)}</Heading>
-              <Label muted size={12}>
-                Previous equivalent period:{" "}
-                {money(a.previousSpendingMinor, a.currency)}
-              </Label>
+              <XStack justifyContent="space-between" gap={10} alignItems="center" flexWrap="wrap">
+                <YStack>
+                  <Label muted>Total personal spending</Label>
+                  <Heading size={36}>{money(a.spendingMinor, a.currency)}</Heading>
+                </YStack>
+                <Chip selected={compare} onPress={() => setCompare((value) => !value)}>
+                  {compare ? "Comparing periods" : "Compare with previous"}
+                </Chip>
+              </XStack>
+              {compare && (
+                <Label muted size={12}>
+                  Previous: {money(a.previousSpendingMinor, a.currency)}
+                  {comparisonChange === null
+                    ? " · no previous spending"
+                    : ` · ${Math.abs(comparisonChange)}% ${comparisonChange > 0 ? "higher" : comparisonChange < 0 ? "lower" : "unchanged"}`}
+                </Label>
+              )}
               <View style={{ marginTop: 25 }}>
-                <SpendingChart data={d} filter={filter} />
+                <SpendingChart data={d} filter={filter} compare={compare} />
               </View>
             </Card>
             <Card>
