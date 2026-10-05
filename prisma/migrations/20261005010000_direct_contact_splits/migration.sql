@@ -1,0 +1,1 @@
+ALTER TABLE "Obligation" ALTER COLUMN "ledgerId" DROP NOT NULL;

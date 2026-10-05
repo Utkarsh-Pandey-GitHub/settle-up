@@ -96,7 +96,8 @@ export function analytics(data: Dashboard, f: AnalyticsFilter): Analytics {
   const debts = data.obligations.filter(
     (d) =>
       d.currency === f.currency &&
-      (!f.ledgerIds?.length || f.ledgerIds.includes(d.ledgerId)),
+      (!f.ledgerIds?.length ||
+        (!!d.ledgerId && f.ledgerIds.includes(d.ledgerId))),
   );
   return {
     currency: f.currency,

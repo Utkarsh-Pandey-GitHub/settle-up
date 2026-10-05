@@ -60,9 +60,49 @@ export class FinanceService {
           "Personal expenses cannot create shared obligations.",
         );
       for (const id of requestedUsers) {
-        if (!input.ledgerId)
-          throw new DomainError("LEDGER", "Shared records require a ledger.");
-        await requireMember(tx, input.ledgerId, id, true);
+        if (id === userId) continue;
+        if (input.ledgerId) await requireMember(tx, input.ledgerId, id, true);
+        else {
+          const savedContact = await tx.user.findFirst({
+            where: {
+              id,
+              deletedAt: null,
+              OR: [
+                {
+                  savedByPreferences: {
+                    some: { ownerId: userId, hiddenAt: null },
+                  },
+                },
+                {
+                  ledgerMembers: {
+                    some: {
+                      leftAt: null,
+                      ledger: {
+                        members: { some: { userId, leftAt: null } },
+                      },
+                    },
+                  },
+                },
+                {
+                  participants: {
+                    some: {
+                      transaction: {
+                        deletedAt: null,
+                        participants: { some: { userId } },
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          });
+          if (!savedContact)
+            throw new DomainError(
+              "CONTACT",
+              "Choose one of your saved contacts.",
+              403,
+            );
+        }
         const blocked = await tx.userBlock.findFirst({
           where: {
             OR: [
@@ -149,7 +189,7 @@ export class FinanceService {
             })),
           },
           obligations: {
-            create: debts.map((d) => ({ ...d, ledgerId: input.ledgerId! })),
+            create: debts.map((d) => ({ ...d, ledgerId: input.ledgerId })),
           },
           tags: { create: input.tagIds.map((tagId) => ({ tagId })) },
           items: {
@@ -399,6 +439,49 @@ export class FinanceService {
             "Every person in the transaction must belong to the group.",
             409,
           );
+      } else {
+        for (const personId of people) {
+          if (personId === userId) continue;
+          const savedContact = await tx.user.findFirst({
+            where: {
+              id: personId,
+              deletedAt: null,
+              OR: [
+                {
+                  savedByPreferences: {
+                    some: { ownerId: userId, hiddenAt: null },
+                  },
+                },
+                {
+                  ledgerMembers: {
+                    some: {
+                      leftAt: null,
+                      ledger: {
+                        members: { some: { userId, leftAt: null } },
+                      },
+                    },
+                  },
+                },
+                {
+                  participants: {
+                    some: {
+                      transaction: {
+                        deletedAt: null,
+                        participants: { some: { userId } },
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          });
+          if (!savedContact)
+            throw new DomainError(
+              "CONTACT",
+              "Choose one of your saved contacts.",
+              403,
+            );
+        }
       }
       const otherPeople = people.filter((personId) => personId !== userId);
       const blocked = otherPeople.length
@@ -477,7 +560,7 @@ export class FinanceService {
           obligations: {
             create: debts.map((debt) => ({
               ...debt,
-              ledgerId: input.ledgerId!,
+              ledgerId: input.ledgerId,
             })),
           },
           tags: { create: input.tagIds.map((tagId) => ({ tagId })) },
@@ -523,8 +606,10 @@ export class FinanceService {
       const hash = digest(JSON.stringify(input));
       const existing = await idempotent(tx, userId, input.idempotencyKey, hash);
       if (existing) return json(existing);
-      await requireMember(tx, input.ledgerId, userId, true);
-      await requireMember(tx, input.ledgerId, input.creditorId, true);
+      if (input.ledgerId) {
+        await requireMember(tx, input.ledgerId, userId, true);
+        await requireMember(tx, input.ledgerId, input.creditorId, true);
+      }
       const debts = await tx.obligation.findMany({
         where: {
           ledgerId: input.ledgerId,

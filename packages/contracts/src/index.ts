@@ -114,7 +114,7 @@ export const createTransactionSchema = z
 export type CreateTransaction = z.infer<typeof createTransactionSchema>;
 export const settlementSchema = z.object({
   idempotencyKey: z.string().uuid(),
-  ledgerId: z.string().uuid(),
+  ledgerId: z.string().uuid().optional(),
   debtorId: z.string().uuid(),
   creditorId: z.string().uuid(),
   amountMinor: amountSchema,
@@ -229,7 +229,7 @@ export type Dashboard = {
     amountMinor: number;
     remainingMinor: number;
     currency: string;
-    ledgerId: string;
+    ledgerId?: string | null;
   }[];
   tags: TagView[];
   goals: GoalView[];
