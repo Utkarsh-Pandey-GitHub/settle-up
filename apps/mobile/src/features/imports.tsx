@@ -6,7 +6,7 @@ import {
   View,
   Pressable,
   StyleSheet,
-  AppState,
+  Modal,
   Animated,
   useWindowDimensions,
 } from "react-native";
@@ -846,6 +846,195 @@ function SmsPrivacyExplainer({ onClose }: { onClose(): void }) {
   );
 }
 
+function formatPickerDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function SmsDatePicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange(value: string): void;
+}) {
+  const c = useColors();
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T12:00:00`)
+    : new Date();
+  const [visible, setVisible] = useState(false);
+  const [month, setMonth] = useState(
+    new Date(parsed.getFullYear(), parsed.getMonth(), 1),
+  );
+  const firstWeekday = month.getDay();
+  const daysInMonth = new Date(
+    month.getFullYear(),
+    month.getMonth() + 1,
+    0,
+  ).getDate();
+  const cells = Array.from({ length: 42 }, (_, index) => {
+    const day = index - firstWeekday + 1;
+    return day > 0 && day <= daysInMonth ? day : null;
+  });
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label}. ${value || "No date selected"}`}
+        onPress={() => {
+          setMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+          setVisible(true);
+        }}
+        style={({ pressed }) => ({
+          minHeight: 50,
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: c.line,
+          backgroundColor: pressed ? c.soft : c.card,
+          paddingHorizontal: 13,
+          paddingVertical: 8,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+        })}
+      >
+        <YStack gap={2}>
+          <Label muted size={10}>
+            {label}
+          </Label>
+          <Label bold>{value || "Choose date"}</Label>
+        </YStack>
+        <Icon name="calendar" size={18} color={c.primary} />
+      </Pressable>
+      <Modal
+        visible={visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVisible(false)}
+      >
+        <Pressable
+          onPress={() => setVisible(false)}
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            padding: 18,
+            backgroundColor: "rgba(20, 18, 25, 0.54)",
+          }}
+        >
+          <Pressable
+            onPress={() => {}}
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              alignSelf: "center",
+              borderRadius: 22,
+              backgroundColor: c.card,
+              padding: 18,
+              gap: 14,
+            }}
+          >
+            <XStack alignItems="center" justifyContent="space-between">
+              <Button
+                secondary
+                compact
+                onPress={() =>
+                  setMonth(
+                    (current) =>
+                      new Date(
+                        current.getFullYear(),
+                        current.getMonth() - 1,
+                        1,
+                      ),
+                  )
+                }
+              >
+                Previous
+              </Button>
+              <Heading size={16}>
+                {month.toLocaleDateString(undefined, {
+                  month: "long",
+                  year: "numeric",
+                })}
+              </Heading>
+              <Button
+                secondary
+                compact
+                onPress={() =>
+                  setMonth(
+                    (current) =>
+                      new Date(
+                        current.getFullYear(),
+                        current.getMonth() + 1,
+                        1,
+                      ),
+                  )
+                }
+              >
+                Next
+              </Button>
+            </XStack>
+            <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+              {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
+                <View
+                  key={`${day}-${index}`}
+                  style={{
+                    width: "14.285%",
+                    alignItems: "center",
+                    paddingVertical: 5,
+                  }}
+                >
+                  <Label muted size={10} bold>
+                    {day}
+                  </Label>
+                </View>
+              ))}
+              {cells.map((day, index) => {
+                const candidate = day
+                  ? new Date(month.getFullYear(), month.getMonth(), day)
+                  : null;
+                const selected =
+                  candidate && formatPickerDate(candidate) === value;
+                return (
+                  <Pressable
+                    key={index}
+                    disabled={!candidate}
+                    accessibilityRole={candidate ? "button" : undefined}
+                    accessibilityLabel={candidate?.toLocaleDateString()}
+                    onPress={() => {
+                      if (!candidate) return;
+                      onChange(formatPickerDate(candidate));
+                      setVisible(false);
+                    }}
+                    style={{
+                      width: "14.285%",
+                      aspectRatio: 1,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 99,
+                      backgroundColor: selected ? c.primary : "transparent",
+                    }}
+                  >
+                    {!!day && (
+                      <Label
+                        bold={!!selected}
+                        color={selected ? c.onPrimary : c.text}
+                      >
+                        {day}
+                      </Label>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
 function SmsContent({ accountId }: { accountId: string }) {
   const provider = useMemo(
       () => new AndroidSmsProvider(accountId),
@@ -933,55 +1122,26 @@ function SmsContent({ accountId }: { accountId: string }) {
     let live = true;
     if (provider.available())
       void provider.hasPermission().then((granted) => {
-        if (live && granted) setEnabled(true);
-      });
-    return () => {
-      live = false;
-    };
-  }, [provider]);
-  useEffect(() => {
-    if (!enabled || custom) return;
-    let live = true;
-    const refresh = async () => {
-      try {
-        const items = await provider.review();
-        const records = await provider.handled();
-        if (live) {
-          setSuggestions(items);
-          setHistory(records);
-        }
-      } catch (error) {
-        if (live) action.setError((error as Error).message);
-      }
-    };
-    void refresh();
-    const incoming = provider.subscribe((message) => {
-      void provider
-        .reviewMessage(message)
-        .then((item) => {
-          if (!live || !item) return;
-          setSuggestions((current) => [
-            item,
-            ...current.filter(
-              (suggestion) => suggestion.fingerprint !== item.fingerprint,
-            ),
-          ]);
-        })
-        .catch((error) => {
-          if (live) action.setError((error as Error).message);
+        if (!live || !granted) return;
+        setEnabled(true);
+        void Promise.all([
+          provider.cachedSuggestions(),
+          provider.handled(),
+        ]).then(([items, records]) => {
+          if (live) {
+            setSuggestions(items);
+            setHistory(records);
+          }
         });
-    });
-    const listener = AppState.addEventListener("change", (state) => {
-      // The receiver persists background messages. Reconcile once when the
-      // app returns instead of polling or rereading the inbox on every render.
-      if (state === "active") void refresh();
+      });
+    const cached = provider.subscribeCachedSuggestions((items) => {
+      if (live && !custom) setSuggestions(items);
     });
     return () => {
       live = false;
-      incoming.remove();
-      listener.remove();
+      cached.remove();
     };
-  }, [enabled, custom, provider]);
+  }, [custom, provider]);
 
   return (
     <YStack gap={12} maxWidth={760} width="100%" alignSelf="center">
@@ -1069,8 +1229,8 @@ function SmsContent({ accountId }: { accountId: string }) {
                   selected={!custom}
                   onPress={() => {
                     setCustom(false);
-                    setSuggestions([]);
                     setEditing(null);
+                    void provider.cachedSuggestions().then(setSuggestions);
                   }}
                 >
                   Last 7 days
@@ -1088,23 +1248,21 @@ function SmsContent({ accountId }: { accountId: string }) {
               </XStack>
               {custom && (
                 <YStack gap={12}>
-                  <Field
-                    label="From · YYYY-MM-DD"
+                  <SmsDatePicker
+                    label="From"
                     value={from}
-                    onChangeText={(value) => {
+                    onChange={(value) => {
                       setFrom(value);
                       setSuggestions([]);
                     }}
-                    placeholder="2026-09-01"
                   />
-                  <Field
-                    label="Through · YYYY-MM-DD"
+                  <SmsDatePicker
+                    label="Through"
                     value={through}
-                    onChangeText={(value) => {
+                    onChange={(value) => {
                       setThrough(value);
                       setSuggestions([]);
                     }}
-                    placeholder="2026-09-07"
                   />
                   <Label muted>
                     No accept/reject history is saved for this search.
@@ -1131,9 +1289,9 @@ function SmsContent({ accountId }: { accountId: string }) {
                           "SMS permission was declined. Manual entry is always available.",
                         );
                       setSuggestions(
-                        await provider.review(
-                          custom ? { from, through } : undefined,
-                        ),
+                        custom
+                          ? await provider.review({ from, through })
+                          : await provider.refreshCachedInbox(true),
                       );
                       setHistory(await provider.handled());
                       setEnabled(true);
@@ -1205,12 +1363,16 @@ function SmsContent({ accountId }: { accountId: string }) {
                       setEditTitle(s.title);
                     }}
                     style={{
+                      flex: 1,
+                      minWidth: 0,
                       flexDirection: "row",
                       alignItems: "center",
                       gap: 5,
                     }}
                   >
-                    <Heading size={16}>{s.title}</Heading>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Heading size={16}>{s.title}</Heading>
+                    </View>
                     <Icon name="edit" size={13} color={c.muted} />
                   </Pressable>
                 )}

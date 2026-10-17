@@ -2,7 +2,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { DEMO, useSession } from "./session";
-import { syncGoalNotifications } from "../services/device";
+import {
+  requestLaunchPermissionsOnce,
+  startSmsInboxSync,
+  syncGoalNotifications,
+} from "../services/device";
 import {
   API_URL,
   peekCachedDashboard,
@@ -63,6 +67,12 @@ export function useAppSync() {
         query.setQueryData(["account", id, "dashboard"], dashboard);
     });
   }, [id, query]);
+  useEffect(() => {
+    if (!id || DEMO) return;
+    const smsSync = startSmsInboxSync(id);
+    void requestLaunchPermissionsOnce(id).finally(() => smsSync.refresh());
+    return () => smsSync.remove();
+  }, [id]);
   useEffect(() => {
     if (!id) return;
     let current = true;

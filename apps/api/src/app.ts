@@ -48,25 +48,32 @@ const idSchema = z.string().uuid();
 export function createApp() {
   validateConfig();
   const cloudflareRuntime = "WebSocketPair" in globalThis;
-  const app = (cloudflareRuntime ? new WorkerRouter() : Fastify({
-    pluginTimeout: 0,
-    routerOptions: { maxParamLength: 512 },
-    bodyLimit: 64 * 1024,
-    logger:  process.env.NODE_ENV !== 'production'?{
-      level: process.env.NODE_ENV === "test" ? "silent" : "info",
-      redact: [
-        "req.headers.authorization",
-        "req.body",
-        "res.headers.set-cookie",
-      ],
-      serializers: {
-        req: (req) => ({
-          method: req.method,
-          route: req.routeOptions?.url ?? "unmatched",
-        }),
-      },
-    }:false,
-  })) as FastifyInstance;
+  const app = (
+    cloudflareRuntime
+      ? new WorkerRouter()
+      : Fastify({
+          pluginTimeout: 0,
+          routerOptions: { maxParamLength: 512 },
+          bodyLimit: 64 * 1024,
+          logger:
+            process.env.NODE_ENV !== "production"
+              ? {
+                  level: process.env.NODE_ENV === "test" ? "silent" : "info",
+                  redact: [
+                    "req.headers.authorization",
+                    "req.body",
+                    "res.headers.set-cookie",
+                  ],
+                  serializers: {
+                    req: (req) => ({
+                      method: req.method,
+                      route: req.routeOptions?.url ?? "unmatched",
+                    }),
+                  },
+                }
+              : false,
+        })
+  ) as FastifyInstance;
   app.register(cors, {
     origin: process.env.CORS_ORIGIN?.split(",") ?? [
       "https://settleup.tinkrs.space",
@@ -147,7 +154,8 @@ export function createApp() {
       const protocols = String(req.headers["sec-websocket-protocol"] ?? "")
         .split(",")
         .map((value) => value.trim());
-      const accessToken = protocols[0] === "settleup" ? protocols[1] : undefined;
+      const accessToken =
+        protocols[0] === "settleup" ? protocols[1] : undefined;
       void auth
         .authenticate(accessToken ? `Bearer ${accessToken}` : undefined)
         .then(({ userId }) => {
@@ -415,7 +423,7 @@ export function createApp() {
         .parse(req.body);
       const allowedIds = new Set(body.messages.map((message) => message.id));
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 25_000);
+      const timer = setTimeout(() => controller.abort(), 15_000);
       let response: Response;
       try {
         response = await fetch(
@@ -430,7 +438,12 @@ export function createApp() {
               "x-title": "SettleUp SMS expense classifier",
             },
             body: JSON.stringify({
-              model: process.env.SMS_CLASSIFIER_MODEL || "openrouter/free",
+              // Keep receipt and SMS understanding on the same configured
+              // model so classification quality and latency are predictable.
+              model:
+                process.env.BILL_VISION_MODEL ||
+                process.env.SMS_CLASSIFIER_MODEL ||
+                "openai/gpt-6-luna-pro",
               messages: [
                 {
                   role: "system",
@@ -1217,17 +1230,24 @@ export function createApp() {
       orderBy: { createdAt: "desc" },
       take: 50,
     });
-    return links.map((link) => {
-      const payment = parseUpi(link.uri);
-      return {
-        id: link.tokenDigest,
-        payeeName: payment.payeeName,
-        upiId: payment.payeeAddress,
-        amountMinor: payment.amountMinor,
-        createdAt: link.createdAt,
-        expiresAt: link.expiresAt,
-        revokedAt: link.revokedAt,
-      };
+    return links.flatMap((link) => {
+      try {
+        const payment = parseUpi(link.uri);
+        return [
+          {
+            id: link.tokenDigest,
+            payeeName: payment.payeeName,
+            upiId: payment.payeeAddress,
+            amountMinor: payment.amountMinor,
+            createdAt: link.createdAt,
+            expiresAt: link.expiresAt,
+            revokedAt: link.revokedAt,
+          },
+        ];
+      } catch {
+        // A malformed legacy link should not make the whole collection fail.
+        return [];
+      }
     });
   });
   app.delete("/payment-links/:id", async (req) => {

@@ -1,4 +1,5 @@
-import { Platform, PermissionsAndroid, Linking } from "react-native";
+import { AppState, Platform, PermissionsAndroid, Linking } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   requireOptionalNativeModule,
   type EventSubscription,
@@ -94,6 +95,67 @@ export class AndroidSmsProvider implements TransactionImportProvider {
   handled() {
     return this.records();
   }
+  private cacheKey() {
+    return `settleup.sms.suggestions.v1.${this.accountId}`;
+  }
+  private static cacheListeners = new Map<
+    string,
+    Set<(suggestions: ImportSuggestion[]) => void>
+  >();
+  private async writeCachedSuggestions(suggestions: ImportSuggestion[]) {
+    const unique = [
+      ...new Map(suggestions.map((item) => [item.fingerprint, item])).values(),
+    ]
+      .filter(
+        (item) =>
+          Date.parse(item.occurredAt) >= Date.now() - 7 * 24 * 60 * 60 * 1000,
+      )
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+    try {
+      await AsyncStorage.setItem(
+        this.cacheKey(),
+        JSON.stringify({ updatedAt: Date.now(), suggestions: unique }),
+      );
+    } catch {
+      // A storage failure must not prevent accepting or rejecting a message.
+    }
+    for (const listener of AndroidSmsProvider.cacheListeners.get(
+      this.accountId,
+    ) ?? [])
+      listener(unique);
+    return unique;
+  }
+  async cachedSuggestions() {
+    try {
+      const raw = await AsyncStorage.getItem(this.cacheKey());
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as { suggestions?: ImportSuggestion[] };
+      const handled = await this.handled();
+      return (parsed.suggestions ?? []).filter(
+        (item) =>
+          item?.fingerprint &&
+          !handled[item.fingerprint] &&
+          Date.parse(item.occurredAt) >= Date.now() - 7 * 24 * 60 * 60 * 1000,
+      );
+    } catch {
+      return [];
+    }
+  }
+  subscribeCachedSuggestions(
+    listener: (suggestions: ImportSuggestion[]) => void,
+  ) {
+    const listeners =
+      AndroidSmsProvider.cacheListeners.get(this.accountId) ?? new Set();
+    listeners.add(listener);
+    AndroidSmsProvider.cacheListeners.set(this.accountId, listeners);
+    return {
+      remove: () => {
+        listeners.delete(listener);
+        if (!listeners.size)
+          AndroidSmsProvider.cacheListeners.delete(this.accountId);
+      },
+    };
+  }
   subscribe(listener: (message: DeviceSmsMessage) => void): EventSubscription {
     return (
       this.native?.addListener("onFinancialSms", listener) ?? {
@@ -167,6 +229,37 @@ export class AndroidSmsProvider implements TransactionImportProvider {
     const handled = await this.handled();
     return handled[suggestion.fingerprint] ? null : suggestion;
   }
+  async cacheIncomingMessage(message: DeviceSmsMessage) {
+    const item = await this.reviewMessage(message);
+    if (!item) return null;
+    await this.writeCachedSuggestions([
+      item,
+      ...(await this.cachedSuggestions()),
+    ]);
+    return item;
+  }
+  async refreshCachedInbox(reclassify = false) {
+    if (!this.native)
+      throw new Error("SMS review requires an Android development build.");
+    const [handled, cached] = await Promise.all([
+      this.handled(),
+      this.cachedSuggestions(),
+    ]);
+    const known = new Set(cached.map((item) => item.fingerprint));
+    const bounds = smsRange();
+    const messages = await this.native.readRange(bounds.start, bounds.end);
+    const pending: DeviceSmsMessage[] = [];
+    for (const message of messages) {
+      const fingerprint = await this.fingerprint(message);
+      if (!handled[fingerprint] && (reclassify || !known.has(fingerprint)))
+        pending.push(message);
+    }
+    const fresh = pending.length ? await this.classify(pending) : [];
+    return this.writeCachedSuggestions([
+      ...fresh,
+      ...(reclassify ? [] : cached),
+    ]);
+  }
   async review(range?: { from: string; through: string }) {
     if (!this.native)
       throw new Error("SMS review requires an Android development build.");
@@ -191,8 +284,17 @@ export class AndroidSmsProvider implements TransactionImportProvider {
       if (expiresAt > Date.now())
         records[fingerprint] = { decision, occurredAt, expiresAt, ...details };
     });
+    await this.writeCachedSuggestions(
+      (await this.cachedSuggestions()).filter(
+        (item) => item.fingerprint !== fingerprint,
+      ),
+    );
   }
 }
+
+const permissionPromptKey = (accountId: string) =>
+  `settleup.permissions.prompted.v1.${accountId}`;
+
 export async function requestOnboardingPermissions(accountId: string) {
   if (Platform.OS === "web")
     return {
@@ -200,6 +302,7 @@ export async function requestOnboardingPermissions(accountId: string) {
       contacts: false,
       notifications: false,
       sms: false,
+      pushToken: undefined,
     };
   const Camera = await import("expo-camera");
   let camera = false;
@@ -228,12 +331,64 @@ export async function requestOnboardingPermissions(accountId: string) {
   } catch {
     // SMS access remains optional and can be enabled later from the inbox.
   }
-  return {
+  const result = {
     camera,
     contacts,
     notifications,
     sms,
     pushToken,
+  };
+  await AsyncStorage.setItem(permissionPromptKey(accountId), "1");
+  return result;
+}
+
+export async function requestLaunchPermissionsOnce(accountId: string) {
+  if (Platform.OS === "web") return;
+  if (await AsyncStorage.getItem(permissionPromptKey(accountId))) return;
+  await requestOnboardingPermissions(accountId);
+}
+
+/** Keeps the seven-day suggestion cache warm once per signed-in app session.
+ * The native receiver stores messages received while JS is stopped; they are
+ * reconciled on the next foreground. Raw SMS bodies never enter this cache. */
+export function startSmsInboxSync(accountId: string) {
+  const provider = new AndroidSmsProvider(accountId);
+  let stopped = false;
+  let running = false;
+  let lastRefresh = 0;
+  const refresh = async (force = false) => {
+    if (
+      stopped ||
+      running ||
+      !provider.available() ||
+      (!force && Date.now() - lastRefresh < 60_000) ||
+      !(await provider.hasPermission())
+    )
+      return;
+    running = true;
+    try {
+      await provider.refreshCachedInbox();
+      lastRefresh = Date.now();
+    } catch {
+      // Cached suggestions remain visible while the network/provider recovers.
+    } finally {
+      running = false;
+    }
+  };
+  void refresh(true);
+  const incoming = provider.subscribe((message) => {
+    void provider.cacheIncomingMessage(message).catch(() => {});
+  });
+  const foreground = AppState.addEventListener("change", (state) => {
+    if (state === "active") void refresh();
+  });
+  return {
+    refresh: () => refresh(true),
+    remove() {
+      stopped = true;
+      incoming.remove();
+      foreground.remove();
+    },
   };
 }
 export async function chooseContact() {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Platform, Share } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { YStack } from "tamagui";
+import { XStack, YStack } from "tamagui";
 import { money, parseMoney, parseUpi } from "@settleup/domain";
 import { API_URL, request } from "../data/repository";
 import { useAction } from "../data/hooks";
@@ -17,6 +17,7 @@ import {
   Button,
   Notice,
   Skeleton,
+  Empty,
 } from "../components/ui";
 
 export function PaymentLinksScreen() {
@@ -56,8 +57,9 @@ function PaymentLinkForm({
       expiresAt: string;
     } | null>(null),
     [pasted, setPasted] = useState(""),
-    [showLinks, setShowLinks] = useState(false),
+    [tab, setTab] = useState<"create" | "links">("create"),
     [links, setLinks] = useState<SavedLink[]>([]),
+    [linksLoaded, setLinksLoaded] = useState(false),
     [linksLoading, setLinksLoading] = useState(false),
     [linksError, setLinksError] = useState("");
   const action = useAction(),
@@ -72,6 +74,7 @@ function PaymentLinkForm({
     setLinksError("");
     try {
       setLinks(await request<SavedLink[]>("/payment-links", { accountId }));
+      setLinksLoaded(true);
     } catch (error) {
       setLinksError(
         error instanceof Error
@@ -83,158 +86,175 @@ function PaymentLinkForm({
     }
   };
   return (
-    <YStack gap={22} maxWidth={620} width="100%" alignSelf="center">
+    <YStack gap={16} maxWidth={620} width="100%" alignSelf="center">
       <Heading>Request a payment</Heading>
       <Label muted>
         Enter your UPI ID and an amount. Share the link for someone to review
         and pay.
       </Label>
-      <Button
-        secondary
-        icon="link"
-        onPress={() => {
-          setShowLinks(true);
-          void loadLinks();
-        }}
-      >
-        My links
-      </Button>
-      <Card>
-        <YStack gap={16}>
-          <Field
-            label="Payee name"
-            value={payeeName}
-            onChangeText={setPayeeName}
-          />
-          <Field
-            label="UPI ID"
-            placeholder="name@bank"
-            value={upiId}
-            onChangeText={setUpiId}
-            autoCapitalize="none"
-          />
-          <Field
-            label="Amount · INR"
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="decimal-pad"
-          />
-          <Label muted>
-            This name is entered by you. The payer should verify the
-            bank-confirmed recipient in their UPI app.
-          </Label>
-          <Button
-            loading={action.busy}
-            disabled={action.busy}
-            onPress={() =>
-              action.run(async () => {
-                if (DEMO)
-                  throw new Error(
-                    "Sign in to the live app to create a shareable payment link.",
-                  );
-                const amountMinor = parseMoney(amount);
-                const localId = `local:${Date.now()}`;
-                const optimistic: SavedLink = {
-                  id: localId,
-                  payeeName,
-                  upiId,
-                  amountMinor,
-                  createdAt: new Date().toISOString(),
-                  expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
-                };
-                setShowLinks(true);
-                setLinks((current) => [optimistic, ...current]);
-                try {
-                  const result = await request<{
-                    id: string;
-                    token: string;
-                    expiresAt: string;
-                  }>("/payment-links", {
-                    accountId,
-                    body: { upiId, payeeName, amountMinor },
-                  });
-                  setCreated(result);
-                  setLinks((current) =>
-                    current.map((link) =>
-                      link.id === localId
-                        ? {
-                            ...optimistic,
-                            id: result.id,
-                            expiresAt: result.expiresAt,
-                          }
-                        : link,
-                    ),
-                  );
-                } catch (error) {
-                  setLinks((current) =>
-                    current.filter((link) => link.id !== localId),
-                  );
-                  throw error;
-                }
-              }, "Payment link created")
-            }
-          >
-            Create payment link
-          </Button>
-          {created && (
-            <YStack gap={12}>
-              <Label selectable>{url}</Label>
+      <XStack gap={8}>
+        <Button
+          compact
+          secondary={tab !== "create"}
+          style={{ flex: 1 }}
+          onPress={() => setTab("create")}
+        >
+          Create request
+        </Button>
+        <Button
+          compact
+          secondary={tab !== "links"}
+          icon="link"
+          style={{ flex: 1 }}
+          onPress={() => {
+            setTab("links");
+            if (!linksLoaded && !linksLoading) void loadLinks();
+          }}
+        >
+          My links
+        </Button>
+      </XStack>
+      {tab === "create" ? (
+        <>
+          <Card>
+            <YStack gap={16}>
+              <Field
+                label="Payee name"
+                value={payeeName}
+                onChangeText={setPayeeName}
+              />
+              <Field
+                label="UPI ID"
+                placeholder="name@bank"
+                value={upiId}
+                onChangeText={setUpiId}
+                autoCapitalize="none"
+              />
+              <Field
+                label="Amount · INR"
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="decimal-pad"
+              />
               <Label muted>
-                Expires {new Date(created.expiresAt).toLocaleDateString()}.
-                Requires SettleUp on the recipient’s phone.
+                This name is entered by you. The payer should verify the
+                bank-confirmed recipient in their UPI app.
               </Label>
+              <Button
+                loading={action.busy}
+                disabled={action.busy}
+                onPress={() =>
+                  action.run(async () => {
+                    if (DEMO)
+                      throw new Error(
+                        "Sign in to the live app to create a shareable payment link.",
+                      );
+                    const amountMinor = parseMoney(amount);
+                    const localId = `local:${Date.now()}`;
+                    const optimistic: SavedLink = {
+                      id: localId,
+                      payeeName,
+                      upiId,
+                      amountMinor,
+                      createdAt: new Date().toISOString(),
+                      expiresAt: new Date(
+                        Date.now() + 7 * 86400000,
+                      ).toISOString(),
+                    };
+                    setLinks((current) => [optimistic, ...current]);
+                    try {
+                      const result = await request<{
+                        id: string;
+                        token: string;
+                        expiresAt: string;
+                      }>("/payment-links", {
+                        accountId,
+                        body: { upiId, payeeName, amountMinor },
+                      });
+                      setCreated(result);
+                      setLinks((current) =>
+                        current.map((link) =>
+                          link.id === localId
+                            ? {
+                                ...optimistic,
+                                id: result.id,
+                                expiresAt: result.expiresAt,
+                              }
+                            : link,
+                        ),
+                      );
+                    } catch (error) {
+                      setLinks((current) =>
+                        current.filter((link) => link.id !== localId),
+                      );
+                      throw error;
+                    }
+                  }, "Payment link created")
+                }
+              >
+                Create payment link
+              </Button>
+              {created && (
+                <YStack gap={12}>
+                  <Label selectable>{url}</Label>
+                  <Label muted>
+                    Expires {new Date(created.expiresAt).toLocaleDateString()}.
+                    Requires SettleUp on the recipient’s phone.
+                  </Label>
+                  <Button
+                    secondary
+                    onPress={() =>
+                      action.run(
+                        () =>
+                          Share.share({
+                            message: `Review my payment request in SettleUp: ${url}`,
+                          }),
+                        "Share sheet opened",
+                      )
+                    }
+                  >
+                    Share link
+                  </Button>
+                </YStack>
+              )}
+            </YStack>
+          </Card>
+          <Card>
+            <YStack gap={14}>
+              <Heading size={18}>Open a payment link</Heading>
+              <Field
+                label="SettleUp link"
+                value={pasted}
+                onChangeText={setPasted}
+                autoCapitalize="none"
+              />
               <Button
                 secondary
                 onPress={() =>
-                  action.run(
-                    () =>
-                      Share.share({
-                        message: `Review my payment request in SettleUp: ${url}`,
-                      }),
-                    "Share sheet opened",
-                  )
+                  action.run(async () => {
+                    const link = new URL(pasted.trim());
+                    if (!(
+                      link.protocol === "settleup:" ||
+                      link.origin === new URL(API_URL).origin
+                    ))
+                      throw new Error("Use a SettleUp payment link.");
+                    const token = link.pathname.match(
+                      /\/(?:p|pay)\/([A-Za-z0-9_-]{24})\/?$/,
+                    )?.[1];
+                    if (!token)
+                      throw new Error("This payment link is incomplete.");
+                    router.push(`/pay/${token}`);
+                  }, "Payment request opened")
                 }
               >
-                Share link
+                Review payment request
               </Button>
             </YStack>
-          )}
-        </YStack>
-      </Card>
-      <Card>
-        <YStack gap={14}>
-          <Heading size={18}>Open a payment link</Heading>
-          <Field
-            label="SettleUp link"
-            value={pasted}
-            onChangeText={setPasted}
-            autoCapitalize="none"
-          />
-          <Button
-            secondary
-            onPress={() =>
-              action.run(async () => {
-                const link = new URL(pasted.trim());
-                if (!(
-                  link.protocol === "settleup:" ||
-                  link.origin === new URL(API_URL).origin
-                ))
-                  throw new Error("Use a SettleUp payment link.");
-                const token = link.pathname.match(
-                  /\/(?:p|pay)\/([A-Za-z0-9_-]{24})\/?$/,
-                )?.[1];
-                if (!token) throw new Error("This payment link is incomplete.");
-                router.push(`/pay/${token}`);
-              }, "Payment request opened")
-            }
-          >
-            Review payment request
-          </Button>
-        </YStack>
-      </Card>
-      {showLinks && (
+          </Card>
+        </>
+      ) : (
         <YStack gap={10}>
-          <Heading size={20}>My links</Heading>
+          <Heading size={20}>My payment links</Heading>
           <Label muted>
             Recent payment requests stay here for easy tracking.
           </Label>
@@ -309,7 +329,10 @@ function PaymentLinkForm({
               );
             })
           ) : (
-            <Notice>No saved payment links yet.</Notice>
+            <Empty
+              title="No payment links yet"
+              detail="Create your first payment request from the Create request tab."
+            />
           )}
         </YStack>
       )}
