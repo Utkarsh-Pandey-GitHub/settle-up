@@ -8,6 +8,12 @@
 	],
 	"keep_vars": true,
 	"workers_dev": true,
+	"routes": [
+		{
+			"pattern": "api.settleup.tinkrs.space",
+			"custom_domain": true
+		}
+	],
 	"alias": {
 		"pino": "../../node_modules/pino/pino.js"
 	},
