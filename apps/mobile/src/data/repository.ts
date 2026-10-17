@@ -29,7 +29,7 @@ export const uuid = () => Crypto.randomUUID();
 // Keep explicit device routing: USB uses localhost with adb reverse;
 // emulator users can configure 10.0.2.2 in their environment.
 export const API_URL = (
-  process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000"
+  process.env.EXPO_PUBLIC_API_URL || "https://api.settleup.tinkrs.space"
 ).replace(/\/+$/, "");
 const dashboardCacheKey = (accountId: string) =>
   `settleup.dashboard.v1.${accountId}`;

@@ -18,7 +18,7 @@ The production Android application ID is `app.settleup.mobile`. Do not change it
 Set these in Expo Dashboard → Project → Environment variables → Production:
 
 ```text
-EXPO_PUBLIC_API_URL=https://settleup-api-j248.onrender.com
+EXPO_PUBLIC_API_URL=https://api.settleup.tinkrs.space
 EXPO_PUBLIC_DEMO=false
 EXPO_PUBLIC_EAS_PROJECT_ID=1a6df8cb-0a63-48c1-9e5c-a1754f54f226
 EXPO_PUBLIC_TRUECALLER_CLIENT_ID=<public Truecaller client ID>

@@ -663,7 +663,7 @@ const deleteAccountHtml = `<!DOCTYPE html>
         process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
           "1006604995208-hchg9963bmq747pc4o7pqlun8o89agn6.apps.googleusercontent.com",
       )};
-      const apiUrl = ${JSON.stringify(process.env.EXPO_PUBLIC_API_URL || "https://settleup-api-j248.onrender.com")};
+      const apiUrl = ${JSON.stringify(process.env.EXPO_PUBLIC_API_URL || "https://api.settleup.tinkrs.space")};
       let accessToken = "";
       const status = document.getElementById("delete-status");
       const confirmPanel = document.getElementById("delete-confirm");
