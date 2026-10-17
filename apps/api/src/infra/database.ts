@@ -1,7 +1,18 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { DomainError } from "@settleup/domain";
-export const db = new PrismaClient();
+import "dotenv/config";
+import { PrismaPg } from "@prisma/adapter-pg";
+
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error("DATABASE_URL is required.");
+}
+
+const adapter = new PrismaPg({ connectionString });
+
+export const db = new PrismaClient({ adapter });
 export const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 export type Db = Prisma.TransactionClient;

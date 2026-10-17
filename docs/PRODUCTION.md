@@ -23,16 +23,17 @@ EXPO_PUBLIC_DEMO=false
 EXPO_PUBLIC_EAS_PROJECT_ID=1a6df8cb-0a63-48c1-9e5c-a1754f54f226
 EXPO_PUBLIC_TRUECALLER_CLIENT_ID=<public Truecaller client ID>
 EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=<public Android OAuth client ID>
+EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=<public iOS OAuth client ID>
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=<public web OAuth client ID, if Google sign-in uses it>
 ```
 
-Do not put `JWT_SECRET`, `OTP_PEPPER`, database credentials, Supabase secret/service-role keys, Stytch secrets, Google service-account JSON, or `OPENROUTER_API_KEY` in any `EXPO_PUBLIC_` variable. Bill scanning sends the selected image through the authenticated API for one-time vision extraction; the app does not store it as a receipt.
+Do not put `JWT_SECRET`, `OTP_PEPPER`, database credentials, Supabase secret/service-role keys, Google service-account JSON, or `OPENROUTER_API_KEY` in any `EXPO_PUBLIC_` variable. Bill scanning sends the selected image through the authenticated API for one-time vision extraction; the app does not store it as a receipt.
 
 ### Production API gate
 
-Before inviting Play testers, rotate every credential that has ever been pasted into chat or another public channel, including the database password, Supabase secret key, Stytch secret, OpenRouter key, `JWT_SECRET`, and `OTP_PEPPER`. Update Render with the rotated values, add `OPENROUTER_API_KEY` and `BILL_VISION_MODEL=openrouter/free`, and set `NODE_ENV=production`. Keep secrets only in Render's encrypted environment settings.
+Before inviting Play testers, rotate every credential that has ever been pasted into chat or another public channel, including the database password, Supabase secret key, OpenRouter key, `JWT_SECRET`, and `OTP_PEPPER`. Update the deployed API with the rotated values, add `OPENROUTER_API_KEY` and `BILL_VISION_MODEL=openrouter/free`, and set `NODE_ENV=production`. Keep secrets only in the host's encrypted environment settings.
 
-Use the Supabase session-pooler URL for `DATABASE_URL`, run `npm run db:migrate`, and verify `https://settleup-api-j248.onrender.com/health` after deployment. Set both `PUBLIC_APP_URL` and `CORS_ORIGIN` to `https://settleup.tinkrs.space`. Set `GOOGLE_CLIENT_IDS` to the comma-separated Android, iOS, and web OAuth client IDs; the web ID is required by the public deletion page. A sleeping free Render instance can delay account loading and Truecaller/OTP callbacks; use an always-on instance or another always-on host before a public launch.
+Use the Supabase session-pooler URL for `DATABASE_URL`, run `npm run db:migrate`, and verify `https://api.settleup.tinkrs.space/health` after deployment. Set both `PUBLIC_APP_URL` and `CORS_ORIGIN` to `https://settleup.tinkrs.space`. Configure `GOOGLE_ANDROID_CLIENT_ID`, `GOOGLE_IOS_CLIENT_ID`, and `GOOGLE_WEB_CLIENT_ID` separately; the web ID is required by the public deletion page.
 
 ### First store build
 

@@ -7,7 +7,6 @@ import {
 } from "node:crypto";
 import { SignJWT, createRemoteJWKSet, jwtVerify } from "jose";
 import { SupabaseOtpProvider } from "./supabase";
-import { StytchOtpProvider } from "./stytch";
 import { DomainError, normalizePhone } from "@settleup/domain";
 import type { Account, Session } from "@settleup/contracts";
 import { db, atomic, digest, audit, type Db } from "../infra/database";
@@ -81,10 +80,13 @@ export class AuthService {
     rawPhone?: string,
     linkUserId?: string,
   ) {
-    const audiences = (process.env.GOOGLE_CLIENT_IDS ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
+    const audiences = [
+      process.env.GOOGLE_ANDROID_CLIENT_ID,
+      process.env.GOOGLE_IOS_CLIENT_ID,
+      process.env.GOOGLE_WEB_CLIENT_ID,
+    ]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
     if (!audiences.length)
       throw new DomainError(
         "GOOGLE_DISABLED",
@@ -236,7 +238,6 @@ export class AuthService {
         503,
       );
     const supabase = process.env.OTP_PROVIDER === "supabase";
-    const stytch = process.env.OTP_PROVIDER === "stytch";
     const dev = process.env.OTP_PROVIDER === "development";
     if (
       dev &&
@@ -262,24 +263,14 @@ export class AuthService {
         data: {
           id,
           phone,
-          digest: supabase
-            ? "supabase"
-            : stytch
-              ? "stytch-pending"
-              : otpHash(id, code),
+          digest: supabase ? "supabase" : otpHash(id, code),
           expiresAt: new Date(Date.now() + 300000),
         },
       });
     });
     try {
       if (supabase) await new SupabaseOtpProvider().send(phone);
-      else if (stytch) {
-        const methodId = await new StytchOtpProvider().send(phone);
-        await db.otpChallenge.update({
-          where: { id },
-          data: { digest: `stytch:${methodId}` },
-        });
-      } else
+      else
         await (
           dev ? new DevelopmentOtpProvider() : new GatewayOtpProvider()
         ).send(phone, code);
@@ -299,8 +290,6 @@ export class AuthService {
   async verifyOtp(id: string, code: string): Promise<Session> {
     if (process.env.OTP_PROVIDER === "supabase")
       return this.verifySupabaseOtp(id, code);
-    if (process.env.OTP_PROVIDER === "stytch")
-      return this.verifyStytchOtp(id, code);
     if (process.env.OTP_PROVIDER === "disabled")
       throw new DomainError(
         "OTP_DISABLED",
@@ -372,42 +361,6 @@ export class AuthService {
           consumedAt: null,
           expiresAt: { gt: new Date() },
         },
-        data: { consumedAt: new Date() },
-      });
-      if (claimed.count !== 1) return null;
-      return this.verifiedPhoneSession(tx, phone);
-    });
-    if (!session) throw invalid();
-    return session;
-  }
-  private async verifyStytchOtp(id: string, code: string): Promise<Session> {
-    const invalid = () =>
-      new DomainError("OTP_INVALID", "The code is invalid or expired.", 401);
-    const challenge = await atomic(async (tx) => {
-      const c = await tx.otpChallenge.findUnique({ where: { id } });
-      if (
-        !c ||
-        !c.digest.startsWith("stytch:") ||
-        c.consumedAt ||
-        c.expiresAt <= new Date() ||
-        c.attempts >= 5
-      )
-        return null;
-      await tx.otpChallenge.update({
-        where: { id },
-        data: { attempts: { increment: 1 } },
-      });
-      return c;
-    });
-    if (!challenge) throw invalid();
-    // Extract the Stytch phone_id stored during requestOtp.
-    const methodId = challenge.digest.slice("stytch:".length);
-    // Do not hold a database transaction open while contacting the provider.
-    const phone = await new StytchOtpProvider().verify(methodId, code);
-    if (phone !== challenge.phone) throw invalid();
-    const session = await atomic(async (tx) => {
-      const claimed = await tx.otpChallenge.updateMany({
-        where: { id, consumedAt: null, expiresAt: { gt: new Date() } },
         data: { consumedAt: new Date() },
       });
       if (claimed.count !== 1) return null;
