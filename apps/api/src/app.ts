@@ -3,7 +3,7 @@ import {
   truecallerProofSchema,
   verifyTruecallerAuthorization,
 } from "../../mobile/modules/truecaller/server";
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
@@ -43,13 +43,16 @@ import {
   json,
   visibleTransaction,
 } from "./infra/database";
+import { WorkerRouter } from "./infra/worker-router";
 const idSchema = z.string().uuid();
-export async function createApp() {
+export function createApp() {
   validateConfig();
-  const app = Fastify({
+  const cloudflareRuntime = "WebSocketPair" in globalThis;
+  const app = (cloudflareRuntime ? new WorkerRouter() : Fastify({
+    pluginTimeout: 0,
     routerOptions: { maxParamLength: 512 },
     bodyLimit: 64 * 1024,
-    logger: {
+    logger:  process.env.NODE_ENV !== 'production'?{
       level: process.env.NODE_ENV === "test" ? "silent" : "info",
       redact: [
         "req.headers.authorization",
@@ -62,18 +65,18 @@ export async function createApp() {
           route: req.routeOptions?.url ?? "unmatched",
         }),
       },
-    },
-  });
-  await app.register(cors, {
+    }:false,
+  })) as FastifyInstance;
+  app.register(cors, {
     origin: process.env.CORS_ORIGIN?.split(",") ?? [
       "https://settleup.tinkrs.space",
       "http://localhost:8081",
     ],
   });
-  await app.register(helmet);
-  await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
-  await app.register(websocket);
-  await app.register(compress, {
+  app.register(helmet);
+  app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
+  if (!cloudflareRuntime) app.register(websocket);
+  app.register(compress, {
     global: true,
     threshold: 1024,
     encodings: ["gzip", "deflate"],
@@ -113,6 +116,7 @@ export async function createApp() {
       {
         errorType:
           error instanceof Error ? error.constructor.name : "UnknownError",
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
         requestId: req.id,
       },
       "Request failed",
@@ -138,20 +142,21 @@ export async function createApp() {
     on(event: "close", listener: () => void): void;
   };
   const liveSockets = new Map<LiveSocket, string>();
-  app.get("/realtime", { websocket: true }, (socket, req) => {
-    const protocols = String(req.headers["sec-websocket-protocol"] ?? "")
-      .split(",")
-      .map((value) => value.trim());
-    const accessToken = protocols[0] === "settleup" ? protocols[1] : undefined;
-    void auth
-      .authenticate(accessToken ? `Bearer ${accessToken}` : undefined)
-      .then(({ userId }) => {
-        liveSockets.set(socket, userId);
-        socket.on("close", () => liveSockets.delete(socket));
-        socket.send(JSON.stringify({ type: "connected" }));
-      })
-      .catch(() => socket.close(1008));
-  });
+  if (!cloudflareRuntime)
+    app.get("/realtime", { websocket: true }, (socket, req) => {
+      const protocols = String(req.headers["sec-websocket-protocol"] ?? "")
+        .split(",")
+        .map((value) => value.trim());
+      const accessToken = protocols[0] === "settleup" ? protocols[1] : undefined;
+      void auth
+        .authenticate(accessToken ? `Bearer ${accessToken}` : undefined)
+        .then(({ userId }) => {
+          liveSockets.set(socket, userId);
+          socket.on("close", () => liveSockets.delete(socket));
+          socket.send(JSON.stringify({ type: "connected" }));
+        })
+        .catch(() => socket.close(1008));
+    });
   app.addHook("onResponse", async (req, reply) => {
     if (
       !["POST", "PATCH", "DELETE"].includes(req.method) ||

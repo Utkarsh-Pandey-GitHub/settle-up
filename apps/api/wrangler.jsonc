@@ -7,7 +7,9 @@
 
   "keep_vars": true,
   "workers_dev": true,
-
+  "alias": {
+    "pino": "../../node_modules/pino/pino.js"
+  },
   "observability": {
     "enabled": true
   }

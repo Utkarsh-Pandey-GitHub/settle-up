@@ -16,3 +16,4 @@ apps/mobile/ios/
 # Generated native module outputs
 apps/mobile/modules/*/android/build/
 .vercel
+.wrangler/

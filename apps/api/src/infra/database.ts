@@ -4,15 +4,33 @@ import { DomainError } from "@settleup/domain";
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const connectionString = process.env.DATABASE_URL;
+let configuredConnectionString = process.env.DATABASE_URL;
+let client: PrismaClient | undefined;
+export const configureDatabaseUrl = (connectionString: string) => {
+  if (!client && connectionString.trim())
+    configuredConnectionString = connectionString;
+};
 
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required.");
-}
+const getClient = () => {
+  if (!client) {
+    if (!configuredConnectionString)
+      throw new Error("DATABASE_URL or HYPERDRIVE binding is required.");
+    const adapter = new PrismaPg({
+      connectionString: configuredConnectionString,
+    });
+    client = new PrismaClient({ adapter });
+  }
+  return client;
+};
 
-const adapter = new PrismaPg({ connectionString });
-
-export const db = new PrismaClient({ adapter });
+// Prisma's query compiler initializes WASM. Keep that work inside the first
+// request on Cloudflare Workers, where asynchronous initialization is allowed.
+export const db = new Proxy({} as PrismaClient, {
+  get(_target, property) {
+    const value = Reflect.get(getClient(), property);
+    return typeof value === "function" ? value.bind(getClient()) : value;
+  },
+});
 export const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 export type Db = Prisma.TransactionClient;
