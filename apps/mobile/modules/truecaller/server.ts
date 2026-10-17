@@ -36,7 +36,10 @@ export async function verifyTruecallerAuthorization(
     "https://oauth-account-noneu.truecaller.com/v1/token",
     {
       method: "POST",
-      redirect: "error",
+      // Truecaller's documented token request follows redirects. Cloudflare's
+      // edge can receive one even when the same URL does not redirect locally;
+      // redirect: "error" turns that valid response into a fetch exception.
+      redirect: "follow",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "authorization_code",
@@ -62,7 +65,7 @@ export async function verifyTruecallerAuthorization(
     "https://oauth-account-noneu.truecaller.com/v1/userinfo",
     {
       headers: { authorization: `Bearer ${token.access_token}` },
-      redirect: "error",
+      redirect: "follow",
     },
   );
   if (!profileResponse.ok)
