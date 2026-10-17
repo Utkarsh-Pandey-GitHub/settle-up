@@ -3,7 +3,7 @@
     "name": "SettleUp",
     "slug": "settleup",
     "scheme": ["settleup", "app.settleup.mobile"],
-    "version": "1.0.20",
+    "version": "1.0.21",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -41,7 +41,7 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.WRITE_CONTACTS"
       ],
-      "versionCode": 20
+      "versionCode": 21
     },
     "web": {
       "bundler": "metro",
