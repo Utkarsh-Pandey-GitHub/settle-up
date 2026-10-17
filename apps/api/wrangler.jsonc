@@ -1,16 +1,23 @@
 {
-  "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "settleup-api",
-  "main": "src/cloudflare.ts",
-  "compatibility_date": "2026-10-17",
-  "compatibility_flags": ["nodejs_compat"],
-
-  "keep_vars": true,
-  "workers_dev": true,
-  "alias": {
-    "pino": "../../node_modules/pino/pino.js"
-  },
-  "observability": {
-    "enabled": true
-  }
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "settleup-api",
+	"main": "src/cloudflare.ts",
+	"compatibility_date": "2026-10-17",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"keep_vars": true,
+	"workers_dev": true,
+	"alias": {
+		"pino": "../../node_modules/pino/pino.js"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "d41fde42a1a448f0b652145af4628d75"
+		}
+	]
 }
