@@ -1087,7 +1087,7 @@ export function SettingsScreen() {
                   />
                   {d.savedContacts
                     .filter((contact) =>
-                      `${contact.name} ${contact.contactName ?? ""} ${contact.phone ?? ""}`
+                      `${contact.name} ${contact.contactName ?? ""} ${contact.profileName ?? ""} ${contact.phone ?? ""}`
                         .toLowerCase()
                         .includes(blockSearch.toLowerCase()),
                     )
@@ -1099,13 +1099,10 @@ export function SettingsScreen() {
                         justifyContent="space-between"
                         paddingVertical={6}
                       >
-                        <YStack flex={1}>
-                          <Label bold>{contact.name}</Label>
-                          {!!contact.contactName && (
-                            <Label muted size={10} numberOfLines={1}>
-                              Saved as {contact.contactName}
-                            </Label>
-                          )}
+                        <YStack flex={1} minWidth={0}>
+                          <Label bold>
+                            {contact.contactName ?? contact.name}
+                          </Label>
                           {!!contact.phone && (
                             <Label muted size={11}>
                               {contact.phone}
@@ -1213,7 +1210,7 @@ export function ContactsScreen() {
     <DataScreen>
       {(d) => {
         const contacts = d.savedContacts.filter((contact) =>
-          `${contact.name} ${contact.contactName ?? ""} ${contact.phone ?? ""}`
+          `${contact.name} ${contact.contactName ?? ""} ${contact.profileName ?? ""} ${contact.phone ?? ""}`
             .toLowerCase()
             .includes(search.trim().toLowerCase()),
         );
@@ -1234,14 +1231,9 @@ export function ContactsScreen() {
             {contacts.map((p) => (
               <Card key={p.id} style={{ padding: 12 }}>
                 <XStack alignItems="center" gap={12}>
-                  <Avatar name={p.name} avatar={p.avatar} />
-                  <YStack flex={1}>
-                    <Label bold>{p.name}</Label>
-                    {!!p.contactName && (
-                      <Label muted size={10} numberOfLines={1}>
-                        Saved as {p.contactName}
-                      </Label>
-                    )}
+                  <Avatar name={p.contactName ?? p.name} avatar={p.avatar} />
+                  <YStack flex={1} minWidth={0}>
+                    <Label bold>{p.contactName ?? p.name}</Label>
                     <Label muted size={12}>
                       {p.phone ?? "Shared transaction"} ·{" "}
                       {p.verified ? "Verified" : "Not verified yet"}

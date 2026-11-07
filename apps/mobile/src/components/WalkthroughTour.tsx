@@ -65,7 +65,7 @@ const steps = [
   {
     title: "Quick actions from Home",
     detail:
-      "Add expense records a transaction or split. Settle debts logs a repayment made outside the app. Scan bill opens the camera to capture a receipt and extract its amount and items.",
+      "Add expense records a transaction or split. Create group starts a shared ledger. Scan bill opens the camera to capture a receipt and extract its amount and items.",
   },
   {
     title: "Widgets for quick access",
@@ -91,8 +91,8 @@ const pointers: { icon: IconName; text: string }[][] = [
   [
     { icon: "plus", text: "Add expense — record or split a transaction." },
     {
-      icon: "arrow",
-      text: "Settle debts — log a repayment made outside the app.",
+      icon: "groups",
+      text: "Create group — start a shared ledger with friends.",
     },
     {
       icon: "camera",

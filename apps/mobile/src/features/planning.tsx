@@ -4,7 +4,6 @@ import { XStack, YStack } from "tamagui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   money,
-  parseMoney,
   periodRange,
   goalProgress,
   type Period,
@@ -29,13 +28,10 @@ import { useAction } from "../data/hooks";
 import { DEMO, useSession } from "../data/session";
 import { Shell } from "../components/Shell";
 import { copyText } from "../../modules/home-widgets/client";
+import { GoalCreator } from "./goal-form";
 export function GoalsScreen() {
-  const [editing, setEditing] = useState(false),
-    [name, setName] = useState(""),
-    [amount, setAmount] = useState(""),
-    [period, setPeriod] = useState<"DAY" | "WEEK" | "MONTH" | "YEAR">("MONTH"),
-    [tags, setTags] = useState<string[]>([]),
-    action = useAction();
+  const [editing, setEditing] = useState(false);
+  const action = useAction();
   return (
     <DataScreen>
       {(d) => (
@@ -53,72 +49,11 @@ export function GoalsScreen() {
           </XStack>
           {editing && (
             <Card>
-              <YStack gap={17}>
-                <Field
-                  label="Goal name"
-                  placeholder="Fewer takeaways, more adventures"
-                  value={name}
-                  onChangeText={setName}
-                />
-                <Field
-                  label={`Budget · ${d.account.currency}`}
-                  value={amount}
-                  onChangeText={setAmount}
-                  keyboardType="decimal-pad"
-                />
-                <XStack gap={8} flexWrap="wrap">
-                  {(["DAY", "WEEK", "MONTH", "YEAR"] as const).map((p) => (
-                    <Chip
-                      selected={period === p}
-                      key={p}
-                      onPress={() => setPeriod(p)}
-                    >
-                      {p.toLowerCase()}
-                    </Chip>
-                  ))}
-                </XStack>
-                <Label bold>Apply to tags (leave empty for all spending)</Label>
-                <XStack gap={8} flexWrap="wrap">
-                  {d.tags.map((t) => (
-                    <Chip
-                      key={t.id}
-                      selected={tags.includes(t.id)}
-                      onPress={() =>
-                        setTags((ts) =>
-                          ts.includes(t.id)
-                            ? ts.filter((id) => id !== t.id)
-                            : [...ts, t.id],
-                        )
-                      }
-                    >
-                      {t.name}
-                    </Chip>
-                  ))}
-                </XStack>
-                <Button
-                  loading={action.busy}
-                  disabled={action.busy}
-                  onPress={async () => {
-                    if (
-                      await action.run(() =>
-                        repository.createGoal(d.account.id, {
-                          name,
-                          amountMinor: parseMoney(amount, d.account.currency),
-                          currency: d.account.currency,
-                          ...periodRange(period, "Asia/Kolkata"),
-                          period,
-                          tagIds: tags,
-                          ledgerIds: [],
-                          thresholds: [50, 80, 100],
-                        }),
-                      )
-                    )
-                      setEditing(false);
-                  }}
-                >
-                  Save goal
-                </Button>
-              </YStack>
+              <GoalCreator
+                data={d}
+                onSaved={() => setEditing(false)}
+                onCancel={() => setEditing(false)}
+              />
             </Card>
           )}
           {!!action.error && <Notice error>{action.error}</Notice>}

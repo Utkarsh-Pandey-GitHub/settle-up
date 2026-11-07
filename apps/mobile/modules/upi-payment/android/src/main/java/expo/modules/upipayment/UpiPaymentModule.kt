@@ -20,11 +20,6 @@ class UpiPaymentModule : Module() {
       } else if (UpiPaymentActivity.pending != null) {
         promise.reject("UPI_BUSY", "A payment app is already open.", null)
       } else {
-        val paymentIntent = Intent(Intent.ACTION_VIEW, parsed)
-        if (paymentIntent.resolveActivity(activity.packageManager) == null) {
-          promise.reject("UPI_UNAVAILABLE", "No UPI payment app is available on this phone.", null)
-          return@AsyncFunction
-        }
         UpiPaymentActivity.pending = promise
         activity.runOnUiThread {
           try {

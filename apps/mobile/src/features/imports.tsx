@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState, useEffect } from "react";
+import { DatePicker } from "../components/DateTimePicker";
 import {
   BackHandler,
   KeyboardAvoidingView,
@@ -20,6 +21,7 @@ import {
   money,
   type ImportSuggestion,
 } from "@settleup/domain";
+import type { CreateTransaction, Dashboard } from "@settleup/contracts";
 import {
   AndroidSmsProvider,
   type SmsDecision,
@@ -52,6 +54,9 @@ export function ScanScreen() {
     [processed, setProcessed] = useState(false),
     [paymentSource, setPaymentSource] = useState<"scan" | "manual">("scan"),
     [paymentOutcome, setPaymentOutcome] = useState(""),
+    [receiptConfirmation, setReceiptConfirmation] =
+      useState<CreateTransaction | null>(null),
+    [retryWithoutAmount, setRetryWithoutAmount] = useState(false),
     [pasteMode, setPasteMode] = useState(false);
   const action = useAction();
   const router = useRouter();
@@ -86,6 +91,8 @@ export function ScanScreen() {
       setPayment(result);
       setPaymentSource(source);
       setPaymentOutcome("");
+      setReceiptConfirmation(null);
+      setRetryWithoutAmount(false);
       setPayeeAddress(result.payeeAddress);
       setUri(result.uri);
       setAmount(result.amountMinor ? String(result.amountMinor / 100) : "");
@@ -125,6 +132,77 @@ export function ScanScreen() {
       action.setError((e as Error).message);
     }
   };
+
+  const launchPayment = (d: Dashboard, omitAmount = false) =>
+    action.run(async () => {
+      if (!payment) return;
+      const value = parseMoney(amount);
+      const activeAddress = payeeAddress || payment.payeeAddress;
+      const confirmed = new URL(payment.uri);
+      const canAdjust =
+        !confirmed.searchParams.has("sign") &&
+        (paymentSource === "manual" || !payment.amountMinor);
+      if (canAdjust) {
+        confirmed.searchParams.set("pa", activeAddress);
+        if (omitAmount) confirmed.searchParams.delete("am");
+        else confirmed.searchParams.set("am", (value / 100).toFixed(2));
+      }
+      const launchUri = confirmed.searchParams.has("sign")
+        ? payment.uri
+        : parseUpi(confirmed.toString()).uri;
+      await paymentLauncher.ensureAvailable(launchUri);
+      const trackedRequest = await paymentRequest(d.account.id, launchUri);
+      const completedEntry: CreateTransaction = {
+        title: payment.payeeName,
+        amountMinor: value,
+        currency: "INR",
+        type: "PERSONAL_EXPENSE",
+        status: "SETTLED",
+        occurredAt: trackedRequest.occurredAt,
+        idempotencyKey: trackedRequest.key,
+        notes: payment.note
+          ? `${payment.note}\nUPI ID: ${activeAddress}`
+          : `UPI ID: ${activeAddress}`,
+        paymentReference: payment.reference || undefined,
+        tagIds: [],
+        participants: [],
+        splitMethod: "EQUAL",
+      };
+      setProcessed(true);
+      let result;
+      try {
+        result = await paymentLauncher.open(launchUri);
+      } catch (error) {
+        setProcessed(false);
+        setRetryWithoutAmount(canAdjust && !omitAmount);
+        throw error;
+      }
+      if (result.status === "SUCCESS") {
+        if (track) {
+          setReceiptConfirmation(completedEntry);
+          await repository.create(d.account.id, completedEntry);
+          setReceiptConfirmation(null);
+        }
+        setRetryWithoutAmount(false);
+        setPaymentOutcome(
+          "The UPI app reported success. Your tracked payment is complete.",
+        );
+      } else if (result.status === "FAILURE" || result.status === "CANCELLED") {
+        setProcessed(false);
+        setRetryWithoutAmount(canAdjust && !omitAmount);
+        setPaymentOutcome(
+          result.status === "FAILURE"
+            ? "The UPI app reported a failed payment. Nothing was saved."
+            : "Payment was cancelled. Nothing was saved.",
+        );
+      } else {
+        setRetryWithoutAmount(false);
+        setReceiptConfirmation(track ? completedEntry : null);
+        setPaymentOutcome(
+          "The UPI app did not confirm the outcome. Check its receipt before marking this paid.",
+        );
+      }
+    }, "Returned from the UPI app.");
 
   // Permission request screen
   if (!permission?.granted) {
@@ -224,6 +302,8 @@ export function ScanScreen() {
                   setPayment(null);
                   setProcessed(false);
                   setPaymentOutcome("");
+                  setReceiptConfirmation(null);
+                  setRetryWithoutAmount(false);
                   action.setError("");
                 }}
                 style={{
@@ -307,13 +387,19 @@ export function ScanScreen() {
                   label="Amount (INR)"
                   value={amount}
                   onChangeText={setAmount}
-                  editable={!payment.fixedAmount}
+                  editable={paymentSource === "manual" || !payment.amountMinor}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
                 />
                 {payment.fixedAmount && (
                   <Label muted size={11}>
                     This amount is fixed by the dynamic QR.
+                  </Label>
+                )}
+                {paymentSource === "scan" && !payment.amountMinor && (
+                  <Label muted size={11}>
+                    SettleUp will pass this amount to your UPI app. If that app
+                    rejects it, retry without the amount and enter it there.
                   </Label>
                 )}
 
@@ -358,79 +444,53 @@ export function ScanScreen() {
                 {!!paymentOutcome && <Notice>{paymentOutcome}</Notice>}
 
                 <Notice>
-                  Opening the UPI app is not proof of payment. Tracked payments
-                  stay pending until you confirm completion.
+                  SettleUp saves a tracked expense only after the UPI app
+                  reports success or you confirm its receipt.
                 </Notice>
 
                 <Button
                   loading={action.busy}
                   disabled={action.busy || processed}
-                  onPress={() =>
-                    action.run(async () => {
-                      const value = parseMoney(amount);
-                      const activeAddress =
-                        payeeAddress || payment.payeeAddress;
-                      const confirmed = new URL(payment.uri);
-                      confirmed.searchParams.set("pa", activeAddress);
-                      confirmed.searchParams.set(
-                        "am",
-                        (value / 100).toFixed(2),
-                      );
-                      // Keep the QR issuer's transaction reference untouched.
-                      // SettleUp's idempotency key is local metadata and must not
-                      // be injected into the PSP payment URI.
-                      const launchUri = parseUpi(confirmed.toString()).uri;
-                      await paymentLauncher.ensureAvailable(launchUri);
-                      const trackedRequest = await paymentRequest(
-                        d.account.id,
-                        launchUri,
-                      );
-                      if (track)
-                        await repository.create(d.account.id, {
-                          title: payment.payeeName,
-                          amountMinor: value,
-                          currency: "INR",
-                          type: "PERSONAL_EXPENSE",
-                          status: "PENDING",
-                          occurredAt: trackedRequest.occurredAt,
-                          idempotencyKey: trackedRequest.key,
-                          notes: payment.note
-                            ? `${payment.note}\nUPI ID: ${activeAddress}`
-                            : `UPI ID: ${activeAddress}`,
-                          paymentReference: payment.reference || undefined,
-                          tagIds: [],
-                          participants: [],
-                          splitMethod: "EQUAL",
-                        });
-                      setProcessed(true);
-                      const result = await paymentLauncher
-                        .open(launchUri)
-                        .catch((error) => {
-                          setProcessed(false);
-                          throw error;
-                        });
-                      setPaymentOutcome(
-                        result.status === "SUCCESS"
-                          ? "The UPI app reported success. Check its receipt before confirming the pending transaction."
-                          : result.status === "FAILURE"
-                            ? "The UPI app reported that this payment failed. The SettleUp entry remains pending."
-                            : result.status === "CANCELLED"
-                              ? "Payment was closed or cancelled. The SettleUp entry remains pending."
-                              : "You returned from the UPI app. Check its receipt before confirming the pending transaction.",
-                      );
-                    }, "Returned from the payment app. Check its receipt before confirming.")
-                  }
+                  onPress={() => launchPayment(d)}
                 >
                   {amount ? `Pay ₹${amount}` : "Confirm & pay"}
                 </Button>
 
+                {retryWithoutAmount && !processed && (
+                  <Button
+                    secondary
+                    loading={action.busy}
+                    disabled={action.busy}
+                    onPress={() => launchPayment(d, true)}
+                  >
+                    Retry without amount
+                  </Button>
+                )}
+
+                {receiptConfirmation && (
+                  <Button
+                    secondary
+                    loading={action.busy}
+                    disabled={action.busy}
+                    onPress={() =>
+                      action.run(async () => {
+                        await repository.create(
+                          d.account.id,
+                          receiptConfirmation,
+                        );
+                        setReceiptConfirmation(null);
+                        setPaymentOutcome("Payment saved as complete.");
+                      }, "Payment saved as complete")
+                    }
+                  >
+                    I checked the receipt — mark paid
+                  </Button>
+                )}
+
                 {processed && (
                   <Notice>
-                    {track
-                      ? "A pending entry was saved in Transactions. Confirm it only after the UPI app reports success. "
-                      : ""}
                     This QR is locked for this review session to prevent
-                    duplicate entries.
+                    duplicate payments. Scan again for another payment.
                   </Notice>
                 )}
               </YStack>
@@ -846,195 +906,6 @@ function SmsPrivacyExplainer({ onClose }: { onClose(): void }) {
   );
 }
 
-function formatPickerDate(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function SmsDatePicker({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange(value: string): void;
-}) {
-  const c = useColors();
-  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value)
-    ? new Date(`${value}T12:00:00`)
-    : new Date();
-  const [visible, setVisible] = useState(false);
-  const [month, setMonth] = useState(
-    new Date(parsed.getFullYear(), parsed.getMonth(), 1),
-  );
-  const firstWeekday = month.getDay();
-  const daysInMonth = new Date(
-    month.getFullYear(),
-    month.getMonth() + 1,
-    0,
-  ).getDate();
-  const cells = Array.from({ length: 42 }, (_, index) => {
-    const day = index - firstWeekday + 1;
-    return day > 0 && day <= daysInMonth ? day : null;
-  });
-  return (
-    <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${label}. ${value || "No date selected"}`}
-        onPress={() => {
-          setMonth(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
-          setVisible(true);
-        }}
-        style={({ pressed }) => ({
-          minHeight: 50,
-          borderRadius: 14,
-          borderWidth: 1,
-          borderColor: c.line,
-          backgroundColor: pressed ? c.soft : c.card,
-          paddingHorizontal: 13,
-          paddingVertical: 8,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-        })}
-      >
-        <YStack gap={2}>
-          <Label muted size={10}>
-            {label}
-          </Label>
-          <Label bold>{value || "Choose date"}</Label>
-        </YStack>
-        <Icon name="calendar" size={18} color={c.primary} />
-      </Pressable>
-      <Modal
-        visible={visible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setVisible(false)}
-      >
-        <Pressable
-          onPress={() => setVisible(false)}
-          style={{
-            flex: 1,
-            justifyContent: "center",
-            padding: 18,
-            backgroundColor: "rgba(20, 18, 25, 0.54)",
-          }}
-        >
-          <Pressable
-            onPress={() => {}}
-            style={{
-              width: "100%",
-              maxWidth: 420,
-              alignSelf: "center",
-              borderRadius: 22,
-              backgroundColor: c.card,
-              padding: 18,
-              gap: 14,
-            }}
-          >
-            <XStack alignItems="center" justifyContent="space-between">
-              <Button
-                secondary
-                compact
-                onPress={() =>
-                  setMonth(
-                    (current) =>
-                      new Date(
-                        current.getFullYear(),
-                        current.getMonth() - 1,
-                        1,
-                      ),
-                  )
-                }
-              >
-                Previous
-              </Button>
-              <Heading size={16}>
-                {month.toLocaleDateString(undefined, {
-                  month: "long",
-                  year: "numeric",
-                })}
-              </Heading>
-              <Button
-                secondary
-                compact
-                onPress={() =>
-                  setMonth(
-                    (current) =>
-                      new Date(
-                        current.getFullYear(),
-                        current.getMonth() + 1,
-                        1,
-                      ),
-                  )
-                }
-              >
-                Next
-              </Button>
-            </XStack>
-            <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-              {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
-                <View
-                  key={`${day}-${index}`}
-                  style={{
-                    width: "14.285%",
-                    alignItems: "center",
-                    paddingVertical: 5,
-                  }}
-                >
-                  <Label muted size={10} bold>
-                    {day}
-                  </Label>
-                </View>
-              ))}
-              {cells.map((day, index) => {
-                const candidate = day
-                  ? new Date(month.getFullYear(), month.getMonth(), day)
-                  : null;
-                const selected =
-                  candidate && formatPickerDate(candidate) === value;
-                return (
-                  <Pressable
-                    key={index}
-                    disabled={!candidate}
-                    accessibilityRole={candidate ? "button" : undefined}
-                    accessibilityLabel={candidate?.toLocaleDateString()}
-                    onPress={() => {
-                      if (!candidate) return;
-                      onChange(formatPickerDate(candidate));
-                      setVisible(false);
-                    }}
-                    style={{
-                      width: "14.285%",
-                      aspectRatio: 1,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: 99,
-                      backgroundColor: selected ? c.primary : "transparent",
-                    }}
-                  >
-                    {!!day && (
-                      <Label
-                        bold={!!selected}
-                        color={selected ? c.onPrimary : c.text}
-                      >
-                        {day}
-                      </Label>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </>
-  );
-}
-
 function SmsContent({ accountId }: { accountId: string }) {
   const provider = useMemo(
       () => new AndroidSmsProvider(accountId),
@@ -1248,7 +1119,7 @@ function SmsContent({ accountId }: { accountId: string }) {
               </XStack>
               {custom && (
                 <YStack gap={12}>
-                  <SmsDatePicker
+                  <DatePicker
                     label="From"
                     value={from}
                     onChange={(value) => {
@@ -1256,7 +1127,7 @@ function SmsContent({ accountId }: { accountId: string }) {
                       setSuggestions([]);
                     }}
                   />
-                  <SmsDatePicker
+                  <DatePicker
                     label="Through"
                     value={through}
                     onChange={(value) => {

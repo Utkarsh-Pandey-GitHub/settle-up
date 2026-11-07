@@ -4,7 +4,7 @@ import type {
   TransactionView,
 } from "@settleup/contracts";
 import { DateTime } from "luxon";
-import { DomainError } from "./index";
+import { DomainError, simplifyScopedBalances } from "./index";
 export type AnalyticsFilter = {
   start: string;
   end: string;
@@ -20,11 +20,14 @@ export function filterTransactions(
   data: Dashboard,
   f: AnalyticsFilter,
 ): TransactionView[] {
-  return data.transactions.filter(
-    (t) =>
+  const start = Date.parse(f.start);
+  const end = Date.parse(f.end);
+  return data.transactions.filter((t) => {
+    const time = Date.parse(t.occurredAt);
+    return (
       t.currency === f.currency &&
-      t.occurredAt >= f.start &&
-      t.occurredAt < f.end &&
+      time >= start &&
+      time < end &&
       (!f.tagIds?.length || t.tagIds.some((id) => f.tagIds!.includes(id))) &&
       (!f.ledgerIds?.length ||
         (!!t.ledgerId && f.ledgerIds.includes(t.ledgerId))) &&
@@ -33,8 +36,20 @@ export function filterTransactions(
       (!f.contactId ||
         t.sourceId === f.contactId ||
         t.destinationId === f.contactId ||
-        t.allocations.some((a) => a.userId === f.contactId)),
-  );
+        t.allocations.some((a) => a.userId === f.contactId))
+    );
+  });
+}
+export function previousPeriod(f: AnalyticsFilter): AnalyticsFilter {
+  const zone = f.zone ?? "Asia/Kolkata";
+  const start = DateTime.fromISO(f.start, { zone });
+  const end = DateTime.fromISO(f.end, { zone });
+  const calendarMonths = end.diff(start, "months").months;
+  const previousStart =
+    start.day === 1 && end.day === 1 && Number.isInteger(calendarMonths)
+      ? start.minus({ months: calendarMonths })
+      : start.minus(end.diff(start, ["days", "milliseconds"]));
+  return { ...f, start: previousStart.toUTC().toISO()!, end: f.start };
 }
 export function personalSpend(t: TransactionView, userId: string): number {
   if (t.status !== "SETTLED") return 0;
@@ -48,7 +63,7 @@ export function analytics(data: Dashboard, f: AnalyticsFilter): Analytics {
   if (
     !DateTime.fromISO(f.start).isValid ||
     !DateTime.fromISO(f.end).isValid ||
-    f.start >= f.end ||
+    Date.parse(f.start) >= Date.parse(f.end) ||
     !DateTime.now().setZone(f.zone ?? "Asia/Kolkata").isValid
   )
     throw new DomainError("PERIOD", "Choose a valid time zone and date range.");
@@ -87,29 +102,32 @@ export function analytics(data: Dashboard, f: AnalyticsFilter): Analytics {
         byContact.set(contact, (byContact.get(contact) ?? 0) + spent);
     }
   }
-  const duration = Date.parse(f.end) - Date.parse(f.start);
-  const previousSpendingMinor = filterTransactions(data, {
-    ...f,
-    start: new Date(Date.parse(f.start) - duration).toISOString(),
-    end: f.start,
-  }).reduce((s, t) => s + personalSpend(t, uid), 0);
+  const previousSpendingMinor = filterTransactions(
+    data,
+    previousPeriod(f),
+  ).reduce((s, t) => s + personalSpend(t, uid), 0);
+  const activeLedgerIds = new Set(
+    data.ledgers.filter((ledger) => !ledger.deleted).map((ledger) => ledger.id),
+  );
   const debts = data.obligations.filter(
     (d) =>
       d.currency === f.currency &&
+      (!d.ledgerId || activeLedgerIds.has(d.ledgerId)) &&
       (!f.ledgerIds?.length ||
         (!!d.ledgerId && f.ledgerIds.includes(d.ledgerId))),
   );
+  const balances = simplifyScopedBalances(debts);
   return {
     currency: f.currency,
     spendingMinor,
     incomingMinor,
     outgoingMinor,
-    owedMinor: debts
-      .filter((d) => d.debtorId === uid)
-      .reduce((s, d) => s + d.remainingMinor, 0),
-    receivableMinor: debts
-      .filter((d) => d.creditorId === uid)
-      .reduce((s, d) => s + d.remainingMinor, 0),
+    owedMinor: balances
+      .filter((balance) => balance.debtorId === uid)
+      .reduce((sum, balance) => sum + balance.amountMinor, 0),
+    receivableMinor: balances
+      .filter((balance) => balance.creditorId === uid)
+      .reduce((sum, balance) => sum + balance.amountMinor, 0),
     byTag: [...byTag].map(([id, amountMinor]) => ({ id, amountMinor })),
     byDay: [...byDay]
       .sort()

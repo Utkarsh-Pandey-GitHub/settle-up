@@ -47,6 +47,8 @@ model User {
   groupMembers     GroupMember[]
   ledgerMembers    LedgerMember[]
   transactions     Transaction[]            @relation("Source")
+  createdTransactions Transaction[]         @relation("Creator")
+  dashboardRevision DashboardRevision?
   received         Transaction[]            @relation("Destination")
   participants     TransactionParticipant[]
   splits           ExpenseSplit[]
@@ -200,6 +202,8 @@ model Transaction {
   id               String                   @id @default(uuid()) @db.Uuid
   sourceId         String                   @db.Uuid
   source           User                     @relation("Source", fields: [sourceId], references: [id], onDelete: Restrict)
+  createdById      String                   @db.Uuid
+  createdBy        User                     @relation("Creator", fields: [createdById], references: [id], onDelete: Restrict)
   destinationId    String?                  @db.Uuid
   destination      User?                    @relation("Destination", fields: [destinationId], references: [id], onDelete: Restrict)
   ledgerId         String?                  @db.Uuid
@@ -229,12 +233,18 @@ model Transaction {
   disputes         Dispute[]
   items            TransactionItem[]
 
-  @@unique([sourceId, idempotencyKey])
+  @@unique([createdById, idempotencyKey])
   @@index([sourceId, occurredAt])
   @@index([sourceId, deletedAt])
   @@index([destinationId, occurredAt])
   @@index([ledgerId, occurredAt])
   @@index([currency, status, occurredAt])
+}
+
+model DashboardRevision {
+  userId   String @id @db.Uuid
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revision String @db.Uuid
 }
 
 model TransactionParticipant {
@@ -319,6 +329,7 @@ model LedgerActivity {
   ledgerId  String   @db.Uuid
   ledger    Ledger   @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
   actorId   String   @db.Uuid
+  subjectId String?  @db.Uuid
   event     String   @db.VarChar(50)
   message   String   @db.VarChar(250)
   createdAt DateTime @default(now()) @db.Timestamptz

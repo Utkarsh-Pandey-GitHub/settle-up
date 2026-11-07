@@ -1,5 +1,11 @@
 import React, { useEffect, useState, useRef } from "react";
-import { View, ScrollView, Pressable, useWindowDimensions } from "react-native";
+import {
+  Keyboard,
+  View,
+  ScrollView,
+  Pressable,
+  useWindowDimensions,
+} from "react-native";
 import { useRouter, usePathname } from "expo-router";
 import { XStack, YStack } from "tamagui";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -39,10 +45,27 @@ export function Shell({
 }) {
   const router = useRouter(),
     path = usePathname(),
-    { width } = useWindowDimensions(),
+    { width, fontScale } = useWindowDimensions(),
     c = useColors(),
     insets = useSafeAreaInsets();
   const desktop = width >= 1050;
+  const compactHeader = width / Math.max(fontScale, 1) < 340;
+  const [navigationHeight, setNavigationHeight] = useState(80);
+  const [keyboardVisible, setKeyboardVisible] = useState(() =>
+    Keyboard.isVisible(),
+  );
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () =>
+      setKeyboardVisible(true),
+    );
+    const hide = Keyboard.addListener("keyboardDidHide", () =>
+      setKeyboardVisible(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
   const feedback = useSession((s) => s.feedback);
   const tourAccountId = useSession((s) => s.tourAccountId);
   const [tourStep, setTourStep] = useState(0);
@@ -334,7 +357,12 @@ export function Shell({
               style={{
                 minHeight: desktop ? 80 : 52,
                 paddingTop: desktop ? 0 : insets.top,
-                paddingHorizontal: desktop ? 39 : width < 360 ? 12 : 21,
+                paddingLeft: desktop
+                  ? 39
+                  : Math.max(insets.left, width < 360 ? 12 : 21),
+                paddingRight: desktop
+                  ? 39
+                  : Math.max(insets.right, width < 360 ? 12 : 21),
                 borderBottomWidth: 0,
                 borderColor: c.line,
                 backgroundColor: c.bg,
@@ -343,14 +371,19 @@ export function Shell({
                 justifyContent: "space-between",
               }}
             >
-              <XStack alignItems="center" gap={10}>
+              <XStack
+                alignItems="center"
+                gap={compactHeader ? 5 : 10}
+                flex={1}
+                minWidth={0}
+              >
                 {desktop ? (
                   <Label size={14}>
                     {navigation.find((n) => n.path === path)?.label ??
                       "Your space"}
                   </Label>
                 ) : (
-                  <Brand compact />
+                  <Brand compact iconOnly={compactHeader} />
                 )}
                 {DEMO && (
                   <View
@@ -368,6 +401,7 @@ export function Shell({
                 )}
               </XStack>
               <XStack
+                flexShrink={0}
                 alignItems="center"
                 gap={desktop ? 17 : width < 360 ? 4 : 10}
               >
@@ -420,7 +454,17 @@ export function Shell({
             <KeyboardAwareScreen
               contentContainerStyle={{
                 padding: desktop ? 36 : width < 360 ? 14 : 20,
-                paddingBottom: desktop ? 40 : 110,
+                paddingLeft: desktop
+                  ? 36
+                  : Math.max(insets.left, width < 360 ? 14 : 20),
+                paddingRight: desktop
+                  ? 36
+                  : Math.max(insets.right, width < 360 ? 14 : 20),
+                paddingBottom: desktop
+                  ? 40
+                  : keyboardVisible
+                    ? 24
+                    : navigationHeight + 36,
                 maxWidth: 1510,
                 width: "100%",
                 alignSelf: "center",
@@ -449,10 +493,13 @@ export function Shell({
                 <PipFeedback mood="success" message={feedback.message} />
               </View>
             )}
-            {!desktop && (
+            {!desktop && !keyboardVisible && (
               <View
                 ref={navigationRef}
                 collapsable={false}
+                onLayout={(event) =>
+                  setNavigationHeight(event.nativeEvent.layout.height)
+                }
                 style={{
                   position: "absolute",
                   bottom: 0,
@@ -461,6 +508,8 @@ export function Shell({
                   borderRadius: 0,
                   paddingBottom: Math.max(insets.bottom, 10),
                   paddingTop: 0,
+                  paddingLeft: insets.left,
+                  paddingRight: insets.right,
                   flexDirection: "row",
                   justifyContent: "space-around",
                   borderTopWidth: 1,
@@ -475,7 +524,7 @@ export function Shell({
                     path: "/activity",
                     icon: "transactions",
                   },
-                  { label: "Scan QR", path: "/scan", icon: "scan" },
+                  { label: "Pay", path: "/scan", icon: "scan" },
                   { label: "Analytics", path: "/analytics", icon: "chart" },
                   { label: "Groups", path: "/groups", icon: "groups" },
                 ].map((n) => (
@@ -528,6 +577,8 @@ export function Shell({
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.78}
+                      maxWidth="100%"
+                      textAlign="center"
                     >
                       {n.label}
                     </Label>

@@ -19,6 +19,7 @@ import {
 import { Text, YStack, XStack } from "tamagui";
 import Svg, { Path, Circle, Rect, Ellipse, G } from "react-native-svg";
 import { useSession } from "../data/session";
+import { useKeyboardAwareField } from "./KeyboardAwareScreen";
 import { bodyFont } from "../theme/config";
 export const useColors = () =>
   useSession((s) => s.dark)
@@ -29,7 +30,9 @@ export const useColors = () =>
         muted: "#BAB2C6",
         line: "#40374C",
         soft: "#342B43",
-        mint: "#392E4D",
+        mint: "#243A35",
+        amber: "#3C3226",
+        rose: "#3D2A35",
         peach: "#302839",
         blue: "#322A40",
         butter: "#302839",
@@ -44,7 +47,9 @@ export const useColors = () =>
         muted: "#716B7B",
         line: "#E1DDE7",
         soft: "#F0ECF8",
-        mint: "#E7DEF7",
+        mint: "#E8F6EF",
+        amber: "#FCF2DE",
+        rose: "#FBECEF",
         peach: "#F2EEF9",
         blue: "#FFFFFF",
         butter: "#FFFFFF",
@@ -87,6 +92,8 @@ export type IconName =
   | "moon"
   | "sun"
   | "download"
+  | "refresh"
+  | "sync"
   | "more"
   | "edit"
   | "trash"
@@ -129,6 +136,9 @@ const paths: Record<string, string> = {
   moon: "M20 15A9 9 0 0 1 9 3a9 9 0 1 0 11 12Z",
   sun: "M12 1v2 M12 21v2 M1 12h2 M21 12h2 M4 4l2 2 M18 18l2 2 M4 20l2-2 M18 6l2-2",
   download: "M12 3v12 M7 10l5 5 5-5 M4 16v5h16v-5",
+  refresh:
+    "M20 7v5h-5 M4 17v-5h5 M5 9a8 8 0 0 1 13-4l2 3 M19 15a8 8 0 0 1-13 4l-2-3",
+  sync: "M4 7h11l-3-3 M20 17H9l3 3 M15 4l3 3-3 3 M9 20l-3-3 3-3",
   more: "M5 12h.01 M12 12h.01 M19 12h.01",
   edit: "M4 20h4L19 9l-4-4L4 16v4Z M13.5 6.5l4 4",
   trash: "M4 7h16 M9 7V4h6v3 M7 7l1 14h8l1-14 M10 11v6 M14 11v6",
@@ -194,7 +204,11 @@ export function Heading({
   children,
   size = 26,
   textAlign = "left",
-}: {
+  ...layout
+}: Pick<
+  React.ComponentProps<typeof Label>,
+  "flex" | "flexShrink" | "minWidth"
+> & {
   children: React.ReactNode;
   size?: number;
   textAlign?: "left" | "center" | "right";
@@ -208,6 +222,7 @@ export function Heading({
       letterSpacing={-0.35}
       accessibilityRole="header"
       textAlign={textAlign}
+      {...layout}
     >
       {children}
     </Label>
@@ -328,7 +343,7 @@ export function Button({
           borderBottomWidth: 1,
           backgroundColor: secondary ? c.card : c.primary,
           borderWidth: 1,
-          borderColor: secondary ? c.text : c.primary,
+          borderColor: secondary ? c.line : c.primary,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "center",
@@ -366,20 +381,25 @@ export function IconButton({
   onPress,
   label,
   borderless = false,
+  disabled = false,
 }: {
   name: IconName;
   onPress(): void;
   label: string;
   borderless?: boolean;
+  disabled?: boolean;
 }) {
   const c = useColors();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
         width: 44,
+        opacity: disabled ? 0.5 : 1,
         height: 44,
         alignItems: "center",
         justifyContent: "center",
@@ -396,9 +416,11 @@ export function IconButton({
 export function Field({
   label,
   error,
+  onFocus,
   ...props
 }: TextInputProps & { label: string; error?: string }) {
   const c = useColors();
+  const keyboardField = useKeyboardAwareField();
   return (
     <YStack gap={7}>
       <Label bold size={13}>
@@ -408,11 +430,16 @@ export function Field({
         accessibilityLabel={label}
         placeholderTextColor={c.muted}
         {...props}
+        ref={keyboardField.ref}
+        onFocus={(event) => {
+          keyboardField.onFocus();
+          onFocus?.(event);
+        }}
         style={[
           {
             minHeight: 49,
             borderWidth: 1,
-            borderColor: error ? "#B42332" : c.muted,
+            borderColor: error ? "#B42332" : c.line,
             borderRadius: 10,
             padding: 13,
             color: c.text,
@@ -448,11 +475,13 @@ export function Chip({
       aria-pressed={!!selected}
       onPress={onPress}
       style={{
+        maxWidth: "100%",
+        flexShrink: 1,
         minHeight: 44,
         paddingHorizontal: 15,
         paddingVertical: 10,
         borderWidth: 1,
-        borderColor: c.text,
+        borderColor: selected ? c.primary : c.line,
         backgroundColor: selected ? c.primary : c.card,
         borderRadius: 12,
         justifyContent: "center",
@@ -1007,7 +1036,13 @@ export function PipFeedback({
     </XStack>
   );
 }
-export function Brand({ compact = false }: { compact?: boolean }) {
+export function Brand({
+  compact = false,
+  iconOnly = false,
+}: {
+  compact?: boolean;
+  iconOnly?: boolean;
+}) {
   return (
     <XStack
       gap={8}
@@ -1016,12 +1051,20 @@ export function Brand({ compact = false }: { compact?: boolean }) {
       accessibilityLabel="SettleUp"
     >
       <Mascot size={compact ? 32 : 40} mark animate={false} />
-      <Label bold size={compact ? 20 : 24} letterSpacing={-1}>
-        settle
-        <Label bold size={compact ? 20 : 24} color="#6652A3">
-          up.
+      {!iconOnly && (
+        <Label
+          bold
+          size={compact ? 20 : 24}
+          letterSpacing={-1}
+          flexShrink={1}
+          numberOfLines={1}
+        >
+          settle
+          <Label bold size={compact ? 20 : 24} color="#6652A3">
+            up.
+          </Label>
         </Label>
-      </Label>
+      )}
     </XStack>
   );
 }
@@ -1258,7 +1301,7 @@ export function SearchBar({
         alignItems: "center",
         backgroundColor: c.card,
         borderWidth: 1,
-        borderColor: c.muted,
+        borderColor: c.line,
         borderRadius: 10,
         paddingHorizontal: 12,
         height: 46,
@@ -1298,6 +1341,7 @@ export function SearchPicker({
   placeholder,
   onClear,
   selectionIcon = "chevron",
+  footer,
 }: {
   visible: boolean;
   title: string;
@@ -1308,10 +1352,11 @@ export function SearchPicker({
   onClose(): void;
   placeholder?: string;
   onClear?(): void;
-  selectionIcon?: IconName;
+  selectionIcon?: IconName | null;
+  footer?: React.ReactNode;
 }) {
   const c = useColors();
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const [search, setSearch] = useState("");
   useEffect(() => {
     if (!visible) setSearch("");
@@ -1342,7 +1387,8 @@ export function SearchPicker({
           style={{
             width: "100%",
             maxWidth: 520,
-            maxHeight: Math.max(280, height - (height < 650 ? 28 : 64)),
+            maxHeight: "100%",
+            flexShrink: 1,
             padding: width < 360 ? 14 : 20,
             gap: 14,
             borderRadius: 24,
@@ -1352,7 +1398,9 @@ export function SearchPicker({
           }}
         >
           <XStack alignItems="center" justifyContent="space-between" gap={12}>
-            <Heading size={20}>{title}</Heading>
+            <Heading size={20} flex={1} minWidth={0}>
+              {title}
+            </Heading>
             <IconButton name="close" label="Close" onPress={onClose} />
           </XStack>
           <SearchBar
@@ -1361,6 +1409,7 @@ export function SearchPicker({
             placeholder={placeholder ?? `Search ${title.toLocaleLowerCase()}…`}
           />
           <ScrollView
+            style={{ flexShrink: 1 }}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ gap: 8 }}
           >
@@ -1384,14 +1433,14 @@ export function SearchPicker({
                     paddingVertical: 10,
                     borderRadius: 14,
                     borderWidth: 1,
-                    borderColor: active ? "#6652A3" : c.line,
+                    borderColor: active ? c.soft : c.line,
                     backgroundColor: active ? c.soft : c.card,
                     flexDirection: "row",
                     alignItems: "center",
                     gap: 12,
                   }}
                 >
-                  <YStack flex={1} gap={2}>
+                  <YStack flex={1} minWidth={0} gap={2}>
                     <Label bold size={13}>
                       {option.label}
                     </Label>
@@ -1401,11 +1450,13 @@ export function SearchPicker({
                       </Label>
                     )}
                   </YStack>
-                  <Icon
-                    name={active ? "check" : selectionIcon}
-                    size={18}
-                    color={active ? c.accent : c.muted}
-                  />
+                  {active || selectionIcon ? (
+                    <Icon
+                      name={active ? "check" : selectionIcon!}
+                      size={18}
+                      color={active ? c.accent : c.muted}
+                    />
+                  ) : null}
                 </Pressable>
               );
             })}
@@ -1415,6 +1466,7 @@ export function SearchPicker({
               </Label>
             )}
           </ScrollView>
+          {footer}
           {multiple && (
             <XStack gap={8} flexWrap="wrap">
               {!!selected.length && !!onClear && (
@@ -1456,7 +1508,8 @@ export function ActionDialog({
   onClose(): void;
 }) {
   const c = useColors();
-  const { width, height } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
+  const narrow = width / Math.max(fontScale, 1) < 360;
   return (
     <Modal
       visible={visible}
@@ -1465,10 +1518,7 @@ export function ActionDialog({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Close dialog"
-        onPress={onClose}
+      <View
         style={{
           flex: 1,
           justifyContent: "center",
@@ -1478,15 +1528,20 @@ export function ActionDialog({
         }}
       >
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close dialog"
+          onPress={onClose}
+          style={{ position: "absolute", inset: 0 }}
+        />
+        <ScrollView
           accessibilityRole="alert"
-          onPress={() => {}}
+          bounces={false}
           style={{
             width: "100%",
             maxWidth: 460,
-            maxHeight: Math.max(260, height - 32),
+            maxHeight: "100%",
+            flexGrow: 0,
             borderRadius: 26,
-            padding: width < 360 ? 14 : 20,
-            gap: 16,
             backgroundColor: c.card,
             borderWidth: 1,
             borderColor: c.line,
@@ -1496,6 +1551,7 @@ export function ActionDialog({
             shadowOffset: { width: 0, height: 10 },
             elevation: 14,
           }}
+          contentContainerStyle={{ padding: narrow ? 14 : 20, gap: 16 }}
         >
           <XStack gap={13} alignItems="flex-start">
             <View
@@ -1510,7 +1566,7 @@ export function ActionDialog({
             >
               <Icon name={icon} size={22} color={c.text} />
             </View>
-            <YStack flex={1} gap={5} paddingTop={1}>
+            <YStack flex={1} minWidth={0} gap={5} paddingTop={1}>
               <Heading size={19}>{title}</Heading>
               <Label muted size={12} lineHeight={18}>
                 {detail}
@@ -1528,8 +1584,9 @@ export function ActionDialog({
                 onPress={action.onPress}
                 style={({ pressed }) => ({
                   minHeight: 44,
-                  minWidth: width < 360 ? "100%" : 96,
-                  flexGrow: width < 360 ? 1 : 0,
+                  minWidth: narrow ? "100%" : 96,
+                  maxWidth: "100%",
+                  flexGrow: narrow ? 1 : 0,
                   paddingHorizontal: 16,
                   paddingVertical: 10,
                   borderRadius: 14,
@@ -1567,8 +1624,8 @@ export function ActionDialog({
               </Pressable>
             ))}
           </XStack>
-        </Pressable>
-      </Pressable>
+        </ScrollView>
+      </View>
     </Modal>
   );
 }
@@ -1599,7 +1656,7 @@ export function FilterDropdownTrigger({
         justifyContent: "space-between",
         backgroundColor: active ? c.primary : c.card,
         borderWidth: 1,
-        borderColor: c.text,
+        borderColor: active ? c.primary : c.line,
         borderRadius: 12,
         paddingHorizontal: compact ? 8 : 10,
         height: 44,

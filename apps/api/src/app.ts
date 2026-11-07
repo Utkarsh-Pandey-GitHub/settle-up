@@ -33,6 +33,7 @@ import {
   billExtractionRequest,
   billVisionModels,
   normalizeBillExtraction,
+  parseBillVisionResponse,
 } from "./bill/extraction";
 import {
   db,
@@ -129,8 +130,14 @@ export function createApp() {
       "Request failed",
     );
     return reply.code(500).send({
-      code: "INTERNAL",
-      message: "Something went wrong. Please try again.",
+      code:
+        req.routeOptions?.url === "/bill/extract"
+          ? "BILL_AI_INTERNAL"
+          : "INTERNAL",
+      message:
+        req.routeOptions?.url === "/bill/extract"
+          ? "The bill reader hit a server error. Please retry or enter the items manually."
+          : "Something went wrong. Please try again.",
       requestId: req.id,
     });
   });
@@ -167,6 +174,7 @@ export function createApp() {
     });
   app.addHook("onResponse", async (req, reply) => {
     if (
+      !liveSockets.size ||
       !["POST", "PATCH", "DELETE"].includes(req.method) ||
       reply.statusCode >= 400 ||
       req.routeOptions.url?.startsWith("/auth/") ||
@@ -216,6 +224,21 @@ export function createApp() {
       },
     };
   });
+  app.get(
+    "/sync/revision",
+    { config: { rateLimit: { max: 240 } } },
+    async (req, reply) => {
+      const { userId } = await actor(req);
+      const revision = await db.dashboardRevision.findUnique({
+        where: { userId },
+      });
+      reply.header("Cache-Control", "private, no-store");
+      return {
+        revision: revision?.revision ?? null,
+        websocket: !cloudflareRuntime,
+      };
+    },
+  );
   app.post(
     "/auth/truecaller",
     { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
@@ -375,24 +398,7 @@ export function createApp() {
           "The bill reader could not process this image. Please try again.",
           503,
         );
-      const providerResult = (await response.json()) as any;
-      const rawContent = providerResult?.choices?.[0]?.message?.content;
-      const content = Array.isArray(rawContent)
-        ? rawContent.map((part: any) => part?.text || "").join("")
-        : rawContent;
-      if (typeof content !== "string" || !content.trim())
-        throw new DomainError("BILL_AI_RESULT", "No bill details were found.");
-      let parsed: any;
-      try {
-        parsed = JSON.parse(
-          content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""),
-        );
-      } catch {
-        throw new DomainError(
-          "BILL_AI_RESULT",
-          "The bill result was incomplete. Please try a clearer photo.",
-        );
-      }
+      const parsed = parseBillVisionResponse(await response.text());
       return normalizeBillExtraction(parsed, body.currency);
     },
   );
@@ -927,6 +933,7 @@ export function createApp() {
             { groupId, memberId },
             ledger.id,
             `${member.profile?.name ?? "A member"} joined the group`,
+            memberId,
           );
         }
       }
@@ -1016,6 +1023,7 @@ export function createApp() {
           { groupId, memberId },
           ledger.id,
           `${name} was removed from the group`,
+          memberId,
         );
       return { ok: true };
     });

@@ -1,12 +1,6 @@
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Pressable,
-  useWindowDimensions,
-  Image,
-  Animated,
-  Easing,
-} from "react-native";
+import { DateTime } from "luxon";
+import { View, Pressable, useWindowDimensions, Image } from "react-native";
 import { Redirect, useRouter, useLocalSearchParams } from "expo-router";
 import { XStack, YStack } from "tamagui";
 import Svg, {
@@ -19,6 +13,7 @@ import Svg, {
 import type { Dashboard, TransactionView } from "@settleup/contracts";
 import {
   analytics,
+  previousPeriod,
   type AnalyticsFilter,
 } from "@settleup/domain/src/analytics";
 import {
@@ -31,8 +26,11 @@ import {
 import { useDashboard, useAction } from "../data/hooks";
 import { repository, extra } from "../data/repository";
 import { useSession } from "../data/session";
+import { personName } from "../data/people";
 import { TourGroup } from "../components/WalkthroughTour";
 import { Shell } from "../components/Shell";
+import { DatePicker } from "../components/DateTimePicker";
+import { GoalCreator } from "./goal-form";
 import {
   Label,
   Heading,
@@ -44,7 +42,6 @@ import {
   Empty,
   Notice,
   Chip,
-  Field,
   SearchBar,
   FilterDropdownTrigger,
   FilterDropdownPanel,
@@ -57,7 +54,11 @@ import {
 export function DataScreen({
   children,
 }: {
-  children(data: Dashboard): React.ReactNode;
+  children(
+    data: Dashboard,
+    refresh: () => Promise<{ error: Error | null }>,
+    refreshing: boolean,
+  ): React.ReactNode;
 }) {
   const query = useDashboard(),
     ready = useSession((s) => s.ready),
@@ -77,7 +78,7 @@ export function DataScreen({
           <Label muted>Loading your account…</Label>
         </YStack>
       ) : query.data ? (
-        children(query.data)
+        children(query.data, () => query.refetch(), query.isFetching)
       ) : query.error ? (
         <YStack gap={15}>
           <Notice error>{query.error.message}</Notice>
@@ -137,6 +138,7 @@ export function TransactionRow({
   onSelect,
   onLongPress,
   onAssignGroup,
+  showCreator = false,
 }: {
   transaction: TransactionView;
   data: Dashboard;
@@ -147,12 +149,16 @@ export function TransactionRow({
   onSelect?: () => void;
   onLongPress?: () => void;
   onAssignGroup?: () => void;
+  showCreator?: boolean;
 }) {
   const c = useColors(),
     router = useRouter();
+  const { width, fontScale } = useWindowDimensions();
+  const narrow = width / Math.max(fontScale, 1) < 370;
   const tag = data.tags.find((tag) => tag.id === t.tagIds[0]),
     ledger = data.ledgers.find((l) => l.id === t.ledgerId);
   const incoming = t.destinationId === data.account.id;
+  const cashSign = incoming ? "+" : t.sourceId === data.account.id ? "−" : "";
   const storedIcon = [
     "bag",
     "coffee",
@@ -179,7 +185,7 @@ export function TransactionRow({
         flexDirection: "row",
         alignItems: "center",
         paddingVertical: compact ? 9 : 14,
-        gap: 12,
+        gap: narrow ? 7 : 12,
         borderBottomWidth: last ? 0 : 1,
         borderBottomColor: c.line,
         backgroundColor: selected
@@ -209,8 +215,8 @@ export function TransactionRow({
       )}
       <View
         style={{
-          height: 43,
-          width: 43,
+          height: narrow ? 34 : 43,
+          width: narrow ? 34 : 43,
           borderRadius: 13,
           backgroundColor: `${tag?.color ?? "#9985C2"}20`,
           justifyContent: "center",
@@ -246,7 +252,7 @@ export function TransactionRow({
             {tag?.name ?? t.type.toLowerCase().replace(/_/g, " ")}
           </Label>
           {ledger && (
-            <Label size={10} muted>
+            <Label size={10} muted maxWidth="100%" numberOfLines={1}>
               · {ledger.name}
             </Label>
           )}
@@ -256,6 +262,16 @@ export function TransactionRow({
             </Label>
           )}
         </XStack>
+        {showCreator && (
+          <Label muted size={11} maxWidth="100%">
+            Recorded by{" "}
+            {personName(data, t.createdById ?? t.sourceId, t.createdByName)}
+            {t.type === "SHARED_EXPENSE" &&
+            t.sourceId !== (t.createdById ?? t.sourceId)
+              ? ` · Paid by ${personName(data, t.sourceId, t.payerName)}`
+              : ""}
+          </Label>
+        )}
       </YStack>
       {!!onAssignGroup && !selectable && (
         <Pressable
@@ -277,9 +293,19 @@ export function TransactionRow({
           <Icon name="edit" size={15} color="#59458F" />
         </Pressable>
       )}
-      <YStack alignItems="flex-end" gap={3}>
-        <Label size={14} bold color={incoming ? "#218262" : c.text}>
-          {incoming ? "+" : "−"}
+      <YStack
+        alignItems="flex-end"
+        gap={3}
+        maxWidth={narrow ? "44%" : "48%"}
+        flexShrink={1}
+      >
+        <Label
+          size={14}
+          bold
+          textAlign="right"
+          color={incoming ? "#218262" : c.text}
+        >
+          {cashSign}
           {money(t.amountMinor, t.currency)}
         </Label>
         <Label muted size={10}>
@@ -296,33 +322,66 @@ export function SpendingChart({
   data,
   filter,
   compare = false,
+  view = "bars",
 }: {
   data: Dashboard;
   filter: AnalyticsFilter;
   compare?: boolean;
+  view?: "bars" | "trend" | "cumulative";
 }) {
   const c = useColors();
   const stats = analytics(data, filter);
-  const days = stats.byDay.slice(-10);
-  const duration = Date.parse(filter.end) - Date.parse(filter.start);
-  const previousDays = compare
-    ? analytics(data, {
-        ...filter,
-        start: new Date(Date.parse(filter.start) - duration).toISOString(),
-        end: filter.start,
-      }).byDay.slice(-10)
-    : [];
-  const slots = Math.max(days.length, previousDays.length, 1);
-  const max = Math.max(
-    ...days.map((d) => d.amountMinor),
-    ...previousDays.map((d) => d.amountMinor),
-    100,
-  );
+  const prior = previousPeriod(filter);
+  const previousDays = compare ? analytics(data, prior).byDay : [];
+  const chartDays = (range: AnalyticsFilter, spending: typeof stats.byDay) => {
+    const zone = range.zone ?? "Asia/Kolkata";
+    const today = DateTime.now().setZone(zone).startOf("day");
+    const first = DateTime.fromISO(range.start, { zone }).startOf("day");
+    const last = DateTime.fromISO(range.end, { zone })
+      .minus({ milliseconds: 1 })
+      .startOf("day");
+    const end = last < today ? last : today;
+    const start = end.minus({ days: 9 });
+    const visibleStart = first > start ? first : start;
+    const daily = new Map(spending.map((day) => [day.date, day.amountMinor]));
+    const visible = [];
+    for (let day = visibleStart; day <= end; day = day.plus({ days: 1 })) {
+      const date = day.toISODate()!;
+      visible.push({ date, amountMinor: daily.get(date) ?? 0 });
+    }
+    return visible;
+  };
+  const days = chartDays(filter, stats.byDay);
+  const priorDays = compare ? chartDays(prior, previousDays) : [];
+  const amounts = (values: typeof days, all: typeof days) => {
+    let running = 0;
+    if (view === "cumulative" && values.length)
+      running = all
+        .filter((day) => day.date < values[0].date)
+        .reduce((sum, day) => sum + day.amountMinor, 0);
+    return values.map((day) => {
+      running += day.amountMinor;
+      return view === "cumulative" ? running : day.amountMinor;
+    });
+  };
+  const currentValues = amounts(days, stats.byDay);
+  const previousValues = amounts(priorDays, previousDays);
+  const slots = Math.max(days.length, priorDays.length, 1);
+  const max = Math.max(...currentValues, ...previousValues, 100);
   const barWidth = Math.min(compare ? 15 : 26, 300 / slots);
   const chartWidth = 530;
+  const pointX = (index: number) => 68 + index * (430 / Math.max(slots - 1, 1));
+  const pointY = (value: number) => 124 - (value / max) * 100;
+  const linePath = (values: number[]) =>
+    values
+      .map(
+        (value, index) =>
+          `${index ? "L" : "M"}${pointX(index)},${pointY(value)}`,
+      )
+      .join(" ");
   return (
     <View
-      accessibilityLabel={`Spending trend. ${days.map((d) => `${d.date}: ${money(d.amountMinor)}`).join(". ")}`}
+      accessibilityLabel={`${view} spending chart. ${days.map((d, i) => `${d.date}: ${money(currentValues[i], filter.currency)}`).join(". ")}`}
     >
       <Svg width="100%" height={172} viewBox={`0 0 ${chartWidth} 172`}>
         {[0, 1, 2].map((i) => (
@@ -343,17 +402,54 @@ export function SpendingChart({
             </SvgText>
           </React.Fragment>
         ))}
+        {view !== "bars" && previousValues.length > 0 && (
+          <Path
+            d={linePath(previousValues)}
+            fill="none"
+            stroke="#B9B3C6"
+            strokeWidth={3}
+            strokeDasharray="6,5"
+          />
+        )}
+        {view !== "bars" && currentValues.length > 0 && (
+          <>
+            {view === "cumulative" && (
+              <Path
+                d={`${linePath(currentValues)} L${pointX(currentValues.length - 1)},124 L${pointX(0)},124 Z`}
+                fill="#A990DC"
+                opacity={0.12}
+              />
+            )}
+            <Path
+              d={linePath(currentValues)}
+              fill="none"
+              stroke="#7658B8"
+              strokeWidth={3.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {currentValues.map((value, index) => (
+              <Circle
+                key={days[index].date}
+                cx={pointX(index)}
+                cy={pointY(value)}
+                r={index === currentValues.length - 1 ? 5 : 3}
+                fill="#7658B8"
+              />
+            ))}
+          </>
+        )}
         {Array.from({ length: slots }, (_, i) => {
           const d = days[i];
-          const previous = previousDays[i];
+          const previous = priorDays[i];
           const x = 60 + i * (450 / slots);
-          const h = d ? Math.max(4, (d.amountMinor / max) * 100) : 0;
+          const h = d ? (d.amountMinor / max) * 100 : 0;
           const previousHeight = previous
-            ? Math.max(4, (previous.amountMinor / max) * 100)
+            ? (previous.amountMinor / max) * 100
             : 0;
           return (
             <React.Fragment key={d?.date ?? previous?.date ?? i}>
-              {!!previous && (
+              {view === "bars" && !!previous && (
                 <Rect
                   x={x}
                   y={124 - previousHeight}
@@ -363,7 +459,7 @@ export function SpendingChart({
                   fill="#CFC8DC"
                 />
               )}
-              {!!d && (
+              {view === "bars" && h > 0 && d && (
                 <>
                   <Rect
                     x={x + (compare ? barWidth + 3 : 0)}
@@ -386,21 +482,26 @@ export function SpendingChart({
                 </>
               )}
               <SvgText
-                x={x + (compare ? barWidth : 0) + barWidth / 2}
+                x={
+                  view === "bars"
+                    ? x + (compare ? barWidth : 0) + barWidth / 2
+                    : pointX(i)
+                }
                 y={153}
                 textAnchor="middle"
                 fill={c.muted}
                 fontSize={10}
               >
-                {d ? new Date(d.date).getDate() : i + 1}
+                {(d ?? previous)?.date.slice(8)}
               </SvgText>
             </React.Fragment>
           );
         })}
       </Svg>
-      {!days.length && <Label muted>No spending in this period.</Label>}
+      {!stats.byDay.length && <Label muted>No spending in this period.</Label>}
       <Label muted size={10}>
-        Daily personal spending · {filter.currency} · Asia/Kolkata
+        {view === "cumulative" ? "Running total" : "Daily personal spending"} ·{" "}
+        {filter.currency} · Last 10 days of the period
         {compare ? " · violet current, grey previous" : ""}
       </Label>
     </View>
@@ -408,70 +509,10 @@ export function SpendingChart({
 }
 
 function GoalTargetButton({ onPress }: { onPress(): void }) {
-  const motion = React.useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(motion, {
-          toValue: 1,
-          duration: 900,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(motion, {
-          toValue: 0,
-          duration: 900,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [motion]);
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Set a spending goal"
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        minHeight: 46,
-        paddingHorizontal: 12,
-        borderRadius: 16,
-        backgroundColor: "#EEE9F8",
-        opacity: pressed ? 0.72 : 1,
-        gap: 8,
-      })}
-    >
-      <Animated.View
-        style={{
-          transform: [
-            {
-              translateY: motion.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, -2],
-              }),
-            },
-            {
-              scale: motion.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, 1.06],
-              }),
-            },
-          ],
-        }}
-      >
-        <Svg width={34} height={34} viewBox="0 0 34 34">
-          <Circle cx={16} cy={18} r={12} fill="#FFFFFF" stroke="#17151C" strokeWidth={1.7} />
-          <Circle cx={16} cy={18} r={7.5} fill="#D9F2E7" stroke="#17151C" strokeWidth={1.5} />
-          <Circle cx={16} cy={18} r={3} fill="#F2C86B" stroke="#17151C" strokeWidth={1.3} />
-          <Path d="M27 5 16 18M23 5h4v4" stroke="#17151C" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-        </Svg>
-      </Animated.View>
-      <Label bold size={12}>Set a goal</Label>
-    </Pressable>
+    <Button secondary icon="plus" onPress={onPress}>
+      New goal
+    </Button>
   );
 }
 export function Overview() {
@@ -479,12 +520,13 @@ export function Overview() {
 }
 function HomeContent({ data: d }: { data: Dashboard }) {
   const router = useRouter(),
-    { width, height } = useWindowDimensions(),
+    { width, height, fontScale } = useWindowDimensions(),
     c = useColors();
   const stats = analytics(d, {
     ...periodRange("MONTH", "Asia/Kolkata"),
     currency: d.account.currency,
   });
+  const compactSummary = width / Math.max(1, fontScale) < 360;
   const go = (p: string) =>
     ["/", "/activity", "/analytics", "/groups", "/goals"].includes(p)
       ? router.replace(p as any)
@@ -526,26 +568,32 @@ function HomeContent({ data: d }: { data: Dashboard }) {
         }}
       >
         <XStack alignItems="center" gap={width > 600 ? 24 : 14}>
-          <Image
-            source={require("../../assets/finance/coins.png")}
-            accessibilityLabel="Illustrated stack of savings coins"
-            resizeMode="contain"
-            style={{
-              width: width > 600 ? 140 : 88,
-              height: (width > 600 ? 140 : 88) * 0.85,
-            }}
-          />
+          {!compactSummary && (
+            <Image
+              source={require("../../assets/finance/coins.png")}
+              accessibilityLabel="Illustrated stack of savings coins"
+              resizeMode="contain"
+              style={{
+                width: width > 600 ? 140 : 88,
+                height: (width > 600 ? 140 : 88) * 0.85,
+              }}
+            />
+          )}
           <YStack flex={1} minWidth={0} alignItems="stretch" gap={8}>
             <YStack alignItems="flex-start" gap={1}>
               <Label size={14} bold>
                 Monthly spending
               </Label>
               <Label
-                size={width > 600 ? 42 : width < 360 ? 29 : 34}
+                size={width > 600 ? 38 : compactSummary ? 28 : 32}
                 letterSpacing={-1}
+                maxWidth="100%"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
               >
                 {money(stats.spendingMinor, d.account.currency).replace(
-                  ".00",
+                  /\.00$/,
                   "",
                 )}
               </Label>
@@ -557,28 +605,48 @@ function HomeContent({ data: d }: { data: Dashboard }) {
               gap={12}
               flexWrap="wrap"
             >
-              <YStack flex={1} minWidth={70} alignItems="flex-start" gap={1}>
-                <Label muted size={12}>
-                  Owed to you
-                </Label>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Owed to you: ${money(stats.receivableMinor, d.account.currency)}. View who owes you.`}
+                onPress={() =>
+                  router.push({ pathname: "/settle", params: { view: "owed" } })
+                }
+                style={{ flex: 1, minWidth: 70, minHeight: 44 }}
+              >
+                <XStack alignItems="center" gap={4} flexWrap="wrap">
+                  <Label size={12} color={c.accent}>
+                    Owed to you
+                  </Label>
+                  <Icon name="chevron" size={12} color={c.accent} />
+                </XStack>
                 <Label bold size={width > 600 ? 18 : 14}>
                   {money(stats.receivableMinor, d.account.currency).replace(
                     ".00",
                     "",
                   )}
                 </Label>
-              </YStack>
-              <YStack flex={1} minWidth={70} alignItems="flex-start" gap={1}>
-                <Label muted size={12}>
-                  You owe
-                </Label>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`You owe: ${money(stats.owedMinor, d.account.currency)}. View debts to pay.`}
+                onPress={() =>
+                  router.push({ pathname: "/settle", params: { view: "pay" } })
+                }
+                style={{ flex: 1, minWidth: 70, minHeight: 44 }}
+              >
+                <XStack alignItems="center" gap={4} flexWrap="wrap">
+                  <Label muted size={12}>
+                    You owe
+                  </Label>
+                  <Icon name="chevron" size={12} color={c.muted} />
+                </XStack>
                 <Label bold size={width > 600 ? 18 : 14}>
                   {money(stats.owedMinor, d.account.currency).replace(
                     ".00",
                     "",
                   )}
                 </Label>
-              </YStack>
+              </Pressable>
             </XStack>
           </YStack>
         </XStack>
@@ -595,11 +663,11 @@ function HomeContent({ data: d }: { data: Dashboard }) {
                 color: "#E7DEF7",
               },
               {
-                label: "Settle up",
-                short: "Settle debts",
-                icon: "arrow",
-                path: "/settle",
-                color: "#EEE8F8",
+                label: "Create group",
+                short: "New group",
+                icon: "groups",
+                path: "/groups",
+                color: "#E8F6EF",
               },
               {
                 label: "Scan a bill",
@@ -751,20 +819,35 @@ export function ActivityScreen() {
           if (selectedIds.length === 0) return;
           setDeleteOpen(true);
         };
-        const eligibleLedgers = d.ledgers.filter((ledger) =>
-          assignIds.every((id) => {
-            const transaction = d.transactions.find((item) => item.id === id);
-            if (!transaction || transaction.currency !== ledger.currency)
-              return false;
-            const related = new Set([
-              transaction.sourceId,
-              ...(transaction.destinationId ? [transaction.destinationId] : []),
-              ...transaction.allocations.map((item) => item.userId),
-            ]);
-            return [...related].every((memberId) =>
-              ledger.members.some((member) => member.id === memberId),
-            );
-          }),
+        const canAssignSelection = selectedIds.every((id) => {
+          const entry = d.transactions.find(
+            (transaction) => transaction.id === id,
+          );
+          return (
+            entry &&
+            !entry.ledgerId &&
+            (entry.createdById ?? entry.sourceId) === d.account.id &&
+            !["SETTLEMENT", "LOAN_REPAYMENT", "REVERSAL"].includes(entry.type)
+          );
+        });
+        const eligibleLedgers = d.ledgers.filter(
+          (ledger) =>
+            !ledger.deleted &&
+            assignIds.every((id) => {
+              const transaction = d.transactions.find((item) => item.id === id);
+              if (!transaction || transaction.currency !== ledger.currency)
+                return false;
+              const related = new Set([
+                transaction.sourceId,
+                ...(transaction.destinationId
+                  ? [transaction.destinationId]
+                  : []),
+                ...transaction.allocations.map((item) => item.userId),
+              ]);
+              return [...related].every((memberId) =>
+                ledger.members.some((member) => member.id === memberId),
+              );
+            }),
         );
 
         return (
@@ -994,24 +1077,26 @@ export function ActivityScreen() {
                 <Label color="#FFFFFF" bold size={13}>
                   {selectedIds.length} selected
                 </Label>
-                <Pressable
-                  onPress={() => setAssignIds(selectedIds)}
-                  disabled={action.busy}
-                  style={{
-                    backgroundColor: "rgba(255,255,255,0.16)",
-                    paddingHorizontal: 12,
-                    paddingVertical: 8,
-                    borderRadius: 10,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 6,
-                  }}
-                >
-                  <Icon name="groups" size={14} color="#FFFFFF" />
-                  <Label color="#FFFFFF" bold size={12}>
-                    Assign group
-                  </Label>
-                </Pressable>
+                {canAssignSelection && (
+                  <Pressable
+                    onPress={() => setAssignIds(selectedIds)}
+                    disabled={action.busy}
+                    style={{
+                      backgroundColor: "rgba(255,255,255,0.16)",
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <Icon name="groups" size={14} color="#FFFFFF" />
+                    <Label color="#FFFFFF" bold size={12}>
+                      Assign group
+                    </Label>
+                  </Pressable>
+                )}
                 <Pressable
                   onPress={handleDelete}
                   disabled={action.busy}
@@ -1142,6 +1227,7 @@ export function ActivityScreen() {
   );
 }
 export function AnalyticsScreen() {
+  const c = useColors();
   const params = useLocalSearchParams<{ period?: string }>();
   const [period, setPeriod] = useState<Period>(
       params.period === "WEEK" ? "WEEK" : "MONTH",
@@ -1149,21 +1235,22 @@ export function AnalyticsScreen() {
     [tag, setTag] = useState(""),
     [ledger, setLedger] = useState(""),
     [custom, setCustom] = useState(false),
-    [start, setStart] = useState(new Date().toISOString().slice(0, 10)),
-    [end, setEnd] = useState(new Date().toISOString().slice(0, 10)),
+    [start, setStart] = useState(() =>
+      DateTime.now().setZone("Asia/Kolkata").toISODate()!,
+    ),
+    [end, setEnd] = useState(() =>
+      DateTime.now().setZone("Asia/Kolkata").toISODate()!,
+    ),
     [compare, setCompare] = useState(false),
+    [chartView, setChartView] = useState<"bars" | "trend" | "cumulative">(
+      "bars",
+    ),
+    [categoryView, setCategoryView] = useState<"bars" | "donut">("donut"),
     [goalOpen, setGoalOpen] = useState(false),
-    [goalName, setGoalName] = useState(""),
-    [goalAmount, setGoalAmount] = useState(""),
-    [goalPeriod, setGoalPeriod] = useState<
-      "DAY" | "WEEK" | "MONTH" | "YEAR"
-    >("MONTH"),
-    [goalTags, setGoalTags] = useState<string[]>([]),
-    action = useAction();
+    router = useRouter();
   const [openFilter, setOpenFilter] = useState<
     "period" | "category" | "group" | null
   >(null);
-  const router = useRouter();
   useEffect(() => {
     if (params.period === "WEEK" || params.period === "MONTH") {
       setPeriod(params.period);
@@ -1177,13 +1264,19 @@ export function AnalyticsScreen() {
   return (
     <DataScreen>
       {(d) => {
-        const validCustom =
-          /^\d{4}-\d{2}-\d{2}$/.test(start) &&
-          /^\d{4}-\d{2}-\d{2}$/.test(end) &&
-          start < end;
+        const from = DateTime.fromISO(start, { zone: "Asia/Kolkata" }).startOf(
+          "day",
+        );
+        const until = DateTime.fromISO(end, { zone: "Asia/Kolkata" }).startOf(
+          "day",
+        );
+        const validCustom = from.isValid && until.isValid && from <= until;
         const filter = {
           ...(custom && validCustom
-            ? { start: `${start}T00:00:00.000Z`, end: `${end}T00:00:00.000Z` }
+            ? {
+                start: from.toUTC().toISO()!,
+                end: until.plus({ days: 1 }).toUTC().toISO()!,
+              }
             : periodRange(period, "Asia/Kolkata")),
           currency: d.account.currency,
           tagIds: tag ? [tag] : [],
@@ -1197,6 +1290,20 @@ export function AnalyticsScreen() {
                 100,
             )
           : null;
+        const categoryTotal = a.byTag.reduce(
+          (sum, item) => sum + item.amountMinor,
+          0,
+        );
+        const circleLength = 2 * Math.PI * 56;
+        let categoryOffset = 0;
+        const categorySegments = a.byTag.map((item) => {
+          const length = categoryTotal
+            ? (item.amountMinor / categoryTotal) * circleLength
+            : 0;
+          const segment = { ...item, length, offset: categoryOffset };
+          categoryOffset += length;
+          return segment;
+        });
         return (
           <YStack gap={22}>
             <XStack justifyContent="space-between" gap={12} flexWrap="wrap">
@@ -1205,7 +1312,9 @@ export function AnalyticsScreen() {
                 <Label muted>See where your money goes.</Label>
               </YStack>
               <XStack gap={8} flexWrap="wrap">
-                <GoalTargetButton onPress={() => setGoalOpen((open) => !open)} />
+                <GoalTargetButton
+                  onPress={() => setGoalOpen((open) => !open)}
+                />
                 <Button
                   secondary
                   icon="link"
@@ -1311,16 +1420,20 @@ export function AnalyticsScreen() {
 
                 {custom && (
                   <XStack gap={12} flexWrap="wrap" marginTop={6} width="100%">
-                    <Field
-                      label="Start (UTC, YYYY-MM-DD)"
-                      value={start}
-                      onChangeText={setStart}
-                    />
-                    <Field
-                      label="End exclusive (UTC)"
-                      value={end}
-                      onChangeText={setEnd}
-                    />
+                    <YStack flex={1} minWidth={135}>
+                      <DatePicker
+                        label="Start date"
+                        value={start}
+                        onChange={setStart}
+                      />
+                    </YStack>
+                    <YStack flex={1} minWidth={135}>
+                      <DatePicker
+                        label="End date"
+                        value={end}
+                        onChange={setEnd}
+                      />
+                    </YStack>
                   </XStack>
                 )}
               </FilterDropdownPanel>
@@ -1385,133 +1498,103 @@ export function AnalyticsScreen() {
                   onPress={() => router.push("/goals")}
                 />
                 {goalOpen && (
-                  <YStack gap={14} marginBottom={d.goals.length ? 20 : 0}>
-                    <Field
-                      label="Goal name"
-                      placeholder="Monthly essentials"
-                      value={goalName}
-                      onChangeText={setGoalName}
+                  <YStack marginBottom={18}>
+                    <GoalCreator
+                      data={d}
+                      onSaved={() => setGoalOpen(false)}
+                      onCancel={() => setGoalOpen(false)}
                     />
-                    <Field
-                      label={`Budget · ${d.account.currency}`}
-                      placeholder="0.00"
-                      keyboardType="decimal-pad"
-                      value={goalAmount}
-                      onChangeText={setGoalAmount}
-                    />
-                    <YStack gap={8}>
-                      <Label size={12} bold>Time period</Label>
-                      <XStack gap={7} flexWrap="wrap">
-                        {(["DAY", "WEEK", "MONTH", "YEAR"] as const).map(
-                          (value) => (
-                            <Chip
-                              key={value}
-                              selected={goalPeriod === value}
-                              onPress={() => setGoalPeriod(value)}
-                            >
-                              {value.toLowerCase()}
-                            </Chip>
-                          ),
-                        )}
-                      </XStack>
-                    </YStack>
-                    <YStack gap={8}>
-                      <Label size={12} bold>
-                        Tags · leave empty for all spending
-                      </Label>
-                      <XStack gap={7} flexWrap="wrap">
-                        {d.tags
-                          .filter((item) => !item.archived)
-                          .map((item) => (
-                            <Chip
-                              key={item.id}
-                              selected={goalTags.includes(item.id)}
-                              onPress={() =>
-                                setGoalTags((current) =>
-                                  current.includes(item.id)
-                                    ? current.filter((id) => id !== item.id)
-                                    : [...current, item.id],
-                                )
-                              }
-                            >
-                              {item.name}
-                            </Chip>
-                          ))}
-                      </XStack>
-                    </YStack>
-                    {!!action.error && <Notice error>{action.error}</Notice>}
-                    <XStack gap={8} justifyContent="flex-end" flexWrap="wrap">
-                      <Button secondary onPress={() => setGoalOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button
-                        loading={action.busy}
-                        disabled={
-                          action.busy || !goalName.trim() || !goalAmount.trim()
-                        }
-                        onPress={async () => {
-                          const range = periodRange(goalPeriod, "Asia/Kolkata");
-                          const ok = await action.run(
-                            () =>
-                              repository.createGoal(d.account.id, {
-                                name: goalName.trim(),
-                                amountMinor: parseMoney(
-                                  goalAmount,
-                                  d.account.currency,
-                                ),
-                                currency: d.account.currency,
-                                ...range,
-                                period: goalPeriod,
-                                tagIds: goalTags,
-                                ledgerIds: [],
-                                thresholds: [50, 80, 100],
-                              }),
-                            "Goal created",
-                          );
-                          if (ok) {
-                            setGoalName("");
-                            setGoalAmount("");
-                            setGoalTags([]);
-                            setGoalOpen(false);
-                          }
-                        }}
-                      >
-                        Save goal
-                      </Button>
-                    </XStack>
                   </YStack>
                 )}
-                {d.goals.slice(0, 3).map((goal) => {
+                {d.goals.map((goal) => {
                   const progress = goalProgress(
                     goal.amountMinor,
                     goal.spentMinor,
                     goal.start,
                     goal.end,
                   );
+                  const elapsedShare = Math.min(
+                    1,
+                    Math.max(
+                      0,
+                      (Date.now() - Date.parse(goal.start)) /
+                        (Date.parse(goal.end) - Date.parse(goal.start)),
+                    ),
+                  );
                   return (
-                    <YStack key={goal.id} gap={7} marginTop={10}>
+                    <YStack key={goal.id} gap={8} marginTop={14}>
                       <XStack justifyContent="space-between" gap={10}>
                         <Label bold>{goal.name}</Label>
                         <Label muted size={11}>
-                          {money(goal.spentMinor, goal.currency)} / {money(goal.amountMinor, goal.currency)}
+                          {money(goal.spentMinor, goal.currency)} /{" "}
+                          {money(goal.amountMinor, goal.currency)}
                         </Label>
                       </XStack>
-                      <Progress
-                        value={progress.percentage}
-                        color={progress.percentage >= 100 ? "#D66169" : "#8252E3"}
-                      />
+                      <View
+                        style={{
+                          height: 12,
+                          borderRadius: 6,
+                          backgroundColor: c.soft,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <View
+                          style={{
+                            height: 12,
+                            width: `${Math.min(100, progress.percentage)}%`,
+                            backgroundColor:
+                              progress.percentage >= 100
+                                ? "#D66169"
+                                : "#8252E3",
+                            borderRadius: 6,
+                          }}
+                        />
+                        <View
+                          style={{
+                            position: "absolute",
+                            left: `${elapsedShare * 100}%`,
+                            top: 0,
+                            width: 2,
+                            height: 12,
+                            backgroundColor: c.text,
+                          }}
+                        />
+                      </View>
+                      <Label muted size={11}>
+                        {progress.remaining > 0
+                          ? `${money(progress.remaining, goal.currency)} left`
+                          : "Goal reached"}
+                        {progress.projectedOverspend > 0
+                          ? ` · projected ${money(progress.projectedOverspend, goal.currency)} over`
+                          : " · on track"}
+                      </Label>
                     </YStack>
                   );
                 })}
+                {d.goals.length > 0 && (
+                  <Label muted size={10}>
+                    Filled bar: spent · dark tick: expected pace today
+                  </Label>
+                )}
               </Card>
             )}
             <Card>
-              <XStack justifyContent="space-between" gap={10} alignItems="center" flexWrap="wrap">
+              <XStack
+                justifyContent="space-between"
+                gap={10}
+                alignItems="center"
+                flexWrap="wrap"
+              >
                 <YStack>
                   <Label muted>Total personal spending</Label>
-                  <Heading size={36}>{money(a.spendingMinor, a.currency)}</Heading>
+                  <Heading size={36}>
+                    {money(a.spendingMinor, a.currency)}
+                  </Heading>
                 </YStack>
-                <Chip selected={compare} onPress={() => setCompare((value) => !value)}>
+                <Chip
+                  selected={compare}
+                  onPress={() => setCompare((value) => !value)}
+                >
                   {compare ? "Comparing periods" : "Compare with previous"}
                 </Chip>
               </XStack>
@@ -1523,12 +1606,101 @@ export function AnalyticsScreen() {
                     : ` · ${Math.abs(comparisonChange)}% ${comparisonChange > 0 ? "higher" : comparisonChange < 0 ? "lower" : "unchanged"}`}
                 </Label>
               )}
+              <XStack gap={7} flexWrap="wrap" marginTop={16}>
+                {(
+                  [
+                    ["bars", "Daily bars"],
+                    ["trend", "Trend line"],
+                    ["cumulative", "Running total"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Chip
+                    key={value}
+                    selected={chartView === value}
+                    onPress={() => setChartView(value)}
+                  >
+                    {label}
+                  </Chip>
+                ))}
+              </XStack>
               <View style={{ marginTop: 25 }}>
-                <SpendingChart data={d} filter={filter} compare={compare} />
+                <SpendingChart
+                  data={d}
+                  filter={filter}
+                  compare={compare}
+                  view={chartView}
+                />
               </View>
             </Card>
             <Card>
               <SectionTitle title="Where your money went" />
+              <XStack gap={7} marginBottom={16}>
+                <Chip
+                  selected={categoryView === "bars"}
+                  onPress={() => setCategoryView("bars")}
+                >
+                  Bars
+                </Chip>
+                <Chip
+                  selected={categoryView === "donut"}
+                  onPress={() => setCategoryView("donut")}
+                >
+                  Donut
+                </Chip>
+              </XStack>
+              {categoryView === "donut" && categoryTotal > 0 && (
+                <View
+                  style={{ alignItems: "center", marginBottom: 18 }}
+                  accessibilityLabel={`Spending in ${a.byTag.length} categories`}
+                >
+                  <Svg width={180} height={180} viewBox="0 0 160 160">
+                    <Circle
+                      cx={80}
+                      cy={80}
+                      r={56}
+                      fill="none"
+                      stroke={c.soft}
+                      strokeWidth={20}
+                    />
+                    {categorySegments.map((segment) => (
+                      <Circle
+                        key={segment.id}
+                        cx={80}
+                        cy={80}
+                        r={56}
+                        fill="none"
+                        stroke={
+                          d.tags.find((item) => item.id === segment.id)
+                            ?.color ?? c.primary
+                        }
+                        strokeWidth={20}
+                        strokeDasharray={`${Math.max(0, segment.length - 2)} ${circleLength}`}
+                        strokeDashoffset={-segment.offset}
+                        transform="rotate(-90 80 80)"
+                      />
+                    ))}
+                    <SvgText
+                      x={80}
+                      y={76}
+                      textAnchor="middle"
+                      fill={c.text}
+                      fontSize={14}
+                      fontWeight="700"
+                    >
+                      Categories
+                    </SvgText>
+                    <SvgText
+                      x={80}
+                      y={96}
+                      textAnchor="middle"
+                      fill={c.muted}
+                      fontSize={11}
+                    >
+                      {a.byTag.length} shown
+                    </SvgText>
+                  </Svg>
+                </View>
+              )}
               {a.byTag.map((t) => (
                 <YStack key={t.id} gap={9} marginBottom={20}>
                   <XStack justifyContent="space-between">
@@ -1538,16 +1710,21 @@ export function AnalyticsScreen() {
                     </Label>
                     <Label bold>{money(t.amountMinor, a.currency)}</Label>
                   </XStack>
-                  <Progress
-                    value={
-                      a.spendingMinor
-                        ? (t.amountMinor / a.spendingMinor) * 100
-                        : 0
-                    }
-                    color={d.tags.find((tag) => tag.id === t.id)?.color}
-                  />
+                  {categoryView === "bars" && (
+                    <Progress
+                      value={
+                        a.spendingMinor
+                          ? (t.amountMinor / a.spendingMinor) * 100
+                          : 0
+                      }
+                      color={d.tags.find((tag) => tag.id === t.id)?.color}
+                    />
+                  )}
                 </YStack>
               ))}
+              {a.byTag.length === 0 && (
+                <Label muted>No categorized spending in this period.</Label>
+              )}
               <Label muted size={11}>
                 Expenses with multiple tags appear in each category; category
                 totals can overlap. Loans and repayments are excluded from

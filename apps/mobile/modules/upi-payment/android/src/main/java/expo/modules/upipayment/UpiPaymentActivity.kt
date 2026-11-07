@@ -1,6 +1,7 @@
 package expo.modules.upipayment
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -35,12 +36,15 @@ class UpiPaymentActivity : ComponentActivity() {
       return
     }
     val paymentIntent = Intent(Intent.ACTION_VIEW, uri)
-    if (paymentIntent.resolveActivity(packageManager) == null) {
+      .addCategory(Intent.CATEGORY_BROWSABLE)
+    try {
+      launcher.launch(Intent.createChooser(paymentIntent, "Pay with UPI"))
+      launched = true
+    } catch (error: ActivityNotFoundException) {
       fail("UPI_UNAVAILABLE", "No UPI payment app is available on this phone.")
-      return
+    } catch (error: Exception) {
+      fail("UPI_OPEN_FAILED", "The payment app could not be opened.")
     }
-    launched = true
-    launcher.launch(Intent.createChooser(paymentIntent, "Pay with UPI"))
   }
 
   private fun finishWithResult(resultCode: Int, data: Intent?) {

@@ -60,7 +60,10 @@ const service = new FinanceService();
 for (const t of data.transactions) {
   const already = await db.transaction.findUnique({
     where: {
-      sourceId_idempotencyKey: { sourceId: ids.Utkarsh, idempotencyKey: t.id },
+      createdById_idempotencyKey: {
+        createdById: ids.Utkarsh,
+        idempotencyKey: t.id,
+      },
     },
   });
   if (already) continue;

@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { Image, Modal, Platform, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  Modal,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { XStack, YStack } from "tamagui";
@@ -16,6 +24,7 @@ import {
   Button,
   Field,
   Notice,
+  Icon,
   IconButton,
   PipFeedback,
   useColors,
@@ -23,6 +32,41 @@ import {
 
 export type BillPhoto = { uri: string; contentType: string };
 export type BillLine = { name: string; quantity: string; amount: string };
+function CameraAction({
+  icon,
+  label,
+  disabled,
+  onPress,
+}: {
+  icon: "image" | "close";
+  label: string;
+  disabled: boolean;
+  onPress(): void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        minWidth: 0,
+        minHeight: 64,
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 5,
+        opacity: disabled || pressed ? 0.6 : 1,
+      })}
+    >
+      <Icon name={icon} color="white" />
+      <Label color="white" size={12} textAlign="center">
+        {label}
+      </Label>
+    </Pressable>
+  );
+}
 export function BillEditor({
   accountId,
   currency,
@@ -127,6 +171,7 @@ export function BillEditor({
         throw new Error("Choose a bill photo smaller than 10 MB.");
       onPhoto({ uri: asset.uri, contentType });
       setResult(null);
+      setCamera(false);
     });
   let lineTotal: number | undefined;
   try {
@@ -148,7 +193,7 @@ export function BillEditor({
       lines.map((line, i) => (i === index ? { ...line, ...patch } : line)),
     );
   return (
-    <Card style={{ borderColor: "#CFC0F2", padding: 20 }}>
+    <Card style={{ padding: 16 }}>
       <YStack gap={17}>
         <XStack gap={14} alignItems="center" justifyContent="space-between">
           <YStack flex={1}>
@@ -195,111 +240,135 @@ export function BillEditor({
                 setCamera(false);
               }}
             />
-            <View
-              pointerEvents="none"
-              style={[
-                StyleSheet.absoluteFill,
-                { alignItems: "center", justifyContent: "center" },
-              ]}
-            >
+            <SafeAreaView style={{ flex: 1 }}>
               <View
                 style={{
-                  width: "82%",
-                  maxWidth: 430,
-                  height: "58%",
-                  maxHeight: 610,
-                  borderRadius: 22,
-                  borderWidth: 3,
-                  borderColor: "rgba(255,255,255,0.92)",
-                  backgroundColor: "transparent",
+                  alignItems: "center",
+                  padding: 16,
+                  backgroundColor: "rgba(0,0,0,0.45)",
                 }}
-              />
-            </View>
-            <View
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                paddingTop: Platform.OS === "ios" ? 56 : 32,
-                paddingHorizontal: 20,
-                paddingBottom: 18,
-                backgroundColor: "rgba(0,0,0,0.42)",
-                alignItems: "center",
-              }}
-            >
-              <Label bold size={20} color="#FFFFFF">
-                Scan your bill
-              </Label>
-              <Label size={12} color="rgba(255,255,255,0.82)">
-                Keep every edge inside the frame · flatten folds · avoid glare
-              </Label>
-            </View>
-            <View
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: 0,
-                paddingHorizontal: 20,
-                paddingTop: 18,
-                paddingBottom: Platform.OS === "ios" ? 42 : 24,
-                backgroundColor: "rgba(0,0,0,0.5)",
-              }}
-            >
-              <XStack gap={10} justifyContent="center" flexWrap="wrap">
-                <Button
-                  loading={busy}
-                  disabled={!ready || busy}
-                  onPress={() =>
-                    task(async () => {
-                      let capture;
-                      for (let attempt = 0; attempt < 20; attempt++) {
-                        try {
-                          capture = await cameraRef.current?.takePictureAsync({
-                            quality: 0.95,
-                            imageType: "jpg",
-                          });
-                          break;
-                        } catch (error) {
-                          if (
-                            (error as { code?: string }).code !==
-                            "ERR_CAMERA_NOT_READY"
-                          )
-                            throw error;
-                          if (attempt === 19)
-                            throw new Error(
-                              "The camera is still starting. Please try capturing again.",
+              >
+                <Label bold size={20} color="#FFFFFF" textAlign="center">
+                  Scan your bill
+                </Label>
+                <Label size={12} color="#FFFFFF" textAlign="center">
+                  Fit all four edges in the frame and avoid glare.
+                </Label>
+              </View>
+              <View
+                pointerEvents="none"
+                style={{
+                  flex: 1,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <View
+                  style={{
+                    width: "82%",
+                    maxWidth: 430,
+                    height: "84%",
+                    maxHeight: 610,
+                    borderRadius: 20,
+                    borderWidth: 2,
+                    borderColor: "white",
+                  }}
+                />
+              </View>
+              <XStack
+                padding={12}
+                alignItems="flex-start"
+                backgroundColor="rgba(0,0,0,0.55)"
+              >
+                <CameraAction
+                  icon="image"
+                  label="Gallery"
+                  disabled={busy}
+                  onPress={choose}
+                />
+                <YStack flex={1} minWidth={0} alignItems="center" gap={5}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Capture bill"
+                    accessibilityState={{ disabled: !ready || busy, busy }}
+                    disabled={!ready || busy}
+                    style={({ pressed }) => ({
+                      width: 64,
+                      height: 64,
+                      borderRadius: 32,
+                      borderWidth: 3,
+                      borderColor: "white",
+                      padding: 4,
+                      opacity: !ready || pressed ? 0.55 : 1,
+                    })}
+                    onPress={() =>
+                      task(async () => {
+                        let capture;
+                        for (let attempt = 0; attempt < 20; attempt++) {
+                          try {
+                            capture = await cameraRef.current?.takePictureAsync(
+                              {
+                                quality: 0.95,
+                                imageType: "jpg",
+                              },
                             );
-                          await new Promise((resolve) =>
-                            setTimeout(resolve, 100),
-                          );
+                            break;
+                          } catch (error) {
+                            if (
+                              (error as { code?: string }).code !==
+                              "ERR_CAMERA_NOT_READY"
+                            )
+                              throw error;
+                            if (attempt === 19)
+                              throw new Error(
+                                "The camera is still starting. Please try capturing again.",
+                              );
+                            await new Promise((resolve) =>
+                              setTimeout(resolve, 100),
+                            );
+                          }
                         }
-                      }
-                      if (!capture)
-                        throw new Error(
-                          "Could not capture the bill. Please try again.",
-                        );
-                      onPhoto({ uri: capture.uri, contentType: "image/jpeg" });
-                      setResult(null);
-                      setCamera(false);
-                    })
-                  }
-                >
-                  Capture bill
-                </Button>
-                <Button secondary disabled={busy} onPress={choose}>
-                  Choose from gallery
-                </Button>
-                <Button
-                  secondary
+                        if (!capture)
+                          throw new Error(
+                            "Could not capture the bill. Please try again.",
+                          );
+                        onPhoto({
+                          uri: capture.uri,
+                          contentType: "image/jpeg",
+                        });
+                        setResult(null);
+                        setCamera(false);
+                      })
+                    }
+                  >
+                    <View
+                      style={{
+                        flex: 1,
+                        borderRadius: 32,
+                        backgroundColor: "white",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {busy ? (
+                        <ActivityIndicator color="#59458F" />
+                      ) : (
+                        <Icon name="camera" color="#25212D" />
+                      )}
+                    </View>
+                  </Pressable>
+                  <Label color="#FFFFFF" size={12} textAlign="center">
+                    {ready ? "Capture bill" : "Starting camera…"}
+                  </Label>
+                </YStack>
+                <CameraAction
+                  icon="close"
+                  label="Cancel"
                   disabled={busy}
                   onPress={() => setCamera(false)}
-                >
-                  Cancel camera
-                </Button>
+                />
               </XStack>
-            </View>
+            </SafeAreaView>
           </View>
         </Modal>
         {photo && (

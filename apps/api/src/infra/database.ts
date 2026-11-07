@@ -99,10 +99,11 @@ export async function audit(
   detail: Prisma.InputJsonValue = {},
   ledgerId?: string | null,
   message = action.toLowerCase().replace(/_/g, " "),
+  subjectId?: string,
 ) {
   await tx.auditEvent.create({ data: { actorId, resourceId, action, detail } });
   if (ledgerId)
     await tx.ledgerActivity.create({
-      data: { actorId, ledgerId, event: action, message },
+      data: { actorId, ledgerId, event: action, message, subjectId },
     });
 }

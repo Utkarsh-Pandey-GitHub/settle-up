@@ -52,6 +52,7 @@ export const createTransactionSchema = z
     notes: z.string().max(2000).optional(),
     icon: z.string().max(16).optional(),
     destinationId: z.string().uuid().optional(),
+    payerId: z.string().uuid().optional(),
     ledgerId: z.string().uuid().optional(),
     tagIds: z.array(z.string().uuid()).max(20).default([]),
     paymentReference: z.string().max(128).optional(),
@@ -75,6 +76,12 @@ export const createTransactionSchema = z
       .default([]),
   })
   .superRefine((d, ctx) => {
+    if (d.payerId && d.type !== "SHARED_EXPENSE")
+      ctx.addIssue({
+        code: "custom",
+        path: ["payerId"],
+        message: "A different payer can only be selected for a shared expense.",
+      });
     if (d.items?.length) {
       if (!["PERSONAL_EXPENSE", "SHARED_EXPENSE"].includes(d.type))
         ctx.addIssue({
@@ -93,15 +100,20 @@ export const createTransactionSchema = z
             "Item totals must match the expense. Add tax or discount lines if needed.",
         });
     }
-    if (
-      d.type === "SHARED_EXPENSE" &&
-      (!d.ledgerId || d.participants.length < 1 || d.status !== "SETTLED")
-    )
-      ctx.addIssue({
-        code: "custom",
-        message:
-          "Shared expenses need a ledger, participants, and posted status.",
-      });
+    if (d.type === "SHARED_EXPENSE") {
+      if (!d.participants.length)
+        ctx.addIssue({
+          code: "custom",
+          path: ["participants"],
+          message: "Choose at least one person to split this expense with.",
+        });
+      if (d.status !== "SETTLED")
+        ctx.addIssue({
+          code: "custom",
+          path: ["status"],
+          message: "Post this expense before splitting it.",
+        });
+    }
     if (
       d.type === "LOAN" &&
       (!d.destinationId || !d.ledgerId || d.status !== "PENDING_LOAN")
@@ -115,6 +127,7 @@ export type CreateTransaction = z.infer<typeof createTransactionSchema>;
 export const settlementSchema = z.object({
   idempotencyKey: z.string().uuid(),
   ledgerId: z.string().uuid().optional(),
+  simplified: z.literal(true).optional(),
   debtorId: z.string().uuid(),
   creditorId: z.string().uuid(),
   amountMinor: amountSchema,
@@ -184,6 +197,9 @@ export type TransactionView = {
   status: (typeof statuses)[number];
   occurredAt: string;
   sourceId: string;
+  createdById?: string;
+  createdByName?: string;
+  payerName?: string;
   destinationId?: string | null;
   ledgerId?: string | null;
   notes?: string | null;
@@ -192,6 +208,8 @@ export type TransactionView = {
   version: number;
   items?: TransactionItem[];
   allocations: { userId: string; amountMinor: number }[];
+  splitMethod?: CreateTransaction["splitMethod"];
+  splitWeights?: Record<string, number>;
 };
 export type LedgerView = {
   id: string;
@@ -200,7 +218,14 @@ export type LedgerView = {
   description: string;
   currency: string;
   deleted?: boolean;
-  members: { id: string; name: string; role: string; avatar?: string }[];
+  updatedAt?: string;
+  members: {
+    id: string;
+    name: string;
+    profileName?: string;
+    role: string;
+    avatar?: string;
+  }[];
 };
 export type TagView = {
   id: string;
@@ -220,6 +245,7 @@ export type ActivityView = {
 };
 export type Dashboard = {
   account: Account;
+  revision?: string | null;
   transactions: TransactionView[];
   ledgers: LedgerView[];
   obligations: {
@@ -228,6 +254,7 @@ export type Dashboard = {
     creditorId: string;
     amountMinor: number;
     remainingMinor: number;
+    transactionId?: string;
     currency: string;
     ledgerId?: string | null;
   }[];
@@ -239,6 +266,7 @@ export type Dashboard = {
     name: string;
     /** The private address-book label saved by the current user. */
     contactName?: string;
+    profileName?: string;
     phone?: string;
     verified: boolean;
     avatar?: string;

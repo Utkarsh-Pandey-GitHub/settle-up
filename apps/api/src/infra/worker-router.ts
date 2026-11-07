@@ -40,7 +40,10 @@ class WorkerReply {
         )
       : String(value ?? "");
     this.headers.set("content-type", this.contentType);
-    return new Response(body, { status: this.statusCode, headers: this.headers });
+    return new Response(body, {
+      status: this.statusCode,
+      headers: this.headers,
+    });
   }
 }
 
@@ -63,8 +66,12 @@ export class WorkerRouter {
   >();
 
   constructor() {
-    const origins = process.env.CORS_ORIGIN?.split(",").map((item) => item.trim())
-      .filter(Boolean) ?? ["https://settleup.tinkrs.space", "http://localhost:8081"];
+    const origins = process.env.CORS_ORIGIN?.split(",")
+      .map((item) => item.trim())
+      .filter(Boolean) ?? [
+      "https://settleup.tinkrs.space",
+      "http://localhost:8081",
+    ];
     this.app.use("*", cors({ origin: origins }));
     this.app.use("*", secureHeaders());
   }
@@ -139,7 +146,8 @@ export class WorkerRouter {
         }
         return response;
       } catch (caught) {
-        const error = caught instanceof Error ? caught : new Error(String(caught));
+        const error =
+          caught instanceof Error ? caught : new Error(String(caught));
         if (!this.errorHandler)
           return Response.json({ error: "internal_error" }, { status: 500 });
         const handled = await this.errorHandler(error, request, reply);
@@ -156,11 +164,14 @@ export class WorkerRouter {
       const contentType = raw.headers.get("content-type") ?? "";
       const text = await raw.text();
       if (text)
-        body = contentType.includes("application/json") ? JSON.parse(text) : text;
+        body = contentType.includes("application/json")
+          ? JSON.parse(text)
+          : text;
     }
     return {
       body,
       headers: Object.fromEntries(raw.headers.entries()),
+      id: raw.headers.get("cf-ray") ?? crypto.randomUUID(),
       log,
       method: raw.method,
       params: context.req.param(),

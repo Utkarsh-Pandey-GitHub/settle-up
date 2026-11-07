@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
+import type { Dashboard } from "@settleup/contracts";
 import { DEMO, useSession } from "./session";
 import {
   requestLaunchPermissionsOnce,
@@ -12,6 +13,7 @@ import {
   peekCachedDashboard,
   repository,
   readCachedDashboard,
+  request,
   subscribeCachedDashboard,
   syncPendingMutations,
 } from "./repository";
@@ -53,6 +55,7 @@ export function useDashboard() {
 export function useAppSync() {
   const id = useSession((s) => s.activeId);
   const query = useQueryClient();
+  const [socketAccount, setSocketAccount] = useState<string>();
   const result = useQuery({
     queryKey: ["account", id, "dashboard"],
     queryFn: () => repository.dashboard(id!),
@@ -89,7 +92,51 @@ export function useAppSync() {
     };
   }, [id, query]);
   useEffect(() => {
-    if (!id || typeof WebSocket === "undefined") return;
+    if (!id || DEMO) return;
+    let stopped = false;
+    let checking = false;
+    const key = ["account", id, "dashboard"];
+    const check = async () => {
+      if (
+        stopped ||
+        checking ||
+        AppState.currentState === "background" ||
+        AppState.currentState === "inactive" ||
+        !getTokenSession(id)
+      )
+        return;
+      checking = true;
+      try {
+        const next = await request<{
+          revision: string | null;
+          websocket: boolean;
+        }>("/sync/revision", { accountId: id });
+        if (stopped) return;
+        setSocketAccount(next.websocket ? id : undefined);
+        if (
+          (query.getQueryData<Dashboard>(key)?.revision ?? null) !==
+          next.revision
+        )
+          await query.refetchQueries({ queryKey: key, type: "active" });
+      } catch {
+        // The server retains the latest revision; try again on reconnect.
+      } finally {
+        checking = false;
+      }
+    };
+    void check();
+    const interval = setInterval(() => void check(), 5_000);
+    const listener = AppState.addEventListener("change", (state) => {
+      if (state === "active") void check();
+    });
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+      listener.remove();
+    };
+  }, [id, query]);
+  useEffect(() => {
+    if (!id || socketAccount !== id || typeof WebSocket === "undefined") return;
     let socket: WebSocket | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -103,6 +150,7 @@ export function useAppSync() {
       socket = new WebSocket(endpoint, ["settleup", session.accessToken]);
       socket.onopen = () => {
         attempts = 0;
+        queueAccountRefresh(query, id);
         if (heartbeat) clearInterval(heartbeat);
         heartbeat = setInterval(() => {
           if (socket?.readyState === WebSocket.OPEN) socket.send("ping");
@@ -131,7 +179,7 @@ export function useAppSync() {
       if (heartbeat) clearInterval(heartbeat);
       socket?.close();
     };
-  }, [id, query]);
+  }, [id, query, socketAccount]);
   useEffect(() => {
     if (result.data) {
       const sessionAccount = useSession
@@ -185,7 +233,9 @@ export function useAppSync() {
         syncing = false;
       }
     };
-    const timer = setInterval(() => void sync(), 45_000);
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active") void sync();
+    }, 10_000);
     const listener = AppState.addEventListener("change", (state) => {
       if (state === "active") void sync();
     });

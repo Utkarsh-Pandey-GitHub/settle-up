@@ -186,42 +186,133 @@ export function applyRepayment(
     return paid ? [{ obligationId: d.id, amountMinor: paid }] : [];
   });
 }
-/** Advisory only: does not mutate or replace original pairwise obligations. */
-export function simplifyBalances(debts: Debt[], currency: string) {
+function repaymentPaths(debts: Debt[], currency: string) {
   const net = new Map<string, number>();
-  debts
-    .filter((d) => d.currency === currency)
-    .forEach((d) => {
-      net.set(d.debtorId, (net.get(d.debtorId) ?? 0) - d.remainingMinor);
-      net.set(d.creditorId, (net.get(d.creditorId) ?? 0) + d.remainingMinor);
-    });
-  const debtors = [...net]
-    .filter(([, n]) => n < 0)
-    .map(([id, n]) => ({ id, amount: -n }));
-  const creditors = [...net]
-    .filter(([, n]) => n > 0)
-    .map(([id, amount]) => ({ id, amount }));
-  const result: {
-    debtorId: string;
-    creditorId: string;
-    amountMinor: number;
-    currency: string;
-  }[] = [];
-  for (const d of debtors)
-    for (const c of creditors) {
-      const amountMinor = Math.min(d.amount, c.amount);
-      if (amountMinor > 0) {
-        result.push({
-          debtorId: d.id,
-          creditorId: c.id,
-          amountMinor,
-          currency,
-        });
-        d.amount -= amountMinor;
-        c.amount -= amountMinor;
+  const outgoing = new Map<string, Debt[]>();
+  for (const debt of debts) {
+    if (debt.currency !== currency || debt.remainingMinor <= 0) continue;
+    const { debtorId, creditorId, remainingMinor } = debt;
+    net.set(debtorId, (net.get(debtorId) ?? 0) - remainingMinor);
+    net.set(creditorId, (net.get(creditorId) ?? 0) + remainingMinor);
+    const edges = outgoing.get(debtorId) ?? [];
+    edges.push({ ...debt });
+    outgoing.set(debtorId, edges);
+  }
+  for (const edges of outgoing.values())
+    edges.sort(
+      (a, b) =>
+        a.creditorId.localeCompare(b.creditorId) || a.id.localeCompare(b.id),
+    );
+
+  const paths = [];
+  // Decompose the original debts into payable paths between net debtors and creditors.
+  for (const debtorId of [...net.keys()].sort()) {
+    while (net.get(debtorId)! < 0) {
+      const queue = [debtorId];
+      const previous = new Map<string, Debt>();
+      let creditorId: string | undefined;
+      for (const person of queue) {
+        if (net.get(person)! > 0) {
+          creditorId = person;
+          break;
+        }
+        for (const edge of outgoing.get(person) ?? []) {
+          if (
+            edge.remainingMinor <= 0 ||
+            edge.creditorId === debtorId ||
+            previous.has(edge.creditorId)
+          )
+            continue;
+          previous.set(edge.creditorId, edge);
+          queue.push(edge.creditorId);
+        }
       }
+      if (!creditorId)
+        throw new DomainError("BALANCE", "Could not reconcile this balance.");
+      const edges: Debt[] = [];
+      let amountMinor = Math.min(-net.get(debtorId)!, net.get(creditorId)!);
+      for (let person = creditorId; person !== debtorId;) {
+        const edge = previous.get(person)!;
+        edges.push(edge);
+        amountMinor = Math.min(amountMinor, edge.remainingMinor);
+        person = edge.debtorId;
+      }
+      for (const edge of edges) edge.remainingMinor -= amountMinor;
+      net.set(debtorId, net.get(debtorId)! + amountMinor);
+      net.set(creditorId, net.get(creditorId)! - amountMinor);
+      paths.push({
+        debtorId,
+        creditorId,
+        amountMinor,
+        currency,
+        obligationIds: edges.map((edge) => edge.id),
+      });
     }
-  return result;
+  }
+  return paths;
+}
+
+export function simplifyBalances(debts: Debt[], currency: string) {
+  const balances = new Map<
+    string,
+    Omit<ReturnType<typeof repaymentPaths>[number], "obligationIds">
+  >();
+  for (const { obligationIds, ...path } of repaymentPaths(debts, currency)) {
+    const key = JSON.stringify([path.debtorId, path.creditorId]);
+    const balance = balances.get(key);
+    if (balance) balance.amountMinor += path.amountMinor;
+    else balances.set(key, path);
+  }
+  return [...balances.values()];
+}
+
+export function simplifyScopedBalances(
+  debts: (Debt & { ledgerId?: string | null })[],
+) {
+  const scopes = new Map<string, typeof debts>();
+  for (const debt of debts) {
+    if (debt.remainingMinor <= 0) continue;
+    const scope = debt.ledgerId ?? [debt.debtorId, debt.creditorId].sort();
+    const key = JSON.stringify([scope, debt.currency]);
+    const entries = scopes.get(key) ?? [];
+    entries.push(debt);
+    scopes.set(key, entries);
+  }
+  return [...scopes.values()].flatMap((scope) =>
+    simplifyBalances(scope, scope[0].currency).map((balance) => ({
+      ...balance,
+      ledgerId: scope[0].ledgerId ?? undefined,
+    })),
+  );
+}
+
+export function applySimplifiedRepayment(
+  debts: Debt[],
+  debtorId: string,
+  creditorId: string,
+  amount: number,
+  currency: string,
+) {
+  let left = minor(amount);
+  const payments = new Map<string, number>();
+  for (const path of repaymentPaths(debts, currency)) {
+    if (path.debtorId !== debtorId || path.creditorId !== creditorId) continue;
+    const paid = Math.min(left, path.amountMinor);
+    for (const id of path.obligationIds)
+      payments.set(id, (payments.get(id) ?? 0) + paid);
+    left -= paid;
+    if (!left) break;
+  }
+  if (left)
+    throw new DomainError(
+      "BALANCE_CHANGED",
+      "This simplified balance has changed. Refresh before recording the repayment.",
+      409,
+    );
+  return [...payments].map(([obligationId, amountMinor]) => ({
+    obligationId,
+    amountMinor,
+  }));
 }
 export function parseUpi(input: string) {
   if (input.length > 2048) throw new DomainError("UPI", "QR code is too long.");
@@ -281,6 +372,18 @@ export function parseUpi(input: string) {
     amountMinor < minimumAmountMinor
   )
     throw new DomainError("UPI", "UPI amount is below the required minimum.");
+  const signed = url.searchParams.has("sign");
+  if (
+    signed &&
+    [...url.searchParams.keys()].some(
+      (key) =>
+        !supportedFields.includes(key as (typeof supportedFields)[number]),
+    )
+  )
+    throw new DomainError(
+      "UPI",
+      "This signed UPI QR contains unsupported fields. Open it in your UPI app instead.",
+    );
   const safe = new URL("upi://pay");
   // Preserve standard merchant fields from the scanned QR. Dropping fields such
   // as merchant category, transaction ID, mode or signature can make a valid
@@ -298,8 +401,10 @@ export function parseUpi(input: string) {
     currency: cu,
     note: tn,
     reference: tr,
-    fixedAmount: amountMinor !== undefined && !!tr,
-    uri: safe.toString(),
+    fixedAmount: amountMinor !== undefined && (!!tr || signed),
+    // A signature covers the original QR fields and sometimes their encoding.
+    // Rebuilding that URI can make a valid merchant QR fail in stricter PSPs.
+    uri: signed ? input.trim() : safe.toString(),
   };
 }
 export const SMS_TTL_MS = 7 * 24 * 60 * 60 * 1000;

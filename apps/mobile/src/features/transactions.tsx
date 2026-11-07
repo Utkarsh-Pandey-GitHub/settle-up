@@ -6,6 +6,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Switch,
   useWindowDimensions,
 } from "react-native";
 import { XStack, YStack } from "tamagui";
@@ -16,6 +17,7 @@ import { z } from "zod";
 import type { Dashboard, CreateTransaction } from "@settleup/contracts";
 import {
   money,
+  currencyDigits,
   parseMoney,
   splitExpense,
   simplifyBalances,
@@ -23,9 +25,16 @@ import {
 } from "@settleup/domain";
 import { BillEditor, type BillPhoto, type BillLine } from "./bill";
 import { repository, uuid, extra } from "../data/repository";
+import { personName } from "../data/people";
+import {
+  outstandingByPerson,
+  simplifiedIncoming,
+  simplifiedOutgoing,
+} from "../data/balances";
 import { useAction } from "../data/hooks";
 import { DataScreen, SectionTitle, TransactionRow } from "./overview";
 import { KeyboardAwareScreen } from "../components/KeyboardAwareScreen";
+import { DatePicker, DateTimePicker } from "../components/DateTimePicker";
 import {
   Card,
   Heading,
@@ -52,10 +61,31 @@ const expenseForm = z.object({
   notes: z.string().max(2000),
   date: z.string().min(10),
 });
+const splitMethodLabels: Record<SplitMethod, string> = {
+  EQUAL: "Equal",
+  EXACT: "Exact amounts",
+  PERCENTAGE: "Percentage",
+  SHARES: "By shares",
+};
 export function AddScreen() {
+  const { edit } = useLocalSearchParams<{ edit?: string }>();
   return (
     <DataScreen>
-      {(d) => <ExpenseForm key={d.account.id} data={d} />}
+      {(d) =>
+        edit &&
+        !d.transactions.some(
+          (entry) =>
+            entry.id === edit &&
+            ["PERSONAL_EXPENSE", "SHARED_EXPENSE"].includes(entry.type),
+        ) ? (
+          <Empty
+            title="Transaction unavailable"
+            detail="Only expenses can be edited here."
+          />
+        ) : (
+          <ExpenseForm key={`${d.account.id}:${edit ?? "new"}`} data={d} />
+        )
+      }
     </DataScreen>
   );
 }
@@ -71,22 +101,51 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     }>(),
     router = useRouter(),
     action = useAction();
-  const { width } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
+  const narrow = width / Math.max(fontScale, 1) < 320;
+  const c = useColors();
   const editing = params.edit
     ? d.transactions.find((transaction) => transaction.id === params.edit)
     : undefined;
+  const [editVersion] = useState(editing?.version);
   const editingSomeoneElsesPersonal =
     editing?.type === "PERSONAL_EXPENSE" && editing.sourceId !== d.account.id;
+  const creatorId = editing?.createdById ?? editing?.sourceId ?? d.account.id;
+  const editScale =
+    10 ** currencyDigits(editing?.currency ?? d.account.currency);
+  const groupLocked = !!(editing?.ledgerId || params.ledger);
+  const includeCreator =
+    editing?.type !== "SHARED_EXPENSE" ||
+    editing.allocations.some((allocation) => allocation.userId === creatorId);
   const [ledgerId, setLedgerId] = useState(
-      params.ledger ?? editing?.ledgerId ?? "",
+      editing?.ledgerId ?? params.ledger ?? "",
     ),
     [selected, setSelected] = useState<string[]>(
       editing?.allocations
         .map((allocation) => allocation.userId)
-        .filter((id) => id !== d.account.id) ?? [],
+        .filter((id) => !includeCreator || id !== creatorId) ?? [],
     ),
-    [method, setMethod] = useState<SplitMethod>("EQUAL"),
-    [weights, setWeights] = useState<Record<string, string>>({}),
+    [chosenPayer, setChosenPayer] = useState(editing?.sourceId ?? creatorId),
+    [method, setMethod] = useState<SplitMethod>(
+      editing?.splitMethod ?? "EQUAL",
+    ),
+    [weights, setWeights] = useState<Record<string, string>>(() =>
+      Object.fromEntries(
+        (editing?.allocations ?? []).map(({ userId, amountMinor }) => {
+          const weight = editing?.splitWeights?.[userId];
+          return [
+            userId,
+            String(
+              editing?.splitMethod === "EXACT"
+                ? amountMinor / editScale
+                : editing?.splitMethod === "PERCENTAGE"
+                  ? (weight ?? 0) / 100
+                  : (weight ?? 1),
+            ),
+          ];
+        }),
+      ),
+    ),
     [tagIds, setTagIds] = useState<string[]>(editing?.tagIds ?? []),
     [transactionIcon, setTransactionIcon] = useState<IconName>(
       (editing?.icon as IconName) ?? "bag",
@@ -96,9 +155,9 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
         params.bill === "1" ||
         params.bill === "camera",
     ),
-    [picker, setPicker] = useState<"ledger" | "participants" | "tags" | null>(
-      null,
-    ),
+    [picker, setPicker] = useState<
+      "ledger" | "participants" | "payer" | "method" | "tags" | null
+    >(null),
     [tagCreatorOpen, setTagCreatorOpen] = useState(false),
     [newTagName, setNewTagName] = useState(""),
     [newTagColor, setNewTagColor] = useState("#8252E3"),
@@ -112,9 +171,12 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     editing?.items?.map((item) => ({
       name: item.name,
       quantity: String(item.quantity),
-      amount: String(item.amountMinor / 100),
+      amount: String(item.amountMinor / editScale),
     })) ?? [],
   );
+  const [includeBill, setIncludeBill] = useState(true);
+  const [moreOptions, setMoreOptions] = useState(false);
+  const [showShares, setShowShares] = useState(false);
   const [scanning, setScanning] = useState(false);
   const saving = useRef(false);
   const {
@@ -128,7 +190,8 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     defaultValues: {
       title: params.title ?? editing?.title ?? "",
       amount:
-        params.amount ?? (editing ? String(editing.amountMinor / 100) : ""),
+        params.amount ??
+        (editing ? String(editing.amountMinor / editScale) : ""),
       notes: editing?.notes ?? "",
       date: editing
         ? DateTime.fromISO(editing.occurredAt)
@@ -139,42 +202,29 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   });
   const ledger = d.ledgers.find((l) => l.id === ledgerId);
   const amount = watch("amount");
-  const payerId = editing?.sourceId ?? d.account.id;
-  const splitMembers = selected.length
-    ? [payerId, ...selected.filter((id) => id !== payerId)]
-    : [];
+  const splitMembers = [...(includeCreator ? [creatorId] : []), ...selected];
+  const payerOptions = [...new Set([creatorId, ...splitMembers])];
+  const payerId = payerOptions.includes(chosenPayer) ? chosenPayer : creatorId;
+  const currency = ledger?.currency ?? editing?.currency ?? d.account.currency;
+  const currencyScale = 10 ** currencyDigits(currency);
   const splitInputSuffix =
-    method === "EXACT"
-      ? d.account.currency
-      : method === "PERCENTAGE"
-        ? "%"
-        : "shares";
-  const memberName = (id: string) =>
-    id === d.account.id
-      ? d.account.name
-      : (ledger?.members.find((member) => member.id === id)?.name ??
-        d.savedContacts.find((contact) => contact.id === id)?.name ??
-        "Member");
-  const type: CreateTransaction["type"] = selected.length
-    ? "SHARED_EXPENSE"
-    : "PERSONAL_EXPENSE";
-  const isExpense = true;
+    method === "EXACT" ? currency : method === "PERCENTAGE" ? "%" : "shares";
+  const memberName = (id: string) => personName(d, id);
+  const type: CreateTransaction["type"] =
+    selected.length || editing?.type === "SHARED_EXPENSE"
+      ? "SHARED_EXPENSE"
+      : "PERSONAL_EXPENSE";
+  const hasBill = !!photo || lines.length > 0;
   useEffect(() => {
-    if (ledger)
-      setSelected((current) =>
-        current.filter((id) =>
-          ledger.members.some((member) => member.id === id),
-        ),
-      );
-  }, [ledgerId]);
+    if (chosenPayer !== creatorId && !selected.includes(chosenPayer))
+      setChosenPayer(creatorId);
+  }, [chosenPayer, creatorId, selected]);
   const addFriend = (contactId: string) => {
-    if (
-      ledger &&
-      !ledger.members.some((member) => member.id === contactId)
-    ) {
+    if (includeCreator && contactId === creatorId) return;
+    if (ledger && !ledger.members.some((member) => member.id === contactId)) {
       setInfoDialog({
         title: "Not in this group",
-        detail: `${d.savedContacts.find((contact) => contact.id === contactId)?.name ?? "This contact"} is not a member of ${ledger.name}.`,
+        detail: `${memberName(contactId)} is not a member of ${ledger.name}.`,
       });
       return;
     }
@@ -182,20 +232,25 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
       current.includes(contactId) ? current : [...current, contactId],
     );
   };
-  const allocations = () =>
-    splitExpense(
-      parseMoney(amount, d.account.currency),
-      splitMembers.map((userId) => ({
+  const participants = () =>
+    splitMembers.map((userId) => {
+      const weight = weights[userId]?.trim();
+      return {
         userId,
         value:
           method === "EXACT"
-            ? parseMoney(weights[userId] || "0", d.account.currency, true)
+            ? parseMoney(weight || "0", currency, true)
             : method === "PERCENTAGE"
-              ? Math.round(Number(weights[userId] || 0) * 100)
-              : Number(weights[userId] || 1),
-      })),
-      method,
-    );
+              ? parseMoney(weight || "0", "INR", true)
+              : method === "SHARES"
+                ? /^\d+$/.test(weight || "1")
+                  ? Number(weight || "1")
+                  : Number.NaN
+                : undefined,
+      };
+    });
+  const allocations = () =>
+    splitExpense(parseMoney(amount, currency), participants(), method);
   let preview: ReturnType<typeof allocations> = [];
   let splitError = "";
   if (type === "SHARED_EXPENSE" && amount && splitMembers.length)
@@ -210,7 +265,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     saving.current = true;
     const ok = await action.run(
       async () => {
-        const amountMinor = parseMoney(values.amount, d.account.currency);
+        const amountMinor = parseMoney(values.amount, currency);
         const localDate = DateTime.fromFormat(values.date, "yyyy-MM-dd HH:mm", {
           zone: "Asia/Kolkata",
         });
@@ -223,49 +278,36 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
           idempotencyKey: key,
           title: values.title,
           amountMinor,
-          currency: d.account.currency,
+          currency,
           type,
-          status: params.pending === "1" ? "PENDING" : "SETTLED",
+          status:
+            type === "PERSONAL_EXPENSE" &&
+            (params.pending === "1" || editing?.status === "PENDING")
+              ? "PENDING"
+              : "SETTLED",
           occurredAt,
           notes: values.notes,
           icon: transactionIcon,
           ledgerId: ledgerId || undefined,
+          payerId: type === "SHARED_EXPENSE" ? payerId : undefined,
           tagIds,
-          items: isExpense
+          items: includeBill
             ? lines.map((line) => ({
                 name: line.name,
                 quantity: Number(line.quantity),
                 amountMinor:
-                  parseMoney(
-                    line.amount.replace(/^-/, ""),
-                    d.account.currency,
-                    true,
-                  ) * (line.amount.startsWith("-") ? -1 : 1),
+                  parseMoney(line.amount.replace(/^-/, ""), currency, true) *
+                  (line.amount.startsWith("-") ? -1 : 1),
               }))
-            : undefined,
+            : [],
           splitMethod: method,
-          participants:
-            type === "SHARED_EXPENSE"
-              ? splitMembers.map((userId) => ({
-                  userId,
-                  value:
-                    method === "EXACT"
-                      ? parseMoney(
-                          weights[userId] || "0",
-                          d.account.currency,
-                          true,
-                        )
-                      : method === "PERCENTAGE"
-                        ? Math.round(Number(weights[userId] || 0) * 100)
-                        : Number(weights[userId] || 1),
-                }))
-              : [],
+          participants: type === "SHARED_EXPENSE" ? participants() : [],
         };
         if (editing)
           await extra(
             d.account.id,
             `/transactions/${editing.id}`,
-            { version: editing.version, transaction: input },
+            { version: editVersion, transaction: input },
             "PATCH",
           );
         else await repository.create(d.account.id, input);
@@ -277,13 +319,16 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     saving.current = false;
     if (ok) {
       setKey(uuid());
-      router.replace("/activity");
+      if (ledgerId) router.replace(`/group/${ledgerId}` as any);
+      else router.replace("/activity");
     }
   });
   if (editingSomeoneElsesPersonal) {
-    const ownerName =
-      d.savedContacts.find((contact) => contact.id === editing.sourceId)
-        ?.name ?? "The person who recorded it";
+    const ownerName = personName(
+      d,
+      editing.sourceId,
+      editing.createdByName ?? "The person who recorded it",
+    );
     const leave = () => router.replace(`/transaction/${editing.id}` as any);
     return (
       <YStack gap={14} maxWidth={620} width="100%" alignSelf="center">
@@ -299,40 +344,69 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     );
   }
   return (
-    <YStack gap={14} maxWidth={800} width="100%" alignSelf="center">
-      <Heading>Add a transaction</Heading>
+    <YStack gap={10} maxWidth={640} width="100%" alignSelf="center">
       <View
         pointerEvents={action.busy ? "none" : "auto"}
         style={{ opacity: action.busy ? 0.72 : 1 }}
       >
-        <YStack gap={14}>
-          <XStack
-            alignItems="center"
-            justifyContent="space-between"
-            gap={12}
-            flexWrap={width < 340 ? "wrap" : "nowrap"}
-          >
-            <Label muted flex={1}>
-              Add the details or scan a bill.
-            </Label>
-            {isExpense && (
-              <Button
-                secondary
-                compact
-                icon={photo ? "check" : "image"}
-                style={{
-                  borderWidth: 2,
-                  borderColor: "#9B84D6",
-                  borderRadius: 12,
-                }}
-                onPress={() => setBillOpen(true)}
-              >
-                {photo ? `Bill · ${lines.length} items` : "Add bill"}
-              </Button>
-            )}
+        <YStack gap={10}>
+          <XStack alignItems="center" gap={8}>
+            <Heading size={22} flex={1} minWidth={0}>
+              {editing ? "Edit transaction" : "Add a transaction"}
+            </Heading>
+            <Button
+              secondary
+              compact
+              icon={lines.length && includeBill ? "check" : "image"}
+              style={{
+                backgroundColor: hasBill && includeBill ? c.mint : c.soft,
+                borderWidth: 0,
+              }}
+              onPress={() => setBillOpen(true)}
+            >
+              {hasBill ? "View bill" : "Add bill"}
+            </Button>
           </XStack>
+          {hasBill && (
+            <XStack
+              alignItems="center"
+              gap={10}
+              borderRadius={12}
+              paddingHorizontal={12}
+              paddingVertical={4}
+              backgroundColor={includeBill ? c.mint : c.rose}
+            >
+              <Icon
+                name={includeBill && lines.length ? "check" : "image"}
+                size={18}
+                color={c.text}
+              />
+              <YStack flex={1} minWidth={0} gap={1}>
+                <Label size={13} bold>
+                  {lines.length
+                    ? includeBill
+                      ? "Bill items included"
+                      : "Bill items excluded"
+                    : "Bill photo ready"}
+                </Label>
+                <Label size={11} muted>
+                  {lines.length
+                    ? `${lines.length} ${lines.length === 1 ? "item" : "items"}`
+                    : "Open the bill to add items."}
+                </Label>
+              </YStack>
+              {!!lines.length && (
+                <Switch
+                  accessibilityLabel="Include bill items"
+                  value={includeBill}
+                  onValueChange={setIncludeBill}
+                  trackColor={{ false: c.line, true: c.primary }}
+                />
+              )}
+            </XStack>
+          )}
           <Modal
-            visible={isExpense && billOpen}
+            visible={billOpen}
             transparent
             animationType="slide"
             onRequestClose={() => !scanning && setBillOpen(false)}
@@ -371,10 +445,13 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                     onAutoCaptureHandled={() =>
                       router.setParams({ capture: undefined })
                     }
-                    currency={d.account.currency}
+                    currency={currency}
                     amount={amount}
                     lines={lines}
-                    onLines={setLines}
+                    onLines={(next) => {
+                      if (!lines.length && next.length) setIncludeBill(true);
+                      setLines(next);
+                    }}
                     onAmount={(value) =>
                       setValue("amount", value, { shouldValidate: true })
                     }
@@ -391,318 +468,270 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
               </KeyboardAwareScreen>
             </View>
           </Modal>
-          <Card style={{ padding: 16 }}>
-            <YStack gap={14}>
-              <Controller
-                control={control}
-                name="amount"
-                render={({ field }) => (
-                  <Field
-                    label={`Amount · ${d.account.currency}`}
-                    placeholder="0.00"
-                    keyboardType="decimal-pad"
-                    value={field.value}
-                    onChangeText={field.onChange}
-                    error={errors.amount?.message}
-                    style={{ fontSize: 30, minHeight: 64, padding: 10 }}
-                  />
-                )}
-              />
+          <Card style={{ padding: 12 }}>
+            <YStack gap={10}>
               <Controller
                 control={control}
                 name="title"
                 render={({ field }) => (
                   <Field
                     label="What was it for?"
-                    placeholder="Dinner, groceries, a little adventure…"
+                    placeholder="e.g. Dinner"
                     value={field.value}
                     onChangeText={field.onChange}
                     error={errors.title?.message}
-                    style={{ minHeight: 44, padding: 10 }}
+                    style={{ paddingVertical: 8 }}
                   />
                 )}
               />
-              <Controller
-                control={control}
-                name="date"
-                render={({ field }) => (
-                  <Field
-                    label="Date and time"
-                    value={field.value}
-                    onChangeText={field.onChange}
-                    error={errors.date?.message}
-                    style={{ minHeight: 44, padding: 10 }}
-                  />
-                )}
-              />
-              <YStack gap={8}>
-                <Label size={13} bold>
-                  Transaction icon
-                </Label>
-                <XStack gap={7} flexWrap="wrap">
-                  {(
-                    [
-                      "bag",
-                      "coffee",
-                      "car",
-                      "plane",
-                      "bolt",
-                      "wallet",
-                    ] as IconName[]
-                  ).map((name) => (
-                    <Pressable
-                      key={name}
-                      accessibilityRole="radio"
-                      accessibilityLabel={`${name} icon`}
-                      accessibilityState={{
-                        selected: transactionIcon === name,
-                      }}
-                      onPress={() => setTransactionIcon(name)}
-                      style={({ pressed }) => ({
-                        width: 42,
-                        height: 42,
-                        borderRadius: 12,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor:
-                          transactionIcon === name ? "#E8E3F6" : "transparent",
-                        opacity: pressed ? 0.72 : 1,
-                      })}
-                    >
-                      <Icon
-                        name={name}
-                        size={20}
-                        color={transactionIcon === name ? "#59458F" : undefined}
+              <XStack gap={8} flexDirection={narrow ? "column" : "row"}>
+                <YStack flex={1} minWidth={0}>
+                  <Controller
+                    control={control}
+                    name="amount"
+                    render={({ field }) => (
+                      <Field
+                        label={`Amount · ${currency}`}
+                        placeholder="0.00"
+                        keyboardType="decimal-pad"
+                        value={field.value}
+                        onChangeText={field.onChange}
+                        error={errors.amount?.message}
+                        style={{ paddingVertical: 8 }}
                       />
-                    </Pressable>
-                  ))}
-                </XStack>
-              </YStack>
-              <XStack
-                gap={10}
-                alignItems="flex-end"
-                flexDirection={width < 330 ? "column" : "row"}
-              >
-                <YStack
-                  flex={1}
-                  width={width < 330 ? "100%" : undefined}
-                  gap={6}
-                >
-                  <Label size={13} bold>
-                    Group
-                  </Label>
-                  <Button
-                    secondary
-                    icon="groups"
-                    disabled={!!params.ledger}
-                    onPress={() => {
-                      if (!params.ledger) setPicker("ledger");
-                    }}
-                  >
-                    {ledger?.name ?? "Optional"}
-                    {params.ledger ? " · fixed" : ""}
-                  </Button>
+                    )}
+                  />
                 </YStack>
-                <YStack
-                  flex={1}
-                  width={width < 330 ? "100%" : undefined}
-                  gap={6}
-                >
-                  <Label size={13} bold>
-                    Tags
+                <YStack flex={1.4} minWidth={0}>
+                  <Controller
+                    control={control}
+                    name="date"
+                    render={({ field }) => (
+                      <DateTimePicker
+                        value={field.value}
+                        onChange={field.onChange}
+                        error={errors.date?.message}
+                      />
+                    )}
+                  />
+                </YStack>
+              </XStack>
+              <XStack gap={8} flexDirection={narrow ? "column" : "row"}>
+                <ExpenseOption
+                  label="Group"
+                  value={ledger?.name ?? "No group"}
+                  icon={groupLocked ? "lock" : "groups"}
+                  tint={c.soft}
+                  onPress={groupLocked ? undefined : () => setPicker("ledger")}
+                />
+                <ExpenseOption
+                  label="Split with"
+                  value={
+                    selected.length
+                      ? `${selected.length} ${selected.length === 1 ? "person" : "people"}`
+                      : "Add people"
+                  }
+                  icon="groups"
+                  tint={c.amber}
+                  onPress={() => setPicker("participants")}
+                />
+              </XStack>
+              {type === "SHARED_EXPENSE" && (
+                <YStack gap={8}>
+                  <XStack gap={8} flexDirection={narrow ? "column" : "row"}>
+                    <ExpenseOption
+                      label="Paid by"
+                      value={memberName(payerId)}
+                      icon="wallet"
+                      tint={c.mint}
+                      onPress={() => setPicker("payer")}
+                    />
+                    <ExpenseOption
+                      label="Split method"
+                      value={splitMethodLabels[method]}
+                      icon="transactions"
+                      tint={c.amber}
+                      onPress={() => setPicker("method")}
+                    />
+                  </XStack>
+                  {method !== "EQUAL" && (
+                    <YStack gap={8}>
+                      {splitMembers.map((id) => (
+                        <Field
+                          key={id}
+                          label={`${memberName(id)} · ${splitInputSuffix}`}
+                          value={weights[id] ?? ""}
+                          keyboardType="decimal-pad"
+                          onChangeText={(value) =>
+                            setWeights((current) => ({
+                              ...current,
+                              [id]: value,
+                            }))
+                          }
+                        />
+                      ))}
+                    </YStack>
+                  )}
+                  {!!splitError && <Notice error>{splitError}</Notice>}
+                  {!!preview.length && (
+                    <>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: showShares }}
+                        onPress={() => setShowShares(!showShares)}
+                        style={{
+                          minHeight: 44,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <Icon
+                          name={showShares ? "up" : "down"}
+                          size={16}
+                          color={c.primary}
+                        />
+                        <Label bold size={13}>
+                          {showShares
+                            ? "Hide shares"
+                            : `View ${preview.length} shares`}
+                        </Label>
+                      </Pressable>
+                      {showShares && (
+                        <YStack gap={6}>
+                          {preview.map((share) => (
+                            <XStack
+                              justifyContent="space-between"
+                              gap={8}
+                              key={share.userId}
+                            >
+                              <Label muted flex={1} minWidth={0}>
+                                {memberName(share.userId)}
+                              </Label>
+                              <Label bold>
+                                {money(share.amountMinor, currency)}
+                              </Label>
+                            </XStack>
+                          ))}
+                          <Label size={11} muted>
+                            Other members owe their shares to{" "}
+                            {payerId === d.account.id
+                              ? "you"
+                              : memberName(payerId)}
+                            .
+                          </Label>
+                        </YStack>
+                      )}
+                    </>
+                  )}
+                </YStack>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: moreOptions }}
+                onPress={() => setMoreOptions(!moreOptions)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  minHeight: 44,
+                }}
+              >
+                <Icon
+                  name={moreOptions ? "up" : "down"}
+                  size={16}
+                  color={c.primary}
+                />
+                <Label bold size={13} flex={1}>
+                  {moreOptions ? "Fewer options" : "More options"}
+                </Label>
+                {!moreOptions && (
+                  <Label muted size={11}>
+                    Tags, icon, note
                   </Label>
-                  <XStack gap={7} alignItems="center">
-                    <Button
-                      secondary
-                      style={{ flex: 1 }}
+                )}
+              </Pressable>
+              {moreOptions && (
+                <YStack gap={10}>
+                  <XStack gap={8} alignItems="center">
+                    <ExpenseOption
+                      label="Tags"
+                      value={
+                        tagIds.length
+                          ? `${tagIds.length} selected`
+                          : "Choose tags"
+                      }
+                      icon="activity"
+                      tint={c.rose}
                       onPress={() => setPicker("tags")}
-                    >
-                      {tagIds.length
-                        ? `${tagIds.length} ${tagIds.length === 1 ? "tag" : "tags"}`
-                        : "Choose tags"}
-                    </Button>
+                    />
                     <IconButton
                       name="plus"
                       label="Create a tag"
                       onPress={() => setTagCreatorOpen(true)}
                     />
                   </XStack>
-                </YStack>
-              </XStack>
-              <YStack gap={8}>
-                <Label size={13} bold>
-                  Friends (optional)
-                </Label>
-                <XStack gap={8} flexWrap="wrap">
-                  <Button
-                    secondary
-                    icon="groups"
-                    onPress={() => setPicker("participants")}
-                  >
-                    {selected.length
-                      ? `${selected.length} ${selected.length === 1 ? "friend" : "friends"}`
-                      : "Choose saved friends"}
-                  </Button>
-                  <Button
-                    secondary
-                    compact
-                    icon="plus"
-                    onPress={() =>
-                      action.run(async () => {
-                        const picked = await chooseContact();
-                        if (!picked) return;
-                        const digits = picked.phone
-                          .replace(/\D/g, "")
-                          .slice(-10);
-                        const saved = d.savedContacts.find(
-                          (contact) =>
-                            contact.phone?.replace(/\D/g, "").slice(-10) ===
-                            digits,
-                        );
-                        if (!saved) {
-                          setInfoDialog({
-                            title: "Save this contact first",
-                            detail:
-                              "Add this phone contact to Saved contacts, then choose them here.",
-                          });
-                          return;
-                        }
-                        addFriend(saved.id);
-                      }, "Contact selected")
-                    }
-                  >
-                    Phone contacts
-                  </Button>
-                </XStack>
-                {!!selected.length && (
-                  <XStack gap={7} flexWrap="wrap">
-                    {selected.map((friendId) => (
-                      <Chip
-                        key={friendId}
-                        selected
-                        onPress={() =>
-                          setSelected((current) =>
-                            current.filter((id) => id !== friendId),
-                          )
-                        }
-                      >
-                        {ledger?.members.find(
-                          (member) => member.id === friendId,
-                        )?.name ?? "Friend"}
-                      </Chip>
-                    ))}
-                  </XStack>
-                )}
-              </YStack>
-              {type === "SHARED_EXPENSE" && (
-                <YStack gap={14}>
-                  <Label bold>
-                    Paid by {d.account.name.split(" ")[0]} · split between
-                  </Label>
-                  <Button
-                    secondary
-                    icon="groups"
-                    onPress={() => setPicker("participants")}
-                  >
-                    {selected.length
-                      ? `${selected.length + 1} people including you`
-                      : "Choose friends"}
-                  </Button>
-                  <XStack gap={8} flexWrap="wrap">
-                    {(["EQUAL", "EXACT", "PERCENTAGE", "SHARES"] as const).map(
-                      (m) => (
-                        <Chip
-                          key={m}
-                          selected={method === m}
-                          onPress={() => setMethod(m)}
+                  <YStack gap={4}>
+                    <Label size={13} bold>
+                      Transaction icon
+                    </Label>
+                    <XStack gap={4} flexWrap="wrap">
+                      {(
+                        [
+                          "bag",
+                          "coffee",
+                          "car",
+                          "plane",
+                          "bolt",
+                          "wallet",
+                        ] as const
+                      ).map((name) => (
+                        <Pressable
+                          key={name}
+                          accessibilityRole="radio"
+                          accessibilityLabel={`${name} icon`}
+                          accessibilityState={{
+                            selected: transactionIcon === name,
+                          }}
+                          onPress={() => setTransactionIcon(name)}
+                          style={({ pressed }) => ({
+                            width: 44,
+                            height: 44,
+                            borderRadius: 12,
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor:
+                              transactionIcon === name ? c.soft : "transparent",
+                            opacity: pressed ? 0.72 : 1,
+                          })}
                         >
-                          {m.toLowerCase()}
-                        </Chip>
-                      ),
-                    )}
-                  </XStack>
-                  {method !== "EQUAL" && (
-                    <YStack gap={10}>
-                      <Field
-                        label={`${memberName(payerId)} · ${payerId === d.account.id ? "your share" : "payer share"} · ${splitInputSuffix}`}
-                        value={weights[payerId] ?? ""}
-                        keyboardType="decimal-pad"
-                        onChangeText={(value) =>
-                          setWeights((current) => ({
-                            ...current,
-                            [payerId]: value,
-                          }))
-                        }
-                      />
-                      {selected
-                        .filter((id) => id !== payerId)
-                        .map((id) => (
-                          <Field
-                            key={id}
-                            label={`${memberName(id)} · ${splitInputSuffix}`}
-                            value={weights[id] ?? ""}
-                            keyboardType="decimal-pad"
-                            onChangeText={(value) =>
-                              setWeights((current) => ({
-                                ...current,
-                                [id]: value,
-                              }))
+                          <Icon
+                            name={name}
+                            size={20}
+                            color={
+                              transactionIcon === name ? c.primary : c.muted
                             }
                           />
-                        ))}
-                    </YStack>
-                  )}
-                  {method === "EQUAL" && preview.length > 0 && (
-                    <Field
-                      label={`${memberName(payerId)} · ${payerId === d.account.id ? "your share" : "payer share"} · ${d.account.currency}`}
-                      value={String(
-                        (preview.find((item) => item.userId === payerId)
-                          ?.amountMinor ?? 0) / 100,
-                      )}
-                      keyboardType="decimal-pad"
-                      onChangeText={(value) => {
-                        const equalWeights = Object.fromEntries(
-                          preview.map((item) => [
-                            item.userId,
-                            String(item.amountMinor / 100),
-                          ]),
-                        );
-                        setWeights({ ...equalWeights, [payerId]: value });
-                        setMethod("EXACT");
-                      }}
-                    />
-                  )}
-                  {!!splitError && <Notice error>{splitError}</Notice>}
-                  {preview.map((a) => (
-                    <XStack justifyContent="space-between" key={a.userId}>
-                      <Label muted>
-                        {memberName(a.userId)}
-                        {a.userId === d.account.id ? " (your share)" : ""}
-                      </Label>
-                      <Label bold>
-                        {money(a.amountMinor, d.account.currency)}
-                      </Label>
+                        </Pressable>
+                      ))}
                     </XStack>
-                  ))}
-                  <Label size={11} muted>
-                    Your share stays in the allocation. Only other members’
-                    shares become amounts owed to you.
-                  </Label>
+                  </YStack>
+                  <Controller
+                    control={control}
+                    name="notes"
+                    render={({ field }) => (
+                      <Field
+                        label="Note (optional)"
+                        multiline
+                        placeholder="Add a note"
+                        value={field.value}
+                        onChangeText={field.onChange}
+                        error={errors.notes?.message}
+                      />
+                    )}
+                  />
                 </YStack>
               )}
-              <Controller
-                control={control}
-                name="notes"
-                render={({ field }) => (
-                  <Field
-                    label="A note for later (optional)"
-                    multiline
-                    placeholder="Anything worth remembering"
-                    value={field.value}
-                    onChangeText={field.onChange}
-                  />
-                )}
-              />
               {!!action.error && (
                 <>
                   <PipFeedback
@@ -731,7 +760,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             </YStack>
           </Card>
           <SearchPicker
-            visible={picker === "ledger"}
+            visible={picker === "ledger" && !groupLocked}
             title="Groups"
             options={[
               { id: "__personal", label: "No group" },
@@ -744,18 +773,60 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                 })),
             ]}
             selected={[ledgerId || "__personal"]}
-            onSelect={(id) => setLedgerId(id === "__personal" ? "" : id)}
+            onSelect={(id) => {
+              const next = d.ledgers.find((entry) => entry.id === id);
+              setLedgerId(next?.id ?? "");
+              if (next)
+                setSelected((current) =>
+                  current.filter((person) =>
+                    next.members.some((member) => member.id === person),
+                  ),
+                );
+            }}
             onClose={() => setPicker(null)}
           />
           <SearchPicker
             visible={picker === "participants"}
             title="Add friends"
-            options={(ledger
-              ? ledger.members.filter((member) => member.id !== d.account.id)
-              : d.savedContacts
-            ).map((member) => ({ id: member.id, label: member.name }))}
+            options={(ledger ? ledger.members : d.savedContacts)
+              .filter((member) => !includeCreator || member.id !== creatorId)
+              .map((member) => ({
+                id: member.id,
+                label: memberName(member.id),
+              }))}
             selected={selected}
             multiple
+            selectionIcon={null}
+            footer={
+              <Button
+                secondary
+                compact
+                icon="plus"
+                onPress={() =>
+                  action.run(async () => {
+                    const picked = await chooseContact();
+                    if (!picked) return;
+                    const digits = picked.phone.replace(/\D/g, "").slice(-10);
+                    const saved = d.savedContacts.find(
+                      (contact) =>
+                        contact.phone?.replace(/\D/g, "").slice(-10) === digits,
+                    );
+                    if (!saved) {
+                      setPicker(null);
+                      setInfoDialog({
+                        title: "Save this contact first",
+                        detail:
+                          "Add this phone contact to Saved contacts, then choose them here.",
+                      });
+                      return;
+                    }
+                    addFriend(saved.id);
+                  }, "Contact selected")
+                }
+              >
+                Phone contacts
+              </Button>
+            }
             onSelect={(id) =>
               selected.includes(id)
                 ? setSelected((current) =>
@@ -763,6 +834,44 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   )
                 : addFriend(id)
             }
+            onClose={() => setPicker(null)}
+          />
+          <SearchPicker
+            visible={picker === "payer"}
+            title="Who paid?"
+            options={payerOptions.map((id) => ({
+              id,
+              label: memberName(id),
+              detail: id === creatorId ? "Transaction creator" : undefined,
+            }))}
+            selected={[payerId]}
+            selectionIcon={null}
+            onSelect={setChosenPayer}
+            onClose={() => setPicker(null)}
+          />
+          <SearchPicker
+            visible={picker === "method"}
+            title="Split method"
+            options={(Object.keys(splitMethodLabels) as SplitMethod[]).map(
+              (id) => ({
+                id,
+                label: splitMethodLabels[id],
+              }),
+            )}
+            selected={[method]}
+            selectionIcon={null}
+            onSelect={(id) => {
+              if (id === "EXACT" && method === "EQUAL" && preview.length)
+                setWeights(
+                  Object.fromEntries(
+                    preview.map((share) => [
+                      share.userId,
+                      String(share.amountMinor / currencyScale),
+                    ]),
+                  ),
+                );
+              setMethod(id as SplitMethod);
+            }}
             onClose={() => setPicker(null)}
           />
           <Modal
@@ -774,30 +883,42 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             <View
               style={{
                 flex: 1,
-                justifyContent: "center",
-                padding: 20,
                 backgroundColor: "rgba(22,24,28,0.5)",
               }}
             >
-              <Card style={{ width: "100%", maxWidth: 480, alignSelf: "center" }}>
-                <YStack gap={15}>
-                  <XStack justifyContent="space-between" alignItems="center">
-                    <Heading size={20}>Create a tag</Heading>
-                    <IconButton
-                      name="close"
-                      label="Close"
-                      onPress={() => setTagCreatorOpen(false)}
+              <KeyboardAwareScreen
+                contentContainerStyle={{
+                  flexGrow: 1,
+                  justifyContent: "center",
+                  padding: 20,
+                }}
+              >
+                <Card
+                  style={{ width: "100%", maxWidth: 480, alignSelf: "center" }}
+                >
+                  <YStack gap={15}>
+                    <XStack justifyContent="space-between" alignItems="center">
+                      <Heading size={20}>Create a tag</Heading>
+                      <IconButton
+                        name="close"
+                        label="Close"
+                        onPress={() => setTagCreatorOpen(false)}
+                      />
+                    </XStack>
+                    <Field
+                      label="Tag name"
+                      placeholder="Food, travel, subscriptions…"
+                      value={newTagName}
+                      onChangeText={setNewTagName}
                     />
-                  </XStack>
-                  <Field
-                    label="Tag name"
-                    placeholder="Food, travel, subscriptions…"
-                    value={newTagName}
-                    onChangeText={setNewTagName}
-                  />
-                  <XStack gap={8} flexWrap="wrap">
-                    {["#8252E3", "#ECA54C", "#8994D6", "#5EB69B", "#E8898C"].map(
-                      (color) => (
+                    <XStack gap={8} flexWrap="wrap">
+                      {[
+                        "#8252E3",
+                        "#ECA54C",
+                        "#8994D6",
+                        "#5EB69B",
+                        "#E8898C",
+                      ].map((color) => (
                         <Chip
                           key={color}
                           selected={newTagColor === color}
@@ -805,34 +926,34 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                         >
                           <Label color={color}>●</Label>
                         </Chip>
-                      ),
-                    )}
-                  </XStack>
-                  {!!action.error && <Notice error>{action.error}</Notice>}
-                  <Button
-                    loading={action.busy}
-                    disabled={action.busy || !newTagName.trim()}
-                    onPress={async () => {
-                      await action.run(async () => {
-                        const created = await extra(
-                          d.account.id,
-                          "/tags",
-                          { name: newTagName.trim(), color: newTagColor },
-                          "POST",
-                        );
-                        if (created?.id)
-                          setTagIds((current) => [
-                            ...new Set([...current, created.id]),
-                          ]);
-                        setNewTagName("");
-                        setTagCreatorOpen(false);
-                      }, "Tag created and selected");
-                    }}
-                  >
-                    Create and select
-                  </Button>
-                </YStack>
-              </Card>
+                      ))}
+                    </XStack>
+                    {!!action.error && <Notice error>{action.error}</Notice>}
+                    <Button
+                      loading={action.busy}
+                      disabled={action.busy || !newTagName.trim()}
+                      onPress={async () => {
+                        await action.run(async () => {
+                          const created = await extra(
+                            d.account.id,
+                            "/tags",
+                            { name: newTagName.trim(), color: newTagColor },
+                            "POST",
+                          );
+                          if (created?.id)
+                            setTagIds((current) => [
+                              ...new Set([...current, created.id]),
+                            ]);
+                          setNewTagName("");
+                          setTagCreatorOpen(false);
+                        }, "Tag created and selected");
+                      }}
+                    >
+                      Create and select
+                    </Button>
+                  </YStack>
+                </Card>
+              </KeyboardAwareScreen>
             </View>
           </Modal>
           <SearchPicker
@@ -873,6 +994,53 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     </YStack>
   );
 }
+function ExpenseOption({
+  label,
+  value,
+  icon,
+  tint,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  icon: IconName;
+  tint: string;
+  onPress?(): void;
+}) {
+  const c = useColors();
+  return (
+    <Pressable
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={`${label}. ${value}`}
+      disabled={!onPress}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        minWidth: 0,
+        minHeight: 48,
+        borderRadius: 10,
+        backgroundColor: tint,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        opacity: pressed ? 0.75 : 1,
+      })}
+    >
+      <Icon name={icon} size={16} color={c.text} />
+      <YStack flex={1} minWidth={0}>
+        <Label size={11} muted>
+          {label}
+        </Label>
+        <Label size={13} bold numberOfLines={2}>
+          {value}
+        </Label>
+      </YStack>
+    </Pressable>
+  );
+}
+
 export function TransactionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>(),
     action = useAction();
@@ -901,9 +1069,13 @@ export function TransactionScreen() {
           );
         const ownerOnly =
           t.type === "PERSONAL_EXPENSE" && t.sourceId !== d.account.id;
-        const ownerName =
-          d.savedContacts.find((contact) => contact.id === t.sourceId)?.name ??
-          "The person who recorded it";
+        const expense =
+          t.type === "PERSONAL_EXPENSE" || t.type === "SHARED_EXPENSE";
+        const ownerName = personName(
+          d,
+          t.createdById ?? t.sourceId,
+          "The person who recorded it",
+        );
         return (
           <YStack maxWidth={760} width="100%" alignSelf="center" gap={22}>
             <Heading>{t.title}</Heading>
@@ -919,6 +1091,21 @@ export function TransactionScreen() {
                 <Label muted>
                   {new Date(t.occurredAt).toLocaleString("en-IN")}
                 </Label>
+                {!!t.ledgerId && (
+                  <Label muted>
+                    Recorded by{" "}
+                    {personName(
+                      d,
+                      t.createdById ?? t.sourceId,
+                      t.createdByName,
+                    )}
+                  </Label>
+                )}
+                {t.type === "SHARED_EXPENSE" && (
+                  <Label muted>
+                    Paid by {personName(d, t.sourceId, t.payerName)}
+                  </Label>
+                )}
                 {!!t.notes && <Label>{t.notes}</Label>}
                 {!!t.items?.length && (
                   <YStack gap={12}>
@@ -943,14 +1130,17 @@ export function TransactionScreen() {
                   <>
                     <SectionTitle title="The original split" />
                     {t.allocations.map((a) => (
-                      <XStack justifyContent="space-between" key={a.userId}>
-                        <Label>
-                          {a.userId === d.account.id
-                            ? "You"
-                            : (d.savedContacts.find((p) => p.id === a.userId)
-                                ?.name ?? "Member")}
+                      <XStack
+                        justifyContent="space-between"
+                        gap={8}
+                        key={a.userId}
+                      >
+                        <Label flex={1} minWidth={0}>
+                          {personName(d, a.userId)}
                         </Label>
-                        <Label bold>{money(a.amountMinor, t.currency)}</Label>
+                        <Label bold flexShrink={1} textAlign="right">
+                          {money(a.amountMinor, t.currency)}
+                        </Label>
                       </XStack>
                     ))}
                   </>
@@ -968,20 +1158,22 @@ export function TransactionScreen() {
                 {!!action.error && <Notice error>{action.error}</Notice>}
                 {!!action.success && <Notice>{action.success}</Notice>}
                 <XStack gap={10} flexWrap="wrap">
-                  <Button
-                    secondary
-                    icon="edit"
-                    onPress={() => {
-                      if (ownerOnly) setOwnerOnlyOpen(true);
-                      else
-                        router.push({
-                          pathname: "/add",
-                          params: { edit: t.id },
-                        });
-                    }}
-                  >
-                    {ownerOnly ? "Why can’t I edit?" : "Edit transaction"}
-                  </Button>
+                  {expense && (
+                    <Button
+                      secondary
+                      icon="edit"
+                      onPress={() => {
+                        if (ownerOnly) setOwnerOnlyOpen(true);
+                        else
+                          router.push({
+                            pathname: "/add",
+                            params: { edit: t.id },
+                          });
+                      }}
+                    >
+                      {ownerOnly ? "Why can’t I edit?" : "Edit transaction"}
+                    </Button>
+                  )}
                   {t.status === "PENDING" && !ownerOnly && (
                     <Button
                       loading={action.busy}
@@ -1030,6 +1222,22 @@ export function TransactionScreen() {
 export function SettlementScreen() {
   const c = useColors(),
     router = useRouter();
+  const {
+    view,
+    ledger: requestedLedger,
+    creditor: requestedCreditor,
+    amount: requestedAmount,
+    original,
+  } = useLocalSearchParams<{
+    view?: string;
+    ledger?: string;
+    creditor?: string;
+    amount?: string;
+    original?: string;
+  }>();
+  const originalPair =
+    original === "1" && !!requestedLedger && !!requestedCreditor;
+  const receiving = view === "owed";
   const [receipt, setReceipt] = useState<{
     accountId: string;
     name: string;
@@ -1040,15 +1248,41 @@ export function SettlementScreen() {
   } | null>(null);
   const action = useAction(),
     [debtId, setDebtId] = useState(""),
-    [amount, setAmount] = useState(""),
+    [amount, setAmount] = useState(requestedAmount ?? ""),
     [key, setKey] = useState(uuid());
   return (
     <DataScreen>
       {(d) => {
-        const owed = d.obligations.filter(
-          (o) => o.debtorId === d.account.id && o.remainingMinor > 0,
+        const activeDebts = d.obligations.filter(
+          (debt) =>
+            !debt.ledgerId ||
+            d.ledgers.some(
+              (ledger) => ledger.id === debt.ledgerId && !ledger.deleted,
+            ),
         );
-        const selected = owed.find((o) => o.id === debtId);
+        const incoming = simplifiedIncoming(activeDebts, d.account.id);
+        const originalDebts = originalPair
+          ? activeDebts.filter(
+              (debt) =>
+                debt.ledgerId === requestedLedger &&
+                debt.debtorId === d.account.id &&
+                debt.creditorId === requestedCreditor,
+            )
+          : [];
+        const plan = originalPair
+          ? outstandingByPerson(originalDebts, d.account.id, "outgoing", true)
+          : simplifiedOutgoing(activeDebts, d.account.id);
+        const scopeName = (ledgerId?: string) =>
+          ledgerId
+            ? (d.ledgers.find((ledger) => ledger.id === ledgerId)?.name ??
+              "Group")
+            : "Outside groups";
+        const requested = plan.find(
+          (o) =>
+            o.ledgerId === requestedLedger && o.personId === requestedCreditor,
+        );
+        const selectedId = debtId || requested?.id || "";
+        const selected = plan.find((o) => o.id === selectedId);
         if (receipt && receipt.accountId === d.account.id)
           return (
             <YStack gap={22} maxWidth={600} width="100%" alignSelf="center">
@@ -1097,136 +1331,228 @@ export function SettlementScreen() {
         return (
           <YStack gap={22} maxWidth={720} width="100%" alignSelf="center">
             <Heading>Settle debts</Heading>
-            <Label muted>
-              Record a payment you have actually made. SettleUp does not move
-              money.
-            </Label>
-            <Notice>
-              Settle up clears what you owe after you pay someone outside the
-              app. Choose the person, confirm the amount you paid, and SettleUp
-              will reduce that balance and record the repayment in Transactions.
-            </Notice>
-            <Card>
-              <YStack gap={18}>
-                {!owed.length ? (
-                  <Empty
-                    title="You’re all settled up"
-                    detail="No outstanding repayments for this account."
-                  />
-                ) : (
-                  <>
-                    <Label bold>Choose a balance to repay</Label>
-                    {owed.map((o) => {
-                      const contact = d.savedContacts.find(
-                        (p) => p.id === o.creditorId,
-                      );
-                      const person = contact?.name ?? "Member";
-                      return (
-                        <Pressable
-                          key={o.id}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Repay ${person}, ${money(o.remainingMinor, o.currency)}`}
-                          accessibilityState={{ selected: debtId === o.id }}
-                          onPress={() => {
-                            setDebtId(o.id);
-                            setAmount(
-                              String(
-                                o.remainingMinor /
-                                  10 **
-                                    new Intl.NumberFormat("en", {
-                                      style: "currency",
-                                      currency: o.currency,
-                                    }).resolvedOptions().maximumFractionDigits!,
-                              ),
-                            );
-                            setKey(uuid());
-                          }}
-                          style={{
-                            padding: 16,
-                            borderRadius: 17,
-                            borderWidth: 1,
-                            borderColor: debtId === o.id ? "#AA94D5" : c.line,
-                            backgroundColor: debtId === o.id ? c.soft : c.card,
-                          }}
-                        >
-                          <XStack gap={12} alignItems="center">
-                            <Avatar
-                              name={person}
-                              avatar={contact?.avatar}
-                              size={44}
-                            />
-                            <YStack flex={1}>
-                              <Label bold>{person}</Label>
-                              <Label muted size={11}>
-                                {
-                                  d.ledgers.find((l) => l.id === o.ledgerId)
-                                    ?.name
-                                }
-                              </Label>
-                            </YStack>
-                            <Label bold>
-                              {money(o.remainingMinor, o.currency)}
-                            </Label>
-                            <Icon
-                              name={debtId === o.id ? "check" : "chevron"}
-                              size={18}
-                              color="#7B63B0"
-                            />
-                          </XStack>
-                        </Pressable>
-                      );
-                    })}
-                    <Field
-                      label="Amount paid"
-                      value={amount}
-                      onChangeText={setAmount}
-                      keyboardType="decimal-pad"
+            <XStack gap={8} flexWrap="wrap">
+              <Chip
+                selected={!receiving}
+                onPress={() => router.setParams({ view: "pay", original: "" })}
+              >
+                You owe
+              </Chip>
+              <Chip
+                selected={receiving}
+                onPress={() => router.setParams({ view: "owed" })}
+              >
+                Owed to you
+              </Chip>
+            </XStack>
+            {receiving ? (
+              <Card>
+                <YStack gap={12}>
+                  <Heading size={19}>Who owes you</Heading>
+                  <Label muted size={12}>
+                    Each group or loan is netted so a person appears in one
+                    direction only.
+                  </Label>
+                  {incoming.map((balance) => (
+                    <XStack key={balance.id} gap={10} alignItems="center">
+                      <YStack flex={1} minWidth={0}>
+                        <Label bold>{personName(d, balance.personId)}</Label>
+                        <Label muted size={11}>
+                          {scopeName(balance.ledgerId)}
+                        </Label>
+                      </YStack>
+                      <Label
+                        bold
+                        flexShrink={1}
+                        maxWidth="48%"
+                        textAlign="right"
+                      >
+                        {money(balance.amountMinor, balance.currency)}
+                      </Label>
+                    </XStack>
+                  ))}
+                  {!incoming.length && (
+                    <Empty
+                      title="No one owes you"
+                      detail="There are no outstanding balances to receive."
                     />
-                    {!!action.error && <Notice error>{action.error}</Notice>}
-                    {!!action.success && <Notice>{action.success}</Notice>}
-                    <Button
-                      loading={action.busy}
-                      disabled={!selected || action.busy}
-                      onPress={() =>
-                        action.run(async () => {
-                          if (!selected) return;
-                          await repository.settle(d.account.id, {
-                            idempotencyKey: key,
-                            ledgerId: selected.ledgerId ?? undefined,
-                            debtorId: d.account.id,
-                            creditorId: selected.creditorId,
-                            amountMinor: parseMoney(amount, selected.currency),
-                            currency: selected.currency,
-                          });
-                          setReceipt({
-                            accountId: d.account.id,
-                            name:
-                              d.savedContacts.find(
-                                (p) => p.id === selected.creditorId,
-                              )?.name ?? "Member",
-                            avatar: d.savedContacts.find(
-                              (p) => p.id === selected.creditorId,
-                            )?.avatar,
-                            amountMinor: parseMoney(amount, selected.currency),
-                            currency: selected.currency,
-                            date: new Date().toISOString(),
-                          });
-                          setKey(uuid());
-                          setDebtId("");
-                          setAmount("");
-                        }, "Repayment recorded. Your balance has been updated.")
-                      }
-                    >
-                      I paid this amount · record repayment
-                    </Button>
-                  </>
-                )}
-              </YStack>
-            </Card>
+                  )}
+                </YStack>
+              </Card>
+            ) : (
+              <Card>
+                <YStack gap={18}>
+                  {!plan.length ? (
+                    <Empty
+                      title="You’re all settled up"
+                      detail="No simplified repayments are due for this account."
+                    />
+                  ) : (
+                    <>
+                      <Heading size={19}>
+                        {originalPair ? "Group repayment" : "Simplified debts"}
+                      </Heading>
+                      <Label muted size={12}>
+                        {originalPair
+                          ? "Record a payment against this group balance."
+                          : "Select a balance to record a repayment."}
+                      </Label>
+                      {plan.map((o) => {
+                        const contact = d.savedContacts.find(
+                          (p) => p.id === o.personId,
+                        );
+                        const person = personName(d, o.personId);
+                        return (
+                          <Pressable
+                            key={o.id}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Repay ${person}, ${money(o.amountMinor, o.currency)}`}
+                            accessibilityState={{
+                              selected: selectedId === o.id,
+                            }}
+                            onPress={() => {
+                              setDebtId(o.id);
+                              setAmount(
+                                String(
+                                  o.amountMinor /
+                                    10 **
+                                      new Intl.NumberFormat("en", {
+                                        style: "currency",
+                                        currency: o.currency,
+                                      }).resolvedOptions()
+                                        .maximumFractionDigits!,
+                                ),
+                              );
+                              setKey(uuid());
+                            }}
+                            style={{
+                              padding: 16,
+                              borderRadius: 17,
+                              borderWidth: 1,
+                              borderColor:
+                                selectedId === o.id ? "#AA94D5" : c.line,
+                              backgroundColor:
+                                selectedId === o.id ? c.soft : c.card,
+                            }}
+                          >
+                            <XStack gap={12} alignItems="center">
+                              <Avatar
+                                name={person}
+                                avatar={contact?.avatar}
+                                size={44}
+                              />
+                              <YStack flex={1} minWidth={0}>
+                                <Label bold>{person}</Label>
+                                <Label muted size={11}>
+                                  {scopeName(o.ledgerId)}
+                                </Label>
+                              </YStack>
+                              <Label
+                                bold
+                                flexShrink={1}
+                                maxWidth="43%"
+                                textAlign="right"
+                              >
+                                {money(o.amountMinor, o.currency)}
+                              </Label>
+                              <Icon
+                                name={selectedId === o.id ? "check" : "chevron"}
+                                size={18}
+                                color="#7B63B0"
+                              />
+                            </XStack>
+                          </Pressable>
+                        );
+                      })}
+                      {selected && (
+                        <Field
+                          label={`Amount paid · ${scopeName(selected.ledgerId)}`}
+                          value={amount}
+                          onChangeText={setAmount}
+                          keyboardType="decimal-pad"
+                        />
+                      )}
+                      {!!action.error && <Notice error>{action.error}</Notice>}
+                      {!!action.success && <Notice>{action.success}</Notice>}
+                      <Button
+                        loading={action.busy}
+                        disabled={!selected || !amount || action.busy}
+                        onPress={() =>
+                          action.run(async () => {
+                            if (!selected) return;
+                            const amountMinor = parseMoney(
+                              amount,
+                              selected.currency,
+                            );
+                            if (amountMinor > selected.amountMinor)
+                              throw new Error(
+                                "Enter an amount within this outstanding balance.",
+                              );
+                            const result = await repository.settle(
+                              d.account.id,
+                              {
+                                idempotencyKey: key,
+                                ledgerId: selected.ledgerId ?? undefined,
+                                simplified: originalPair ? undefined : true,
+                                debtorId: d.account.id,
+                                creditorId: selected.personId,
+                                amountMinor,
+                                currency: selected.currency,
+                              },
+                            );
+                            if (!(
+                              result &&
+                              typeof result === "object" &&
+                              "queued" in result
+                            ))
+                              setReceipt({
+                                accountId: d.account.id,
+                                name: personName(d, selected.personId),
+                                avatar: d.savedContacts.find(
+                                  (p) => p.id === selected.personId,
+                                )?.avatar,
+                                amountMinor,
+                                currency: selected.currency,
+                                date: new Date().toISOString(),
+                              });
+                            setKey(uuid());
+                            setDebtId("");
+                            setAmount("");
+                            return result;
+                          }, "Repayment recorded. Your balance has been updated.")
+                        }
+                      >
+                        I paid this amount · record repayment
+                      </Button>
+                    </>
+                  )}
+                </YStack>
+              </Card>
+            )}
           </YStack>
         );
       }}
     </DataScreen>
+  );
+}
+const groupStyles = [
+  { icon: "plane", accent: "#6652A3", background: "#F0ECF8" },
+  { icon: "home", accent: "#9981BF", background: "#EEE8F8" },
+  { icon: "coffee", accent: "#B9A7D5", background: "#F2EEF9" },
+] as const;
+function groupStyle(groupId: string) {
+  let hash = 0;
+  for (const character of groupId)
+    hash = (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0;
+  return groupStyles[hash % groupStyles.length];
+}
+function groupUpdatedAt(data: Dashboard, ledgerId: string, updatedAt?: string) {
+  const lastActivity = data.activity.find(
+    (entry) => entry.ledgerId === ledgerId,
+  )?.createdAt;
+  return Math.max(
+    Date.parse(updatedAt ?? "") || 0,
+    Date.parse(lastActivity ?? "") || 0,
   );
 }
 export function GroupsScreen() {
@@ -1257,82 +1583,115 @@ export function GroupsScreen() {
               Create a group
             </Button>
           </XStack>
-          {creating && (
-            <Card>
-              <YStack gap={15}>
-                <Field
-                  label="Group name"
-                  placeholder="Your next adventure"
-                  value={name}
-                  onChangeText={setName}
-                />
-                <Label bold>Choose your people</Label>
-                <Button
-                  secondary
-                  icon="groups"
-                  disabled={action.busy}
-                  onPress={() =>
-                    action.run(async () => {
-                      setPhoneContacts(await chooseContacts());
-                      setContactsOpen(true);
-                    }, "Choose the contacts to add")
-                  }
+          <Modal
+            visible={creating}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setCreating(false)}
+          >
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: "rgba(22,24,28,0.48)",
+              }}
+            >
+              <KeyboardAwareScreen
+                contentContainerStyle={{
+                  flexGrow: 1,
+                  justifyContent: "center",
+                  padding: 16,
+                }}
+              >
+                <Card
+                  style={{ width: "100%", maxWidth: 560, alignSelf: "center" }}
                 >
-                  Choose multiple phone contacts
-                </Button>
-                <Button
-                  secondary
-                  compact
-                  onPress={() => setSavedContactsOpen(true)}
-                >
-                  Choose saved contacts
-                  {members.length ? ` · ${members.length}` : ""}
-                </Button>
-                <XStack gap={8} flexWrap="wrap">
-                  {contacts.map((contact) => (
-                    <Chip
-                      key={contact.phone}
-                      selected
+                  <YStack gap={15}>
+                    <XStack
+                      alignItems="center"
+                      justifyContent="space-between"
+                      gap={10}
+                    >
+                      <Heading size={20}>Create a group</Heading>
+                      <IconButton
+                        name="close"
+                        label="Close create group"
+                        onPress={() => setCreating(false)}
+                      />
+                    </XStack>
+                    <Field
+                      label="Group name"
+                      placeholder="Your next adventure"
+                      value={name}
+                      onChangeText={setName}
+                    />
+                    <Label bold>Choose your people</Label>
+                    <Button
+                      secondary
+                      icon="groups"
+                      disabled={action.busy}
                       onPress={() =>
-                        setContacts((items) =>
-                          items.filter((p) => p.phone !== contact.phone),
-                        )
+                        action.run(async () => {
+                          setPhoneContacts(await chooseContacts());
+                          setContactsOpen(true);
+                        }, "Choose the contacts to add")
                       }
                     >
-                      {contact.name}
-                    </Chip>
-                  ))}
-                </XStack>
-                {!!action.error && <Notice error>{action.error}</Notice>}
-                <Button
-                  loading={action.busy}
-                  disabled={action.busy}
-                  onPress={async () => {
-                    if (
-                      await action.run(async () => {
-                        if (!name.trim())
-                          throw new Error("Give your group a name.");
-                        await extra(d.account.id, "/groups", {
-                          name,
-                          description: "A little better, together.",
-                          currency: d.account.currency,
-                          memberIds: members,
-                          contacts,
-                        });
-                      })
-                    ) {
-                      setCreating(false);
-                      setName("");
-                      setContacts([]);
-                      setMembers([]);
-                    }
-                  }}
-                >
-                  Create group
-                </Button>
-              </YStack>
-            </Card>
-          )}
+                      Choose multiple phone contacts
+                    </Button>
+                    <Button
+                      secondary
+                      compact
+                      onPress={() => setSavedContactsOpen(true)}
+                    >
+                      Choose saved contacts
+                      {members.length ? ` · ${members.length}` : ""}
+                    </Button>
+                    <XStack gap={8} flexWrap="wrap">
+                      {contacts.map((contact) => (
+                        <Chip
+                          key={contact.phone}
+                          selected
+                          onPress={() =>
+                            setContacts((items) =>
+                              items.filter((p) => p.phone !== contact.phone),
+                            )
+                          }
+                        >
+                          {contact.name}
+                        </Chip>
+                      ))}
+                    </XStack>
+                    {!!action.error && <Notice error>{action.error}</Notice>}
+                    <Button
+                      loading={action.busy}
+                      disabled={action.busy}
+                      onPress={async () => {
+                        if (
+                          await action.run(async () => {
+                            if (!name.trim())
+                              throw new Error("Give your group a name.");
+                            await extra(d.account.id, "/groups", {
+                              name,
+                              currency: d.account.currency,
+                              memberIds: members,
+                              contacts,
+                            });
+                          })
+                        ) {
+                          setCreating(false);
+                          setName("");
+                          setContacts([]);
+                          setMembers([]);
+                        }
+                      }}
+                    >
+                      Create group
+                    </Button>
+                  </YStack>
+                </Card>
+              </KeyboardAwareScreen>
+            </View>
+          </Modal>
           <SearchPicker
             visible={contactsOpen}
             title="Phone contacts"
@@ -1365,15 +1724,8 @@ export function GroupsScreen() {
             title="Saved contacts"
             options={d.savedContacts.map((contact) => ({
               id: contact.id,
-              label: contact.name,
-              detail: [
-                contact.contactName
-                  ? `Saved as ${contact.contactName}`
-                  : undefined,
-                contact.phone,
-              ]
-                .filter(Boolean)
-                .join(" · "),
+              label: personName(d, contact.id),
+              detail: contact.phone,
             }))}
             selected={members}
             multiple
@@ -1389,79 +1741,85 @@ export function GroupsScreen() {
           />
           {d.ledgers
             .filter((ledger) => !!ledger.deleted === showDeleted)
-            .map((l, index) => (
-              <Pressable
-                key={l.id}
-                accessibilityRole="button"
-                accessibilityLabel={`Open ledger ${l.name}`}
-                onPress={() => router.push(`/group/${l.id}` as any)}
-              >
-                <Card
-                  style={{
-                    padding: 10,
-                    borderLeftWidth: 4,
-                    borderLeftColor: ["#6652A3", "#9981BF", "#B9A7D5"][
-                      index % 3
-                    ],
-                    backgroundColor: c.card,
-                  }}
+            .sort(
+              (a, b) =>
+                groupUpdatedAt(d, b.id, b.updatedAt) -
+                  groupUpdatedAt(d, a.id, a.updatedAt) ||
+                a.id.localeCompare(b.id),
+            )
+            .map((l) => {
+              const visual = groupStyle(l.groupId);
+              return (
+                <Pressable
+                  key={l.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ledger ${l.name}`}
+                  onPress={() => router.push(`/group/${l.id}` as any)}
                 >
-                  <XStack gap={10} alignItems="center">
-                    <View
-                      style={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 12,
-                        backgroundColor: ["#F0ECF8", "#EEE8F8", "#F2EEF9"][
-                          index % 3
-                        ],
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Icon
-                        name={(["plane", "home", "coffee"] as const)[index % 3]}
-                        color="#555269"
-                        size={20}
-                      />
-                    </View>
-                    <YStack flex={1} gap={3}>
-                      <XStack
-                        justifyContent="space-between"
-                        alignItems="center"
+                  <Card
+                    style={{
+                      padding: 10,
+                      borderLeftWidth: 4,
+                      borderLeftColor: visual.accent,
+                      backgroundColor: c.card,
+                    }}
+                  >
+                    <XStack gap={10} alignItems="flex-start">
+                      <View
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 12,
+                          backgroundColor: visual.background,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
                       >
-                        <Heading size={16}>{l.name}</Heading>
-                        <Label muted size={10}>
-                          {l.currency}
-                        </Label>
-                      </XStack>
-                      <Label muted size={11} numberOfLines={1}>
-                        {l.description}
-                      </Label>
-                      <XStack gap={-4} alignItems="center">
-                        {l.members.slice(0, 5).map((m) => (
-                          <Avatar
-                            key={m.id}
-                            name={m.name}
-                            avatar={m.avatar}
-                            size={27}
-                          />
-                        ))}
-                        {l.members.length > 5 && (
-                          <Label muted size={12} marginLeft={8}>
-                            +{l.members.length - 5} more
+                        <Icon name={visual.icon} color="#555269" size={20} />
+                      </View>
+                      <YStack flex={1} minWidth={0} gap={6}>
+                        <XStack
+                          justifyContent="space-between"
+                          alignItems="flex-start"
+                          gap={8}
+                        >
+                          <Heading size={16} flex={1} minWidth={0}>
+                            {l.name}
+                          </Heading>
+                          <Label muted size={10}>
+                            {l.currency}
                           </Label>
-                        )}
-                        <Label muted size={10} marginLeft={8}>
-                          {l.members.length} members
-                        </Label>
-                      </XStack>
-                    </YStack>
-                    <Icon name="chevron" size={15} color={c.muted} />
-                  </XStack>
-                </Card>
-              </Pressable>
-            ))}
+                        </XStack>
+                        {!!l.description &&
+                          l.description.trim() !==
+                            "A little better, together." && (
+                            <Label muted size={11} numberOfLines={2}>
+                              {l.description}
+                            </Label>
+                          )}
+                        <XStack gap={8} alignItems="center" flexWrap="wrap">
+                          <XStack gap={-4}>
+                            {l.members.slice(0, 4).map((m) => (
+                              <Avatar
+                                key={m.id}
+                                name={personName(d, m.id)}
+                                avatar={m.avatar}
+                                size={27}
+                              />
+                            ))}
+                          </XStack>
+                          <Label muted size={11}>
+                            {l.members.length}{" "}
+                            {l.members.length === 1 ? "member" : "members"}
+                          </Label>
+                        </XStack>
+                      </YStack>
+                      <Icon name="chevron" size={15} color={c.muted} />
+                    </XStack>
+                  </Card>
+                </Pressable>
+              );
+            })}
           {!d.ledgers.some((ledger) => !!ledger.deleted === showDeleted) && (
             <Empty
               title={
@@ -1487,7 +1845,7 @@ export function GroupScreen() {
     router = useRouter(),
     c = useColors(),
     action = useAction(),
-    { width, height } = useWindowDimensions(),
+    { width, height, fontScale } = useWindowDimensions(),
     [simplified, setSimplified] = useState(false),
     [view, setView] = useState<"records" | "balances">("records"),
     [membersOpen, setMembersOpen] = useState(false),
@@ -1505,7 +1863,7 @@ export function GroupScreen() {
     } | null>(null);
   return (
     <DataScreen>
-      {(d) => {
+      {(d, refresh, refreshing) => {
         const l = d.ledgers.find((l) => l.id === id);
         if (!l)
           return (
@@ -1514,7 +1872,9 @@ export function GroupScreen() {
               detail="Switch accounts or ask an owner to add you."
             />
           );
-        const debts = d.obligations.filter((o) => o.ledgerId === id);
+        const debts = l.deleted
+          ? []
+          : d.obligations.filter((o) => o.ledgerId === id);
         const balances = simplified
           ? simplifyBalances(debts, l.currency)
           : debts
@@ -1536,60 +1896,91 @@ export function GroupScreen() {
               return totals;
             }, new Map<string, number>()),
         ];
-        const name = (id: string) =>
-          l.members.find((m) => m.id === id)?.name ?? "Member";
+        const name = (id: string) => personName(d, id);
+        const visual = groupStyle(l.groupId);
+        const narrow = width / Math.max(1, fontScale) < 400;
         const currentMember = l.members.find(
           (member) => member.id === d.account.id,
         );
         const canManageMembers =
           currentMember?.role === "OWNER" || currentMember?.role === "ADMIN";
         const visibleMembers = l.members.filter((member) =>
-          member.name.toLowerCase().includes(memberSearch.trim().toLowerCase()),
+          name(member.id)
+            .toLowerCase()
+            .includes(memberSearch.trim().toLowerCase()),
         );
         return (
           <YStack gap={16} paddingBottom={88} minHeight={620}>
             <YStack
-              gap={12}
-              padding={16}
-              borderRadius={20}
-              backgroundColor={c.soft}
+              gap={14}
+              padding={18}
+              borderRadius={24}
+              backgroundColor={c.card}
             >
-              <XStack gap={width < 360 ? 8 : 12} alignItems="center">
-                <Icon name="groups" size={32} color="#7770A4" />
-                <YStack flex={1} minWidth={72} gap={5} alignItems="flex-start">
-                  <Heading>{l.name}</Heading>
-                  <Label muted size={12}>
-                    {l.description} · {l.currency}
-                  </Label>
-                </YStack>
-                <Pressable
-                  onPress={() => setMembersOpen(true)}
+              <XStack gap={12} alignItems="center">
+                <View
                   style={{
-                    borderRadius: 13,
-                    backgroundColor: c.card,
-                    paddingHorizontal: width < 360 ? 8 : 11,
-                    paddingVertical: 9,
-                    flexDirection: "row",
-                    gap: 6,
+                    width: 48,
+                    height: 48,
+                    borderRadius: 16,
+                    backgroundColor: visual.background,
                     alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
-                  <Icon name="groups" size={15} color="#7770A4" />
-                  <Label bold size={12}>
-                    {width < 360
-                      ? l.members.length
-                      : `${l.members.length} members`}
+                  <Icon name={visual.icon} size={22} color="#555269" />
+                </View>
+                <YStack flex={1} minWidth={0} gap={5} alignItems="flex-start">
+                  <Heading size={23}>{l.name}</Heading>
+                  <Label muted size={12}>
+                    {l.description &&
+                    l.description.trim() !== "A little better, together."
+                      ? `${l.description} · `
+                      : ""}
+                    {l.currency}
                   </Label>
+                </YStack>
+              </XStack>
+              <XStack gap={8} alignItems="center">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="View group members"
+                  onPress={() => setMembersOpen(true)}
+                  style={{
+                    flex: 1,
+                    minHeight: 52,
+                    borderRadius: 16,
+                    backgroundColor: c.mint,
+                    paddingHorizontal: 13,
+                    paddingVertical: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 9,
+                  }}
+                >
+                  <Icon name="groups" size={18} color={c.primary} />
+                  <YStack flex={1} minWidth={0} gap={1}>
+                    <Label bold size={13}>
+                      Members
+                    </Label>
+                    <Label muted size={11}>
+                      {l.members.length}{" "}
+                      {l.members.length === 1 ? "person" : "people"} in this
+                      group
+                    </Label>
+                  </YStack>
+                  <Icon name="chevron" size={15} color={c.muted} />
                 </Pressable>
                 {currentMember?.role === "OWNER" && !l.deleted && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Delete ${l.name}`}
+                  <Button
+                    secondary
+                    compact
+                    icon="trash"
                     onPress={() => setDeleteGroupOpen(true)}
-                    style={{ padding: 9 }}
+                    style={{ minHeight: 52, paddingHorizontal: 12 }}
                   >
-                    <Icon name="trash" size={17} color={c.muted} />
-                  </Pressable>
+                    Delete
+                  </Button>
                 )}
               </XStack>
             </YStack>
@@ -1622,15 +2013,34 @@ export function GroupScreen() {
             </XStack>
             {view === "records" ? (
               <YStack gap={8}>
-                <XStack justifyContent="space-between" alignItems="center">
-                  <Heading size={19}>All activity</Heading>
-                  <Button
-                    secondary
-                    compact
-                    onPress={() => router.push(`/group/${id}/changes` as any)}
-                  >
-                    Group changes
-                  </Button>
+                <XStack
+                  justifyContent="space-between"
+                  alignItems="center"
+                  gap={8}
+                  flexWrap="wrap"
+                >
+                  <Heading size={19} flexShrink={1}>
+                    All activity
+                  </Heading>
+                  <XStack gap={6} flexWrap="wrap" alignItems="center">
+                    <IconButton
+                      name="sync"
+                      label="Refresh group transactions"
+                      disabled={refreshing}
+                      onPress={async () => {
+                        action.setError("");
+                        const result = await refresh();
+                        if (result.error) action.setError(result.error.message);
+                      }}
+                    />
+                    <Button
+                      secondary
+                      compact
+                      onPress={() => router.push(`/group/${id}/changes` as any)}
+                    >
+                      Group changes
+                    </Button>
+                  </XStack>
                 </XStack>
                 {d.transactions
                   .filter((t) => t.ledgerId === id)
@@ -1639,6 +2049,7 @@ export function GroupScreen() {
                       key={t.id}
                       data={d}
                       transaction={t}
+                      showCreator
                       last={index === rows.length - 1}
                     />
                   ))}
@@ -1650,8 +2061,13 @@ export function GroupScreen() {
                 )}
               </YStack>
             ) : (
-              <YStack gap={12} height={280}>
-                <XStack justifyContent="space-between" alignItems="center">
+              <YStack gap={12}>
+                <XStack
+                  justifyContent="space-between"
+                  alignItems="center"
+                  gap={8}
+                  flexWrap="wrap"
+                >
                   <Heading size={19}>Who owes who</Heading>
                   <Chip
                     selected={simplified}
@@ -1669,16 +2085,68 @@ export function GroupScreen() {
                   {balances.map((o, i) => (
                     <XStack
                       key={`${o.debtorId}-${o.creditorId}-${i}`}
-                      justifyContent="space-between"
+                      alignItems="center"
                       paddingVertical={12}
                       gap={12}
                       borderBottomWidth={i === balances.length - 1 ? 0 : 1}
                       borderBottomColor={c.line}
                     >
-                      <Label flex={1} size={13}>
-                        {name(o.debtorId)} → {name(o.creditorId)}
-                      </Label>
-                      <Label bold>{money(o.amountMinor, l.currency)}</Label>
+                      <YStack flex={1} minWidth={0} gap={2}>
+                        <Label size={13}>
+                          {name(o.debtorId)} → {name(o.creditorId)}
+                        </Label>
+                        {o.debtorId === d.account.id && (
+                          <Label muted size={11}>
+                            You can settle this balance
+                          </Label>
+                        )}
+                      </YStack>
+                      <YStack
+                        alignItems="flex-end"
+                        gap={6}
+                        flexShrink={1}
+                        maxWidth="53%"
+                      >
+                        <Label bold textAlign="right">
+                          {money(o.amountMinor, l.currency)}
+                        </Label>
+                        {o.debtorId === d.account.id && (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`Settle ${name(o.creditorId)}`}
+                            onPress={() =>
+                              router.push({
+                                pathname: "/settle",
+                                params: {
+                                  view: "pay",
+                                  ledger: id,
+                                  creditor: o.creditorId,
+                                  original: simplified ? undefined : "1",
+                                  amount: String(
+                                    o.amountMinor /
+                                      10 ** currencyDigits(l.currency),
+                                  ),
+                                },
+                              })
+                            }
+                            style={({ pressed }) => ({
+                              minHeight: 44,
+                              borderRadius: 17,
+                              paddingHorizontal: 12,
+                              backgroundColor: c.soft,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 5,
+                              opacity: pressed ? 0.82 : 1,
+                            })}
+                          >
+                            <Label bold size={12} color={c.primary}>
+                              Settle
+                            </Label>
+                            <Icon name="arrow" size={14} color={c.primary} />
+                          </Pressable>
+                        )}
+                      </YStack>
                     </XStack>
                   ))}
                   {!balances.length && (
@@ -1695,10 +2163,20 @@ export function GroupScreen() {
                         <XStack
                           key={memberId}
                           justifyContent="space-between"
+                          gap={8}
                           paddingVertical={8}
                         >
-                          <Label>{name(memberId)}</Label>
-                          <Label bold>{money(amountMinor, l.currency)}</Label>
+                          <Label flex={1} minWidth={0}>
+                            {name(memberId)}
+                          </Label>
+                          <Label
+                            bold
+                            flexShrink={1}
+                            maxWidth="48%"
+                            textAlign="right"
+                          >
+                            {money(amountMinor, l.currency)}
+                          </Label>
                         </XStack>
                       ))}
                     </YStack>
@@ -1717,7 +2195,8 @@ export function GroupScreen() {
                   position: "absolute",
                   right: 2,
                   bottom: 4,
-                  height: 54,
+                  minHeight: 54,
+                  maxWidth: narrow ? "85%" : undefined,
                   paddingHorizontal: 18,
                   borderRadius: 18,
                   backgroundColor: "#59458F",
@@ -1731,7 +2210,7 @@ export function GroupScreen() {
                 }}
               >
                 <Icon name="plus" color="#FFFFFF" size={20} />
-                <Label color="#FFFFFF" bold>
+                <Label color="#FFFFFF" bold flexShrink={1}>
                   Add transaction
                 </Label>
               </Pressable>
@@ -1822,9 +2301,9 @@ export function GroupScreen() {
                           gap={10}
                           paddingVertical={9}
                         >
-                          <Avatar name={m.name} avatar={m.avatar} />
-                          <YStack flex={1}>
-                            <Label bold>{m.name}</Label>
+                          <Avatar name={name(m.id)} avatar={m.avatar} />
+                          <YStack flex={1} minWidth={0}>
+                            <Label bold>{name(m.id)}</Label>
                             <Label muted size={10}>
                               {m.role.toLowerCase()}
                             </Label>
@@ -1839,7 +2318,10 @@ export function GroupScreen() {
                                 disabled={action.busy}
                                 onPress={() => {
                                   setMembersOpen(false);
-                                  setRemoveMember({ id: m.id, name: m.name });
+                                  setRemoveMember({
+                                    id: m.id,
+                                    name: name(m.id),
+                                  });
                                 }}
                               >
                                 Remove
@@ -2017,20 +2499,15 @@ export function GroupChangesScreen() {
             </YStack>
             <XStack gap={10} flexWrap="wrap">
               <YStack flex={1} minWidth={150}>
-                <Field
+                <DatePicker
                   label="From"
-                  placeholder="YYYY-MM-DD"
                   value={from}
-                  onChangeText={setFrom}
+                  onChange={setFrom}
+                  clearable
                 />
               </YStack>
               <YStack flex={1} minWidth={150}>
-                <Field
-                  label="To"
-                  placeholder="YYYY-MM-DD"
-                  value={to}
-                  onChangeText={setTo}
-                />
+                <DatePicker label="To" value={to} onChange={setTo} clearable />
               </YStack>
             </XStack>
             <YStack gap={0}>

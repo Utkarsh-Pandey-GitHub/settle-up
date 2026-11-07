@@ -19,10 +19,11 @@ import {
   splitExpense,
   obligations,
   applyRepayment,
+  applySimplifiedRepayment,
   periodRange,
 } from "@settleup/domain";
 import { analytics } from "@settleup/domain/src/analytics";
-import { demoDashboard } from "@settleup/domain/src/fixtures";
+import { demoDashboard, ids } from "@settleup/domain/src/fixtures";
 import { DEMO, getTokenSession, replaceTokenSession } from "./session";
 export const uuid = () => Crypto.randomUUID();
 
@@ -128,23 +129,33 @@ async function enqueueMutation(
   body?: unknown,
   method = "POST",
 ) {
+  await changeQueue(accountId, async (queue) => {
+    queue.push({
+      id: uuid(),
+      accountId,
+      path,
+      method,
+      body,
+      createdAt: new Date().toISOString(),
+    });
+    return queue;
+  });
+}
+async function changeQueue(
+  accountId: string,
+  update: (queue: QueuedMutation[]) => Promise<QueuedMutation[]>,
+) {
   const previous = queueChanges.get(accountId) ?? Promise.resolve();
   const change = previous
     .catch(() => {})
     .then(async () => {
-      const queue = await queuedMutations(accountId);
-      queue.push({
-        id: uuid(),
-        accountId,
-        path,
-        method,
-        body,
-        createdAt: new Date().toISOString(),
-      });
-      await AsyncStorage.setItem(
-        mutationQueueKey(accountId),
-        JSON.stringify(queue),
-      );
+      const queue = await update(await queuedMutations(accountId));
+      if (queue.length)
+        await AsyncStorage.setItem(
+          mutationQueueKey(accountId),
+          JSON.stringify(queue),
+        );
+      else await AsyncStorage.removeItem(mutationQueueKey(accountId));
     })
     .finally(() => {
       if (queueChanges.get(accountId) === change)
@@ -164,11 +175,11 @@ export async function syncPendingMutations(accountId: string) {
 }
 const queueSyncs = new Map<string, Promise<number | null>>();
 async function drainPendingMutations(accountId: string) {
+  await queueChanges.get(accountId);
   const queue = await queuedMutations(accountId);
   if (!queue.length) return null;
-  const remaining: QueuedMutation[] = [];
-  for (let index = 0; index < queue.length; index++) {
-    const item = queue[index];
+  const processed = new Set<string>();
+  for (const item of queue) {
     try {
       await request(item.path, {
         accountId: item.accountId,
@@ -176,20 +187,18 @@ async function drainPendingMutations(accountId: string) {
         method: item.method,
       });
     } catch (error) {
-      if (retryable(error)) {
-        remaining.push(...queue.slice(index));
-        break;
-      }
+      if (retryable(error)) break;
       // Invalid/conflicting queued work must not permanently block newer work.
     }
+    processed.add(item.id);
   }
-  if (remaining.length)
-    await AsyncStorage.setItem(
-      mutationQueueKey(accountId),
-      JSON.stringify(remaining),
-    );
-  else await AsyncStorage.removeItem(mutationQueueKey(accountId));
-  return remaining.length;
+  let remaining = 0;
+  await changeQueue(accountId, async (latest) => {
+    const pending = latest.filter((item) => !processed.has(item.id));
+    remaining = pending.length;
+    return pending;
+  });
+  return remaining;
 }
 async function queueWhenOffline<T>(
   accountId: string,
@@ -328,7 +337,7 @@ export async function request<T>(
   if (!response.ok)
     throw new DomainError(
       result.code ?? "NETWORK",
-      result.message ?? "Unable to complete your request.",
+      `${result.message ?? "Unable to complete your request."}${path === "/bill/extract" && /^[a-zA-Z0-9-]{6,80}$/.test(String(result.requestId ?? "")) ? ` Reference: ${result.requestId}` : ""}`,
       response.status,
     );
   return result;
@@ -351,11 +360,189 @@ export interface AppRepository {
     input: CreateShare,
   ): Promise<{ id: string; url: string; expiresAt: string }>;
 }
+function expenseAllocations(input: CreateTransaction) {
+  return input.type === "SHARED_EXPENSE"
+    ? splitExpense(input.amountMinor, input.participants, input.splitMethod)
+    : [];
+}
+function expenseWeights(input: CreateTransaction) {
+  return Object.fromEntries(
+    input.participants.flatMap(({ userId, value }) =>
+      value === undefined ? [] : [[userId, value]],
+    ),
+  );
+}
+function touchLedger(dashboard: Dashboard, id?: string | null) {
+  const ledger = dashboard.ledgers.find((entry) => entry.id === id);
+  if (ledger) ledger.updatedAt = new Date().toISOString();
+}
+function applyDashboardRepayment(
+  dashboard: Dashboard,
+  input: CreateSettlement,
+) {
+  if (
+    input.ledgerId &&
+    !dashboard.ledgers.some(
+      (ledger) => ledger.id === input.ledgerId && !ledger.deleted,
+    )
+  )
+    throw new Error("This group is unavailable.");
+  const debts = dashboard.obligations.filter(
+    (debt) =>
+      (debt.ledgerId ?? null) === (input.ledgerId ?? null) &&
+      (!input.simplified ||
+        !!input.ledgerId ||
+        (debt.debtorId === input.debtorId &&
+          debt.creditorId === input.creditorId) ||
+        (debt.debtorId === input.creditorId &&
+          debt.creditorId === input.debtorId)),
+  );
+  const payments = (
+    input.simplified ? applySimplifiedRepayment : applyRepayment
+  )(debts, input.debtorId, input.creditorId, input.amountMinor, input.currency);
+  const paid = new Map(
+    payments.map((payment) => [payment.obligationId, payment.amountMinor]),
+  );
+  const affected = new Set<string>();
+  for (const debt of debts) {
+    const amount = paid.get(debt.id);
+    if (!amount) continue;
+    debt.remainingMinor -= amount;
+    if (debt.transactionId) affected.add(debt.transactionId);
+  }
+  for (const transaction of dashboard.transactions) {
+    if (
+      transaction.status === "PENDING_LOAN" &&
+      affected.has(transaction.id) &&
+      !debts.some(
+        (debt) =>
+          debt.transactionId === transaction.id && debt.remainingMinor > 0,
+      )
+    ) {
+      transaction.status = "SETTLED";
+      transaction.version++;
+    }
+  }
+  touchLedger(dashboard, input.ledgerId);
+  return payments;
+}
+function renameContact(dashboard: Dashboard, id: string, name: string) {
+  const contact = dashboard.savedContacts.find((entry) => entry.id === id);
+  if (contact) {
+    contact.profileName ??= contact.name;
+    contact.contactName = name;
+    contact.name = name;
+  }
+  for (const ledger of dashboard.ledgers) {
+    const member = ledger.members.find((entry) => entry.id === id);
+    if (member) {
+      member.profileName ??= contact?.profileName ?? member.name;
+      member.name = name;
+    }
+  }
+}
+function forgetContact(dashboard: Dashboard, id: string) {
+  dashboard.savedContacts = dashboard.savedContacts.filter(
+    (contact) => contact.id !== id,
+  );
+  for (const ledger of dashboard.ledgers) {
+    const member = ledger.members.find((entry) => entry.id === id);
+    if (member?.profileName) member.name = member.profileName;
+  }
+}
+function replaceSharedDebts(
+  dashboard: Dashboard,
+  transaction: Dashboard["transactions"][number],
+) {
+  dashboard.obligations = dashboard.obligations.filter(
+    (debt) => debt.transactionId !== transaction.id,
+  );
+  if (transaction.type !== "SHARED_EXPENSE") return;
+  dashboard.obligations.push(
+    ...obligations(
+      transaction.sourceId,
+      transaction.allocations,
+      transaction.currency,
+    ).map((debt) => ({
+      ...debt,
+      id: `local:${transaction.id}:${debt.debtorId}`,
+      transactionId: transaction.id,
+      ledgerId: transaction.ledgerId,
+    })),
+  );
+}
+function applyExpenseEdit(
+  dashboard: Dashboard,
+  transaction: Dashboard["transactions"][number],
+  input: CreateTransaction,
+) {
+  if (
+    dashboard.obligations.some(
+      (debt) =>
+        debt.transactionId === transaction.id &&
+        debt.remainingMinor < debt.amountMinor,
+    )
+  )
+    throw new Error("A transaction with repayments cannot be edited.");
+  if (
+    transaction.ledgerId &&
+    input.ledgerId &&
+    transaction.ledgerId !== input.ledgerId
+  )
+    throw new Error("This transaction must stay in its original group.");
+  const ledgerId = transaction.ledgerId ?? input.ledgerId;
+  const createdById = transaction.createdById ?? transaction.sourceId;
+  const sourceId =
+    input.type === "SHARED_EXPENSE"
+      ? (input.payerId ?? transaction.sourceId)
+      : createdById;
+  const hasLinkedDebts = dashboard.obligations.some(
+    (debt) => debt.transactionId === transaction.id,
+  );
+  const wasShared = transaction.type === "SHARED_EXPENSE";
+  Object.assign(transaction, {
+    ...input,
+    ledgerId,
+    sourceId,
+    createdById,
+    version: transaction.version + 1,
+    allocations: expenseAllocations(input),
+    splitWeights: expenseWeights(input),
+  });
+  if (hasLinkedDebts || !wasShared) replaceSharedDebts(dashboard, transaction);
+  touchLedger(dashboard, ledgerId);
+}
 const cache = new Map<string, Dashboard>();
 async function demoLoad(id: string) {
   if (!cache.has(id)) {
     const raw = await AsyncStorage.getItem(`settleup.demo.v1.${id}`);
-    cache.set(id, raw ? JSON.parse(raw) : demoDashboard(id));
+    const dashboard = (raw ? JSON.parse(raw) : demoDashboard(id)) as Dashboard;
+    const edgeCaseMarker = `settleup.demo.edge-cases.v1.${id}`;
+    if (id !== ids.studio && !(await AsyncStorage.getItem(edgeCaseMarker))) {
+      const seeded = demoDashboard(id);
+      const transactionIds = new Set(
+        dashboard.transactions.map((transaction) => transaction.id),
+      );
+      const obligationIds = new Set(
+        dashboard.obligations.map((obligation) => obligation.id),
+      );
+      dashboard.transactions.push(
+        ...seeded.transactions.filter(
+          (transaction) => !transactionIds.has(transaction.id),
+        ),
+      );
+      dashboard.obligations.push(
+        ...seeded.obligations.filter(
+          (obligation) => !obligationIds.has(obligation.id),
+        ),
+      );
+      await AsyncStorage.setItem(edgeCaseMarker, "1");
+      await AsyncStorage.setItem(
+        `settleup.demo.v1.${id}`,
+        JSON.stringify(dashboard),
+      );
+    }
+    cache.set(id, dashboard);
   }
   return cache.get(id)!;
 }
@@ -404,14 +591,28 @@ export class DemoRepository implements AppRepository {
     const ledger = input.ledgerId
       ? d.ledgers.find((l) => l.id === input.ledgerId)
       : null;
-    if (input.ledgerId && (!ledger || ledger.currency !== input.currency))
+    if (
+      input.ledgerId &&
+      (!ledger || ledger.deleted || ledger.currency !== input.currency)
+    )
       throw new Error("Choose an active ledger with this currency.");
+    const availablePeople = ledger?.members ?? d.savedContacts;
     if (
       input.participants.some(
-        (p) => !ledger?.members.some((m) => m.id === p.userId),
+        ({ userId }) =>
+          userId !== id &&
+          !availablePeople.some((person) => person.id === userId),
       )
     )
-      throw new Error("Choose ledger members.");
+      throw new Error(
+        ledger ? "Choose group members." : "Choose saved contacts.",
+      );
+    if (
+      input.payerId &&
+      input.payerId !== id &&
+      !input.participants.some(({ userId }) => userId === input.payerId)
+    )
+      throw new Error("Choose the creator or a participant as the payer.");
     const splits =
       input.type === "SHARED_EXPENSE"
         ? splitExpense(input.amountMinor, input.participants, input.splitMethod)
@@ -420,14 +621,16 @@ export class DemoRepository implements AppRepository {
     d.transactions.unshift({
       ...input,
       id: transactionId,
-      sourceId: id,
+      sourceId: input.payerId ?? id,
+      createdById: id,
+      splitWeights: expenseWeights(input),
       destinationId: input.type === "ADJUSTMENT" ? id : input.destinationId,
       allocations: splits,
       version: 1,
     });
     const debts =
       input.type === "SHARED_EXPENSE"
-        ? obligations(id, splits, input.currency)
+        ? obligations(input.payerId ?? id, splits, input.currency)
         : input.type === "LOAN"
           ? [
               {
@@ -442,6 +645,7 @@ export class DemoRepository implements AppRepository {
     const created = debts.map((debt) => ({
       ...debt,
       id: uuid(),
+      transactionId,
       ledgerId: input.ledgerId!,
     }));
     d.obligations.push(...created);
@@ -456,6 +660,7 @@ export class DemoRepository implements AppRepository {
       ledgerId: input.ledgerId,
     });
     requestKeys.set(key, hash);
+    touchLedger(d, input.ledgerId);
     await save(id, d);
     return { id: transactionId };
   }
@@ -471,17 +676,7 @@ export class DemoRepository implements AppRepository {
       return;
     }
     const d = await demoLoad(id);
-    const payments = applyRepayment(
-      d.obligations.filter((o) => o.ledgerId === input.ledgerId),
-      input.debtorId,
-      input.creditorId,
-      input.amountMinor,
-      input.currency,
-    );
-    payments.forEach((p) => {
-      d.obligations.find((o) => o.id === p.obligationId)!.remainingMinor -=
-        p.amountMinor;
-    });
+    const payments = applyDashboardRepayment(d, input);
     const txid = uuid();
     originalDebts.set(
       txid,
@@ -539,6 +734,27 @@ export class DemoRepository implements AppRepository {
   }
   async deleteTransactions(id: string, ids: string[]) {
     const d = await demoLoad(id);
+    const selected = new Set(ids);
+    if (
+      d.transactions.some(
+        (t) =>
+          selected.has(t.id) &&
+          (t.type === "SETTLEMENT" || t.type === "LOAN_REPAYMENT"),
+      )
+    )
+      throw new Error("Repayments cannot be deleted.");
+    if (
+      d.obligations.some(
+        (debt) =>
+          debt.transactionId &&
+          selected.has(debt.transactionId) &&
+          debt.remainingMinor < debt.amountMinor,
+      )
+    )
+      throw new Error("A transaction with repayments cannot be deleted.");
+    d.obligations = d.obligations.filter(
+      (debt) => !debt.transactionId || !selected.has(debt.transactionId),
+    );
     d.transactions = d.transactions.filter((t) => !ids.includes(t.id));
     await save(id, d);
   }
@@ -612,20 +828,7 @@ export class DemoRepository implements AppRepository {
       );
       if (!transaction) throw new Error("Transaction unavailable.");
       const input = body.transaction as CreateTransaction;
-      Object.assign(transaction, {
-        ...input,
-        id: transaction.id,
-        sourceId: transaction.sourceId,
-        version: transaction.version + 1,
-        allocations:
-          input.type === "SHARED_EXPENSE"
-            ? splitExpense(
-                input.amountMinor,
-                input.participants,
-                input.splitMethod,
-              )
-            : [],
-      });
+      applyExpenseEdit(d, transaction, input);
       d.activity.unshift({
         id: uuid(),
         ledgerId: transaction.ledgerId,
@@ -640,6 +843,7 @@ export class DemoRepository implements AppRepository {
         );
         const saved = existing ?? { ...contact, id: uuid(), verified: false };
         if (!existing) d.savedContacts.push(saved);
+        else renameContact(d, saved.id, contact.name);
         selected.add(saved.id);
       }
       const groupId = uuid();
@@ -647,7 +851,8 @@ export class DemoRepository implements AppRepository {
         id: groupId,
         groupId,
         name: body.name,
-        description: body.description,
+        description: body.description ?? "",
+        updatedAt: new Date().toISOString(),
         currency: body.currency,
         members: [
           { id, name: d.account.name, role: "OWNER" },
@@ -685,16 +890,10 @@ export class DemoRepository implements AppRepository {
       }
     } else if (path.match(/^\/contacts\/[^/]+$/) && method === "DELETE") {
       const contactId = path.split("/")[2];
-      d.savedContacts = d.savedContacts.filter(
-        (contact) => contact.id !== contactId,
-      );
+      forgetContact(d, contactId);
     } else if (path.match(/^\/contacts\/[^/]+$/) && method === "PATCH") {
       const contactId = path.split("/")[2];
-      const contact = d.savedContacts.find((entry) => entry.id === contactId);
-      if (contact) {
-        if (contact.verified) contact.contactName = body.name;
-        else contact.name = body.name;
-      }
+      renameContact(d, contactId, body.name);
     } else if (path === "/tags")
       d.tags.push({ id: uuid(), ...body, archived: false });
     else if (path.startsWith("/tags/")) {
@@ -834,13 +1033,19 @@ class ApiRepository implements AppRepository {
                 body.splitMethod,
               )
             : [];
-        dashboard.transactions.unshift({
+        const transaction = {
           ...body,
           id: body.idempotencyKey,
-          sourceId: accountId,
+          sourceId: body.payerId ?? accountId,
+          createdById: accountId,
           version: 1,
           allocations,
-        });
+          splitWeights: expenseWeights(body),
+        };
+        dashboard.transactions.unshift(transaction);
+        if (body.type === "SHARED_EXPENSE")
+          replaceSharedDebts(dashboard, transaction);
+        touchLedger(dashboard, body.ledgerId);
       },
       () => queueWhenOffline(accountId, "/transactions", body),
     );
@@ -849,25 +1054,11 @@ class ApiRepository implements AppRepository {
     return optimisticDashboardMutation(
       accountId,
       (dashboard) => {
-        let payments: ReturnType<typeof applyRepayment> = [];
         try {
-          payments = applyRepayment(
-            dashboard.obligations.filter(
-              (item) => item.ledgerId === body.ledgerId,
-            ),
-            body.debtorId,
-            body.creditorId,
-            body.amountMinor,
-            body.currency,
-          );
+          applyDashboardRepayment(dashboard, body);
         } catch {
           // The server remains authoritative when the cached balance is stale.
-        }
-        for (const payment of payments) {
-          const debt = dashboard.obligations.find(
-            (item) => item.id === payment.obligationId,
-          );
-          if (debt) debt.remainingMinor -= payment.amountMinor;
+          return;
         }
         dashboard.transactions.unshift({
           id: body.idempotencyKey,
@@ -918,6 +1109,11 @@ class ApiRepository implements AppRepository {
       accountId,
       (dashboard) => {
         const selected = new Set(ids);
+        for (const entry of dashboard.transactions)
+          if (selected.has(entry.id)) touchLedger(dashboard, entry.ledgerId);
+        dashboard.obligations = dashboard.obligations.filter(
+          (entry) => !entry.transactionId || !selected.has(entry.transactionId),
+        );
         dashboard.transactions = dashboard.transactions.filter(
           (entry) => !selected.has(entry.id),
         );
@@ -971,20 +1167,7 @@ function extraDashboardUpdate(
       );
       if (!transaction) return;
       const input = body.transaction as CreateTransaction;
-      Object.assign(transaction, {
-        ...input,
-        id: transaction.id,
-        sourceId: transaction.sourceId,
-        version: transaction.version + 1,
-        allocations:
-          input.type === "SHARED_EXPENSE"
-            ? splitExpense(
-                input.amountMinor,
-                input.participants,
-                input.splitMethod,
-              )
-            : [],
-      });
+      applyExpenseEdit(dashboard, transaction, input);
     };
   if (path === "/transactions/assign-group")
     return (dashboard: Dashboard) => {
@@ -1037,6 +1220,7 @@ function extraDashboardUpdate(
             verified: false,
           } as Dashboard["savedContacts"][number]);
         if (!existing) dashboard.savedContacts.push(saved);
+        else renameContact(dashboard, saved.id, contact.name);
         selected.add(saved.id);
       }
       const localId = `local:${uuid()}`;
@@ -1045,6 +1229,7 @@ function extraDashboardUpdate(
         groupId: localId,
         name: body.name,
         description: body.description ?? "",
+        updatedAt: new Date().toISOString(),
         currency: body.currency,
         members: [
           {
@@ -1088,13 +1273,15 @@ function extraDashboardUpdate(
             const existing = dashboard.savedContacts.find(
               (entry) => entry.phone === contact.phone,
             );
-            if (existing)
+            if (existing) {
+              renameContact(dashboard, existing.id, contact.name);
               return {
                 id: existing.id,
                 name: existing.name,
                 avatar: existing.avatar,
                 role: "MEMBER",
               };
+            }
             const saved = {
               ...contact,
               id: `local:${contact.phone}`,
@@ -1108,6 +1295,7 @@ function extraDashboardUpdate(
       for (const member of members)
         if (!ledger.members.some((entry) => entry.id === member.id))
           ledger.members.push(member);
+      touchLedger(dashboard, ledger.id);
     };
   if (memberMatch?.[2] && method === "DELETE")
     return (dashboard: Dashboard) => {
@@ -1121,6 +1309,7 @@ function extraDashboardUpdate(
       ledger.members = ledger.members.filter(
         (entry) => entry.id !== memberMatch[2],
       );
+      touchLedger(dashboard, ledger.id);
       dashboard.activity.unshift({
         id: `local:${uuid()}`,
         ledgerId: ledger.id,
@@ -1138,27 +1327,10 @@ function extraDashboardUpdate(
     };
   const contactMatch = path.match(/^\/contacts\/([^/]+)$/);
   if (contactMatch && method === "DELETE")
-    return (dashboard: Dashboard) => {
-      dashboard.savedContacts = dashboard.savedContacts.filter(
-        (contact) => contact.id !== contactMatch[1],
-      );
-    };
+    return (dashboard: Dashboard) => forgetContact(dashboard, contactMatch[1]);
   if (contactMatch && method === "PATCH")
-    return (dashboard: Dashboard) => {
-      const contact = dashboard.savedContacts.find(
-        (entry) => entry.id === contactMatch[1],
-      );
-      if (contact) {
-        if (contact.verified) contact.contactName = body.name;
-        else contact.name = body.name;
-      }
-      for (const ledger of dashboard.ledgers) {
-        const member = ledger.members.find(
-          (entry) => entry.id === contactMatch[1],
-        );
-        if (member) member.name = body.name;
-      }
-    };
+    return (dashboard: Dashboard) =>
+      renameContact(dashboard, contactMatch[1], body.name);
   if (path === "/tags" && method === "POST")
     return (dashboard: Dashboard) =>
       dashboard.tags.push({

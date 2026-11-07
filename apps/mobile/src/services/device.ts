@@ -465,26 +465,20 @@ const upiBridge =
   Platform.OS === "android"
     ? requireOptionalNativeModule<UpiPaymentNative>("UpiPayment")
     : null;
-let lastPaymentLaunch: { uri: string; at: number } | undefined;
 export const paymentLauncher = {
   async ensureAvailable(uri: string) {
     const safe = parseUpi(uri);
     if (Platform.OS === "web")
       throw new Error("Open a UPI app from an Android or iOS device.");
+    // Android package visibility can make canOpenURL return false even when the
+    // system chooser can hand the intent to an installed payment app.
+    if (Platform.OS === "android" && upiBridge) return safe.uri;
     if (!(await Linking.canOpenURL(safe.uri)))
       throw new Error("No UPI payment app is available on this phone.");
     return safe.uri;
   },
   async open(uri: string): Promise<UpiLaunchResult> {
     const safeUri = await this.ensureAvailable(uri);
-    if (
-      lastPaymentLaunch?.uri === safeUri &&
-      Date.now() - lastPaymentLaunch.at < 15000
-    )
-      throw new Error(
-        "The UPI app is already opening. Return here before trying again.",
-      );
-    lastPaymentLaunch = { uri: safeUri, at: Date.now() };
     if (upiBridge) return upiBridge.open(safeUri);
     await Linking.openURL(safeUri);
     return { status: "UNKNOWN" };

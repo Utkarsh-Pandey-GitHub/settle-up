@@ -1,4 +1,4 @@
-import { DomainError, parseMoney } from "@settleup/domain";
+import { DomainError, MAX_MONEY, minor, parseMoney } from "@settleup/domain";
 
 export const BILL_EXTRACTION_SYSTEM_PROMPT = `You are SettleUp's document-vision extraction engine, optimized first for day-to-day consumer bills. Inspect the supplied image pixels and layout directly. Never use outside knowledge to fill obscured text, and never silently guess a digit, merchant, tax, quantity, or total.
 
@@ -31,6 +31,40 @@ export function billVisionModels(configured?: string) {
   ] as string[];
 }
 
+export function parseBillVisionResponse(body: string) {
+  let providerResult: any;
+  try {
+    providerResult = JSON.parse(body);
+  } catch {
+    throw new DomainError(
+      "BILL_AI_PROVIDER_RESPONSE",
+      "The bill reader returned an invalid response. Please try again shortly.",
+      502,
+    );
+  }
+  const rawContent = providerResult?.choices?.[0]?.message?.content;
+  const content = Array.isArray(rawContent)
+    ? rawContent.map((part: any) => part?.text || "").join("")
+    : rawContent;
+  if (typeof content !== "string" || !content.trim())
+    throw new DomainError(
+      "BILL_AI_EMPTY_RESPONSE",
+      "The bill reader returned no details. Try again or enter the items manually.",
+      502,
+    );
+  try {
+    return JSON.parse(
+      content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""),
+    );
+  } catch {
+    throw new DomainError(
+      "BILL_AI_RESULT",
+      "The bill result was incomplete. Please try a clearer photo.",
+      502,
+    );
+  }
+}
+
 type FlatLine = { name: string; quantity: number; amountMinor: number };
 
 const taxKinds = new Set(["CGST", "SGST", "UTGST", "IGST", "CESS", "VAT"]);
@@ -44,7 +78,7 @@ export function normalizeBillExtraction(raw: any, currency: string) {
     : [];
   const amountMinor = (value: unknown) => {
     if (value === null || value === undefined || value === "") return undefined;
-    const cleaned = String(value).replace(/[^0-9.-]/g, "");
+    const cleaned = String(value).trim().replace(/,/g, "");
     if (!cleaned || !/^-?\d+(?:\.\d+)?$/.test(cleaned)) return undefined;
     try {
       const negative = cleaned.startsWith("-");
@@ -62,22 +96,33 @@ export function normalizeBillExtraction(raw: any, currency: string) {
       .slice(0, 120);
     if (!name) continue;
     const quantityValue = Number(item?.quantity);
-    const quantity =
+    const quantityInThousandths =
       Number.isFinite(quantityValue) && quantityValue > 0
-        ? Math.min(quantityValue, 1_000_000)
-        : 1;
+        ? Math.max(1, Math.round(Math.min(quantityValue, 1_000_000) * 1000))
+        : 1000;
+    const quantity = quantityInThousandths / 1000;
     const unitPrice = amountMinor(item?.unitPrice);
+    const calculated =
+      unitPrice === undefined
+        ? undefined
+        : Math.sign(unitPrice) *
+          Number(
+            (BigInt(Math.abs(unitPrice)) * BigInt(quantityInThousandths) +
+              500n) /
+              1000n,
+          );
     let lineAmount = amountMinor(item?.lineAmount ?? item?.amount);
-    if (lineAmount === undefined && unitPrice !== undefined)
-      lineAmount = Math.round(unitPrice * quantity);
+    if (
+      lineAmount === undefined &&
+      calculated !== undefined &&
+      Math.abs(calculated) <= MAX_MONEY
+    )
+      lineAmount = calculated;
     if (lineAmount === undefined) {
       warnings.push(`${name}: amount could not be read.`);
       continue;
     }
-    if (
-      unitPrice !== undefined &&
-      Math.abs(Math.round(unitPrice * quantity) - lineAmount) > 1
-    )
+    if (calculated !== undefined && Math.abs(calculated - lineAmount) > 1)
       warnings.push(
         `${name}: printed line amount does not match quantity × rate.`,
       );
@@ -100,7 +145,7 @@ export function normalizeBillExtraction(raw: any, currency: string) {
     if (!label || amount === undefined || amount === 0) continue;
     if (["DISCOUNT", "COUPON", "REFUND"].includes(kind))
       amount = -Math.abs(amount);
-    else if (kind !== "ROUNDING") amount = Math.abs(amount);
+    else if (kind !== "ROUNDING" && kind !== "OTHER") amount = Math.abs(amount);
     const rate =
       adjustment?.rate === null || adjustment?.rate === undefined
         ? Number.NaN
@@ -158,7 +203,12 @@ export function normalizeBillExtraction(raw: any, currency: string) {
   let lineTotal = items.reduce((sum, item) => sum + item.amountMinor, 0);
   if (detectedTotal !== undefined && lineTotal !== detectedTotal) {
     const difference = detectedTotal - lineTotal;
-    const smallRounding = Math.abs(difference) <= 100;
+    if (Math.abs(difference) > MAX_MONEY)
+      throw new DomainError(
+        "BILL_AI_RESULT",
+        "The extracted items are outside the supported amount range.",
+      );
+    const smallRounding = Math.abs(difference) <= 1;
     items.push({
       name: smallRounding
         ? "Rounding adjustment"
@@ -207,7 +257,7 @@ export function normalizeBillExtraction(raw: any, currency: string) {
     subtotalMinor: amountMinor(totals?.subtotal),
     taxableValueMinor: amountMinor(totals?.taxableValue),
     totalTaxMinor: amountMinor(totals?.totalTax),
-    totalMinor: detectedTotal ?? lineTotal,
+    totalMinor: minor(detectedTotal ?? lineTotal),
     confidence:
       Number.isFinite(confidence) && confidence >= 0 && confidence <= 1
         ? confidence
