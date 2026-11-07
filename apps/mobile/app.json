@@ -2,8 +2,11 @@
   "expo": {
     "name": "SettleUp",
     "slug": "settleup",
-    "scheme": ["settleup", "app.settleup.mobile"],
-    "version": "1.0.21",
+    "scheme": [
+      "settleup",
+      "app.settleup.mobile"
+    ],
+    "version": "1.0.22",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -41,7 +44,7 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.WRITE_CONTACTS"
       ],
-      "versionCode": 21
+      "versionCode": 22
     },
     "web": {
       "bundler": "metro",
