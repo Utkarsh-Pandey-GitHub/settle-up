@@ -18,6 +18,12 @@ import {
 
 const FocusContext = createContext<((field: TextInput) => void) | null>(null);
 
+function keyboardScreenY() {
+  return Platform.OS !== "web" && typeof Keyboard.metrics === "function"
+    ? Keyboard.metrics()?.screenY
+    : undefined;
+}
+
 export function useKeyboardAwareField() {
   const reveal = useContext(FocusContext);
   const ref = useRef<TextInput>(null);
@@ -50,7 +56,7 @@ export function KeyboardAwareScreen({
   const scrollRef = useRef<ScrollView>(null);
   const focused = useRef<TextInput | null>(null);
   const scrollY = useRef(0);
-  const keyboardTop = useRef(Keyboard.metrics()?.screenY);
+  const keyboardTop = useRef(keyboardScreenY());
   const frame = useRef<number | null>(null);
   const [overlap, setOverlap] = useState(0);
 
@@ -103,7 +109,7 @@ export function KeyboardAwareScreen({
   const focus = useCallback(
     (input: TextInput) => {
       focused.current = input;
-      keyboardTop.current = Keyboard.metrics()?.screenY ?? keyboardTop.current;
+      keyboardTop.current = keyboardScreenY() ?? keyboardTop.current;
       reveal();
     },
     [reveal],

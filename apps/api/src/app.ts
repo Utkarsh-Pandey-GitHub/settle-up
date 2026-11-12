@@ -18,12 +18,7 @@ import {
   shareSchema,
   goalSchema,
 } from "@settleup/contracts";
-import {
-  DomainError,
-  normalizePhone,
-  SMS_TTL_MS,
-  parseUpi,
-} from "@settleup/domain";
+import { DomainError, normalizePhone, SMS_TTL_MS } from "@settleup/domain";
 import { analytics } from "@settleup/domain/src/analytics";
 import { AuthService, validateConfig } from "./auth/service";
 import { FinanceService, PrismaDashboardRepository } from "./finance/service";
@@ -940,6 +935,209 @@ export function createApp() {
       return { added: memberIds.size, members: addedMembers };
     });
   });
+  app.post("/groups/:id/invites", async (req) => {
+    const { userId } = await actor(req);
+    const groupId = pathId(req);
+    const membership = await db.groupMember.findUnique({
+      where: { groupId_userId: { groupId, userId } },
+      include: { group: true },
+    });
+    if (!membership || membership.leftAt)
+      throw new DomainError("FORBIDDEN", "You are not in this group.", 403);
+    if (membership.group.deletedAt)
+      throw new DomainError(
+        "GROUP_DELETED",
+        "This deleted group is read-only.",
+        409,
+      );
+    const token = randomBytes(18).toString("base64url");
+    const expiresAt = new Date(Date.now() + 7 * 86400000);
+    await db.groupInvite.create({
+      data: {
+        groupId,
+        createdById: userId,
+        tokenDigest: digest(token),
+        expiresAt,
+      },
+    });
+    return { token, expiresAt, appUrl: `settleup:///join-group/${token}` };
+  });
+  app.post("/group-invites/:token/join", async (req) => {
+    const { userId } = await actor(req);
+    const token = z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{24}$/)
+      .parse((req.params as { token: string }).token);
+    return atomic(async (tx) => {
+      const invite = await tx.groupInvite.findUnique({
+        where: { tokenDigest: digest(token) },
+        include: { group: true },
+      });
+      if (
+        !invite ||
+        invite.revokedAt ||
+        invite.expiresAt <= new Date() ||
+        invite.group.deletedAt
+      )
+        throw new DomainError(
+          "NOT_FOUND",
+          "This group invite has expired or is unavailable.",
+          404,
+        );
+      const existing = await tx.groupMember.findUnique({
+        where: { groupId_userId: { groupId: invite.groupId, userId } },
+      });
+      const ledger = await tx.ledger.findFirstOrThrow({
+        where: { groupId: invite.groupId },
+        orderBy: { createdAt: "asc" },
+      });
+      if (existing && !existing.leftAt)
+        return {
+          groupId: invite.groupId,
+          ledgerId: ledger.id,
+          alreadyMember: true,
+        };
+      const activeCount = await tx.groupMember.count({
+        where: { groupId: invite.groupId, leftAt: null },
+      });
+      if (activeCount >= 100)
+        throw new DomainError("GROUP", "This group is full.", 409);
+      if (
+        await tx.userBlock.findFirst({
+          where: {
+            OR: [
+              { blockerId: userId, blockedId: invite.createdById },
+              { blockerId: invite.createdById, blockedId: userId },
+            ],
+          },
+        })
+      )
+        throw new DomainError("FORBIDDEN", "This invite is unavailable.", 403);
+      await tx.groupMember.upsert({
+        where: { groupId_userId: { groupId: invite.groupId, userId } },
+        create: { groupId: invite.groupId, userId, role: "MEMBER" },
+        update: { leftAt: null, role: "MEMBER" },
+      });
+      const ledgers = await tx.ledger.findMany({
+        where: { groupId: invite.groupId },
+        select: { id: true },
+      });
+      for (const item of ledgers) {
+        await tx.ledgerMember.upsert({
+          where: { ledgerId_userId: { ledgerId: item.id, userId } },
+          create: { ledgerId: item.id, userId, role: "MEMBER" },
+          update: { leftAt: null, role: "MEMBER" },
+        });
+        await audit(
+          tx,
+          userId,
+          userId,
+          "GROUP_MEMBER_JOINED",
+          { groupId: invite.groupId },
+          item.id,
+          "A member joined through an invite link",
+          userId,
+        );
+      }
+      return {
+        groupId: invite.groupId,
+        ledgerId: ledger.id,
+        alreadyMember: false,
+      };
+    });
+  });
+  app.get("/g/:token", async (req, reply) => {
+    const token = z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{24}$/)
+      .parse((req.params as { token: string }).token);
+    const invite = await db.groupInvite.findUnique({
+      where: { tokenDigest: digest(token) },
+      include: { group: true },
+    });
+    if (
+      !invite ||
+      invite.revokedAt ||
+      invite.expiresAt <= new Date() ||
+      invite.group.deletedAt
+    )
+      return reply
+        .code(404)
+        .type("text/plain")
+        .send("This group invite has expired or is unavailable.");
+    reply.header("Cache-Control", "no-store");
+    const safeName = invite.group.name
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/"/g, "&quot;");
+    return reply
+      .type("text/html")
+      .send(
+        `<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join ${safeName}</title><style>body{margin:0;background:#f5f4f7;color:#211d29;font:16px/1.55 system-ui;display:grid;place-items:center;min-height:100dvh}main{box-sizing:border-box;background:#fff;border-radius:28px;padding:32px;width:min(92%,480px);box-shadow:0 18px 60px #211d2912}h1{line-height:1.2}a{display:block;text-align:center;border-radius:14px;padding:14px;background:#6652a3;color:white;text-decoration:none;font-weight:700}.hint{font-size:14px;color:#716b7b}</style><body><main><p class="hint">SettleUp group invite</p><h1>Join ${safeName}</h1><p>Open SettleUp to join this group and start sharing expenses.</p><p><a href="settleup:///join-group/${token}">Join group</a></p><p class="hint">This invite expires in seven days.</p></main></body></html>`,
+      );
+  });
+  app.post("/groups/:id/leave", async (req) => {
+    const { userId } = await actor(req);
+    const groupId = pathId(req);
+    return atomic(async (tx) => {
+      const membership = await tx.groupMember.findUnique({
+        where: { groupId_userId: { groupId, userId } },
+        include: { group: true },
+      });
+      if (!membership || membership.leftAt)
+        throw new DomainError(
+          "NOT_FOUND",
+          "Group membership unavailable.",
+          404,
+        );
+      if (membership.role === "OWNER")
+        throw new DomainError(
+          "OWNER",
+          "The owner must delete the group or transfer ownership before leaving.",
+          409,
+        );
+      const ledgers = await tx.ledger.findMany({
+        where: { groupId },
+        select: { id: true },
+      });
+      const ledgerIds = ledgers.map((item) => item.id);
+      const outstanding = await tx.obligation.count({
+        where: {
+          ledgerId: { in: ledgerIds },
+          remainingMinor: { gt: 0 },
+          OR: [{ debtorId: userId }, { creditorId: userId }],
+          transaction: { deletedAt: null },
+        },
+      });
+      if (outstanding)
+        throw new DomainError(
+          "OUTSTANDING_BALANCE",
+          "Settle your group balances before leaving.",
+          409,
+        );
+      const leftAt = new Date();
+      await tx.groupMember.update({
+        where: { groupId_userId: { groupId, userId } },
+        data: { leftAt },
+      });
+      await tx.ledgerMember.updateMany({
+        where: { ledgerId: { in: ledgerIds }, userId, leftAt: null },
+        data: { leftAt },
+      });
+      for (const item of ledgers)
+        await audit(
+          tx,
+          userId,
+          userId,
+          "GROUP_MEMBER_LEFT",
+          { groupId },
+          item.id,
+          "A member left the group",
+          userId,
+        );
+      return { ok: true };
+    });
+  });
   app.delete("/groups/:id/members/:memberId", async (req) => {
     const { userId } = await actor(req);
     const groupId = pathId(req);
@@ -1144,6 +1342,7 @@ export function createApp() {
         await tx.goal.create({
           data: {
             ...fields,
+            active: fields.active ?? true,
             start: new Date(b.start),
             end: new Date(b.end),
             ownerId: userId,
@@ -1156,6 +1355,53 @@ export function createApp() {
           },
         }),
       );
+    });
+  });
+  app.patch("/goals/:id", async (req) => {
+    const { userId } = await actor(req);
+    const goalId = pathId(req);
+    const activeOnly = z
+      .object({ active: z.boolean() })
+      .strict()
+      .safeParse(req.body);
+    if (activeOnly.success) {
+      const result = await db.goal.updateMany({
+        where: { id: goalId, ownerId: userId },
+        data: activeOnly.data,
+      });
+      if (!result.count)
+        throw new DomainError("NOT_FOUND", "Goal unavailable.", 404);
+      return { ok: true };
+    }
+    const b = goalSchema.parse(req.body);
+    return atomic(async (tx) => {
+      for (const id of b.ledgerIds) await requireMember(tx, id, userId);
+      if (
+        (await tx.tag.count({
+          where: { id: { in: b.tagIds }, ownerId: userId },
+        })) !== new Set(b.tagIds).size
+      )
+        throw new DomainError("SCOPE", "Use your own tags.");
+      const { tagIds, ledgerIds, ...fields } = b;
+      const result = await tx.goal.updateMany({
+        where: { id: goalId, ownerId: userId },
+        data: {
+          ...fields,
+          active: fields.active ?? true,
+          start: new Date(b.start),
+          end: new Date(b.end),
+          notifiedThresholds: [],
+        },
+      });
+      if (!result.count)
+        throw new DomainError("NOT_FOUND", "Goal unavailable.", 404);
+      await tx.goalScope.deleteMany({ where: { goalId } });
+      const scopes = [
+        ...tagIds.map((tagId) => ({ goalId, tagId })),
+        ...ledgerIds.map((ledgerId) => ({ goalId, ledgerId })),
+      ];
+      if (scopes.length) await tx.goalScope.createMany({ data: scopes });
+      return { ok: true };
     });
   });
   app.delete("/goals/:id", async (req) => {
@@ -1192,128 +1438,6 @@ export function createApp() {
       select: { fingerprint: true, expiresAt: true },
     }),
   );
-  app.post("/payment-links", async (req) => {
-    const { userId } = await actor(req);
-    const b = z
-      .object({
-        upiId: z.string().trim().max(193),
-        amountMinor: z.number().int().positive().max(100000000),
-        payeeName: z.string().trim().min(1).max(100),
-      })
-      .parse(req.body);
-    const params = new URLSearchParams({
-      pa: b.upiId,
-      pn: b.payeeName,
-      am: (b.amountMinor / 100).toFixed(2),
-      cu: "INR",
-      // A stable reference avoids PSP apps treating repeated intent handling
-      // as a new payment. UPI references are limited to 35 digits.
-      tr: `${Date.now()}${BigInt(`0x${randomBytes(8).toString("hex")}`).toString()}`.slice(
-        0,
-        35,
-      ),
-    });
-    const payment = parseUpi(`upi://pay?${params}`);
-    const token = randomBytes(18).toString("base64url");
-    const expiresAt = new Date(Date.now() + 7 * 86400000);
-    await db.paymentLink.create({
-      data: {
-        tokenDigest: digest(token),
-        ownerId: userId,
-        uri: payment.uri,
-        expiresAt,
-      },
-    });
-    return {
-      id: digest(token),
-      token,
-      expiresAt,
-      appUrl: `settleup:///pay/${token}`,
-    };
-  });
-  app.get("/payment-links", async (req) => {
-    const { userId } = await actor(req);
-    const links = await db.paymentLink.findMany({
-      where: { ownerId: userId },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    });
-    return links.flatMap((link) => {
-      try {
-        const payment = parseUpi(link.uri);
-        return [
-          {
-            id: link.tokenDigest,
-            payeeName: payment.payeeName,
-            upiId: payment.payeeAddress,
-            amountMinor: payment.amountMinor,
-            createdAt: link.createdAt,
-            expiresAt: link.expiresAt,
-            revokedAt: link.revokedAt,
-          },
-        ];
-      } catch {
-        // A malformed legacy link should not make the whole collection fail.
-        return [];
-      }
-    });
-  });
-  app.delete("/payment-links/:id", async (req) => {
-    const { userId } = await actor(req);
-    const id = z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .parse((req.params as { id: string }).id);
-    const updated = await db.paymentLink.updateMany({
-      where: { tokenDigest: id, ownerId: userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    if (!updated.count)
-      throw new DomainError("NOT_FOUND", "Payment link unavailable.", 404);
-    return { ok: true };
-  });
-  app.get("/payment-links/:token", async (req, reply) => {
-    await actor(req);
-    const token = z
-      .string()
-      .regex(/^[A-Za-z0-9_-]{24}$/)
-      .parse((req.params as { token: string }).token);
-    const link = await db.paymentLink.findUnique({
-      where: { tokenDigest: digest(token) },
-    });
-    if (!link || link.revokedAt || link.expiresAt <= new Date())
-      throw new DomainError(
-        "NOT_FOUND",
-        "This payment link has expired or is unavailable.",
-        404,
-      );
-    reply.header("Cache-Control", "no-store");
-    return { ...parseUpi(link.uri), expiresAt: link.expiresAt };
-  });
-  app.get("/p/:token", async (req, reply) => {
-    const token = z
-      .string()
-      .regex(/^[A-Za-z0-9_-]{24}$/)
-      .parse((req.params as { token: string }).token);
-    const link = await db.paymentLink.findUnique({
-      where: { tokenDigest: digest(token) },
-    });
-    if (!link || link.revokedAt || link.expiresAt <= new Date())
-      return reply
-        .code(404)
-        .type("text/plain")
-        .send("This payment link has expired or is unavailable.");
-    reply.header("Cache-Control", "no-store");
-    const installUrl = process.env.APP_INSTALL_URL;
-    const install = installUrl?.startsWith("https://")
-      ? `<p><a class="secondary" href="${installUrl.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")}">Install SettleUp</a></p>`
-      : "<p class=hint>Need the app? Ask the sender for the SettleUp installation link, then return here.</p>";
-    return reply
-      .type("text/html")
-      .send(
-        `<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SettleUp payment request</title><style>body{margin:0;background:#f7f7f2;color:#303a38;font:16px/1.6 system-ui;display:grid;place-items:center;min-height:100dvh}main{box-sizing:border-box;background:#fff;border:1px solid #e2e6df;border-radius:28px;padding:32px;width:min(92%,480px);box-shadow:0 18px 60px #303a380a}h1{line-height:1.2;font-size:30px}a{display:block;text-align:center;border-radius:14px;padding:14px;background:#3b5e55;color:white;text-decoration:none;font-weight:600}.secondary{background:#edf2ee;color:#3b5e55}.hint{font-size:14px;color:#66716b}</style><body><main><h1>A payment request for you</h1><p>Install SettleUp, then open this link on your phone to review the payee and amount.</p><p><a href="settleup:///pay/${token}">Open in SettleUp</a></p>${install}<p class="hint">Already installed? If the button does not open the app, copy this link and use “Open a payment link” in SettleUp.</p></main></body></html>`,
-      );
-  });
   app.post("/shares", async (req) =>
     sharing.create((await actor(req)).userId, shareSchema.parse(req.body)),
   );
@@ -1527,7 +1651,6 @@ export function createApp() {
       await tx.tag.deleteMany({ where: { ownerId: userId } });
       await tx.sharedAnalyticsLink.deleteMany({ where: { ownerId: userId } });
       await tx.smsImportRecord.deleteMany({ where: { ownerId: userId } });
-      await tx.paymentLink.deleteMany({ where: { ownerId: userId } });
       await tx.notificationJob.deleteMany({ where: { userId } });
       await tx.notificationPreference.deleteMany({ where: { userId } });
       await tx.contactPreference.deleteMany({ where: { ownerId: userId } });

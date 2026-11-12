@@ -147,6 +147,22 @@ export const shareSchema = z
     showDescriptions: z.boolean().default(false),
     recipientPhone: z.string().max(30).optional(),
     expiresInHours: z.number().int().min(1).max(168).default(24),
+    comparisonRanges: z
+      .array(
+        z
+          .object({
+            label: z.string().trim().min(1).max(60),
+            start: z.string().datetime(),
+            end: z.string().datetime(),
+          })
+          .refine(
+            (range) => Date.parse(range.end) > Date.parse(range.start),
+            "Comparison end must follow start",
+          ),
+      )
+      .max(5)
+      .default([]),
+    includeGoals: z.boolean().default(false),
   })
   .refine(
     (s) => Date.parse(s.end) > Date.parse(s.start),
@@ -157,6 +173,10 @@ export const goalSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
     amountMinor: amountSchema,
+    dailyLimitMinor: amountSchema.nullable().optional(),
+    weeklyLimitMinor: amountSchema.nullable().optional(),
+    monthlyLimitMinor: amountSchema.nullable().optional(),
+    active: z.boolean().optional(),
     currency: currencySchema,
     start: z.string().datetime(),
     end: z.string().datetime(),

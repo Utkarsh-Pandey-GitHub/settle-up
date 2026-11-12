@@ -4,6 +4,7 @@ import {
   assertShareAccess,
   normalizePhone,
   DomainError,
+  goalCadenceLimits,
   periodRange,
 } from "@settleup/domain";
 import {
@@ -24,6 +25,8 @@ type ShareScope = Pick<
   | "tagIds"
   | "includeTransactions"
   | "showDescriptions"
+  | "comparisonRanges"
+  | "includeGoals"
 >;
 
 const currentScope = (scope: ShareScope) => ({
@@ -68,6 +71,35 @@ function livePayload(data: Dashboard, scope: ShareScope, expiresAt: string) {
         data.tags.find((tag) => tag.id === entry.id)?.name ?? "Uncategorized",
       amountMinor: entry.amountMinor,
     })),
+    comparisons: scope.comparisonRanges.map((range) => {
+      const comparison = analytics(data, {
+        start: range.start,
+        end: range.end,
+        currency: scope.currency,
+        ledgerIds: scope.ledgerIds,
+        tagIds: scope.tagIds,
+      });
+      return {
+        ...range,
+        spendingMinor: comparison.spendingMinor,
+        byDay: comparison.byDay,
+        categories: comparison.byTag.map((entry) => ({
+          name:
+            data.tags.find((tag) => tag.id === entry.id)?.name ??
+            "Uncategorized",
+          amountMinor: entry.amountMinor,
+        })),
+      };
+    }),
+    goals: scope.includeGoals
+      ? data.goals
+          .filter((goal) => goal.active !== false)
+          .map((goal) => ({
+            name: goal.name,
+            currency: goal.currency,
+            ...goalCadenceLimits(goal),
+          }))
+      : undefined,
     transactions: scope.includeTransactions
       ? filterTransactions(data, filter).map((transaction) => ({
           date: transaction.occurredAt,
@@ -102,6 +134,8 @@ export class SharingService {
       tagIds: input.tagIds,
       includeTransactions: input.includeTransactions,
       showDescriptions: input.showDescriptions,
+      comparisonRanges: input.comparisonRanges,
+      includeGoals: input.includeGoals,
     };
     const record = await atomic(async (tx) => {
       for (const id of input.ledgerIds) await requireMember(tx, id, userId);

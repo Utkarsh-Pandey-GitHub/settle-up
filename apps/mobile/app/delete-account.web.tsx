@@ -260,7 +260,7 @@ export default function DeleteAccountWeb() {
         <Bullet text="Authentication identifiers: registered phone association and linked Google identity." />
         <Bullet text="Sessions and notifications: refresh sessions, pending notification jobs, push token, and notification preferences." />
         <Bullet text="Personal-only financial data: transactions that are not shared with a group or another person, goals, tags, and related itemisation." />
-        <Bullet text="Private tools and temporary data: analytics snapshots and access history, payment links, bank-SMS decision records, contact aliases you created, and block preferences." />
+        <Bullet text="Private tools and temporary data: analytics snapshots and access history, bank-SMS decision records, contact aliases you created, and block preferences." />
 
         <Text style={styles.sectionHeading}>What Data is Retained & Why</Text>
         <Text style={styles.body}>

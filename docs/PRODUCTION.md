@@ -45,7 +45,7 @@ cd apps/mobile/android
 ./gradlew :app:bundleRelease
 ```
 
-The bundle is written to `apps/mobile/android/app/build/outputs/bundle/release/app-release.aab`. Upload it manually to Internal testing, complete App content and the store listing, and test authentication, Truecaller, Google sign-in, SMS review, bill vision, contacts, payment links, widgets, account deletion, and OTA delivery on the Play-installed build. Before each later Play upload, update `expo.version` and `expo.android.versionCode` in `apps/mobile/app.json`. The tracked `with-release-version.js` plugin makes local Gradle builds read the version name, version code, and generated `expo_runtime_version` from that file. Do not manually maintain a runtime string in Android resources. EAS uses local versioning with automatic increments disabled.
+The bundle is written to `apps/mobile/android/app/build/outputs/bundle/release/app-release.aab`. Upload it manually to Internal testing, complete App content and the store listing, and test authentication, Truecaller, Google sign-in, SMS review, bill vision, contacts, widgets, account deletion, and OTA delivery on the Play-installed build. Before each later Play upload, update `expo.version` and `expo.android.versionCode` in `apps/mobile/app.json`. The tracked `with-release-version.js` plugin makes local Gradle builds read the version name, version code, and generated `expo_runtime_version` from that file. Do not manually maintain a runtime string in Android resources. EAS uses local versioning with automatic increments disabled.
 
 ### Play Console declarations
 

@@ -33,38 +33,38 @@ enum Role {
 }
 
 model User {
-  ledgerActivity   LedgerActivity[]
-  openedDisputes   Dispute[]                @relation("DisputeOpener")
-  resolvedDisputes Dispute[]                @relation("DisputeResolver")
-  notificationJobs NotificationJob[]
-  id               String                   @id @default(uuid()) @db.Uuid
-  createdAt        DateTime                 @default(now()) @db.Timestamptz
-  deletedAt        DateTime?                @db.Timestamptz
-  profile          UserProfile?
-  phone            PhoneIdentity?
-  google           GoogleIdentity?
-  sessions         DeviceSession[]
-  groupMembers     GroupMember[]
-  ledgerMembers    LedgerMember[]
-  transactions     Transaction[]            @relation("Source")
-  createdTransactions Transaction[]         @relation("Creator")
-  dashboardRevision DashboardRevision?
-  received         Transaction[]            @relation("Destination")
-  participants     TransactionParticipant[]
-  splits           ExpenseSplit[]
-  owed             Obligation[]             @relation("Debtor")
-  receivable       Obligation[]             @relation("Creditor")
-  tags             Tag[]
-  goals            Goal[]
-  imports          SmsImportRecord[]
-  paymentLinks     PaymentLink[]
-  links            SharedAnalyticsLink[]
-  notifications    NotificationPreference?
-  events           AuditEvent[]
-  blocks           UserBlock[]              @relation("Blocker")
-  blockedBy        UserBlock[]              @relation("Blocked")
-  contactPreferences ContactPreference[]    @relation("ContactOwner")
-  savedByPreferences ContactPreference[]    @relation("ContactTarget")
+  ledgerActivity      LedgerActivity[]
+  openedDisputes      Dispute[]                @relation("DisputeOpener")
+  resolvedDisputes    Dispute[]                @relation("DisputeResolver")
+  notificationJobs    NotificationJob[]
+  id                  String                   @id @default(uuid()) @db.Uuid
+  createdAt           DateTime                 @default(now()) @db.Timestamptz
+  deletedAt           DateTime?                @db.Timestamptz
+  profile             UserProfile?
+  phone               PhoneIdentity?
+  google              GoogleIdentity?
+  sessions            DeviceSession[]
+  groupMembers        GroupMember[]
+  ledgerMembers       LedgerMember[]
+  transactions        Transaction[]            @relation("Source")
+  createdTransactions Transaction[]            @relation("Creator")
+  dashboardRevision   DashboardRevision?
+  received            Transaction[]            @relation("Destination")
+  participants        TransactionParticipant[]
+  splits              ExpenseSplit[]
+  owed                Obligation[]             @relation("Debtor")
+  receivable          Obligation[]             @relation("Creditor")
+  tags                Tag[]
+  goals               Goal[]
+  imports             SmsImportRecord[]
+  links               SharedAnalyticsLink[]
+  notifications       NotificationPreference?
+  events              AuditEvent[]
+  blocks              UserBlock[]              @relation("Blocker")
+  blockedBy           UserBlock[]              @relation("Blocked")
+  contactPreferences  ContactPreference[]      @relation("ContactOwner")
+  savedByPreferences  ContactPreference[]      @relation("ContactTarget")
+  createdGroupInvites GroupInvite[]            @relation("GroupInviteCreator")
 }
 
 model UserProfile {
@@ -134,13 +134,13 @@ model UserBlock {
 // A private address-book label and visibility preference. The contact remains
 // a normal User; this row never changes the contact's verified profile name.
 model ContactPreference {
-  ownerId   String   @db.Uuid
-  owner     User     @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  contactId String   @db.Uuid
-  contact   User     @relation("ContactTarget", fields: [contactId], references: [id], onDelete: Cascade)
-  alias     String?  @db.VarChar(100)
+  ownerId   String    @db.Uuid
+  owner     User      @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  contactId String    @db.Uuid
+  contact   User      @relation("ContactTarget", fields: [contactId], references: [id], onDelete: Cascade)
+  alias     String?   @db.VarChar(100)
   hiddenAt  DateTime? @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  updatedAt DateTime  @updatedAt @db.Timestamptz
 
   @@id([ownerId, contactId])
   @@index([ownerId, hiddenAt])
@@ -154,8 +154,23 @@ model Group {
   deletedAt   DateTime?     @db.Timestamptz
   members     GroupMember[]
   ledgers     Ledger[]
+  invites     GroupInvite[]
 
   @@index([deletedAt])
+}
+
+model GroupInvite {
+  id          String    @id @default(uuid()) @db.Uuid
+  groupId     String    @db.Uuid
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdById String    @db.Uuid
+  createdBy   User      @relation("GroupInviteCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  tokenDigest String    @unique @db.VarChar(64)
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+  expiresAt   DateTime  @db.Timestamptz
+  revokedAt   DateTime? @db.Timestamptz
+
+  @@index([groupId, revokedAt, expiresAt])
 }
 
 model GroupMember {
@@ -360,6 +375,10 @@ model Goal {
   owner              User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name               String      @db.VarChar(100)
   amountMinor        BigInt
+  dailyLimitMinor    BigInt?
+  weeklyLimitMinor   BigInt?
+  monthlyLimitMinor  BigInt?
+  active             Boolean     @default(true)
   currency           String      @db.Char(3)
   period             String      @db.VarChar(10)
   start              DateTime    @db.Timestamptz
@@ -469,18 +488,4 @@ model TransactionItem {
   amountMinor   BigInt
 
   @@id([transactionId, position])
-}
-
-// An opaque, expiring app link. No bank account details or payment credentials.
-model PaymentLink {
-  tokenDigest String   @id @db.Char(64)
-  ownerId     String   @db.Uuid
-  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  uri         String   @db.VarChar(2048)
-  expiresAt   DateTime @db.Timestamptz
-  revokedAt   DateTime? @db.Timestamptz
-  createdAt   DateTime @default(now()) @db.Timestamptz
-
-  @@index([ownerId, createdAt])
-  @@index([expiresAt])
 }

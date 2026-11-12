@@ -18,8 +18,6 @@ const storage = {
   },
 };
 type State = {
-  pendingPayment: string | null;
-  setPendingPayment(token: string | null): Promise<void>;
   feedback: { id: number; accountId: string; message: string } | null;
   accounts: Account[];
   activeId: string | null;
@@ -42,14 +40,6 @@ export const useSession = create<State>((set, get) => ({
   ready: DEMO,
   dark: false,
   tourAccountId: null,
-  pendingPayment: null,
-  async setPendingPayment(token) {
-    if (token && !/^[A-Za-z0-9_-]{24}$/.test(token))
-      throw new Error("Invalid payment link.");
-    if (token) await storage.set("settleup.pending-payment", token);
-    else await storage.remove("settleup.pending-payment");
-    set({ pendingPayment: token });
-  },
   feedback: null,
   setDark: (dark) => set({ dark }),
   async hydrate() {
@@ -73,7 +63,6 @@ export const useSession = create<State>((set, get) => ({
         accounts: valid,
         activeId,
         tourAccountId: activeId && !toured ? activeId : null,
-        pendingPayment: await storage.get("settleup.pending-payment"),
       });
     } finally {
       set({ ready: true });

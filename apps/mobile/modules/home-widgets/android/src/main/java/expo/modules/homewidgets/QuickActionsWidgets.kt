@@ -10,7 +10,7 @@ private fun quickActions(context: Context): RemoteViews {
   views.setOnClickPendingIntent(R.id.action_qr, WidgetStore.launch(context, "scan"))
   views.setOnClickPendingIntent(R.id.action_bill, WidgetStore.launch(context, "add?bill=camera"))
   views.setOnClickPendingIntent(R.id.action_expense, WidgetStore.launch(context, "add"))
-  views.setOnClickPendingIntent(R.id.action_payment, WidgetStore.launch(context, "payment-links"))
+  views.setOnClickPendingIntent(R.id.action_payment, WidgetStore.launch(context, "groups"))
   return views
 }
 

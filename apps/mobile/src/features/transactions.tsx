@@ -6,6 +6,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Share,
   Switch,
   useWindowDimensions,
 } from "react-native";
@@ -24,7 +25,7 @@ import {
   type SplitMethod,
 } from "@settleup/domain";
 import { BillEditor, type BillPhoto, type BillLine } from "./bill";
-import { repository, uuid, extra } from "../data/repository";
+import { API_URL, repository, uuid, extra } from "../data/repository";
 import { personName } from "../data/people";
 import {
   outstandingByPerson,
@@ -175,7 +176,6 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     })) ?? [],
   );
   const [includeBill, setIncludeBill] = useState(true);
-  const [moreOptions, setMoreOptions] = useState(false);
   const [showShares, setShowShares] = useState(false);
   const [scanning, setScanning] = useState(false);
   const saving = useRef(false);
@@ -626,112 +626,83 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   )}
                 </YStack>
               )}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ expanded: moreOptions }}
-                onPress={() => setMoreOptions(!moreOptions)}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                  minHeight: 44,
-                }}
-              >
-                <Icon
-                  name={moreOptions ? "up" : "down"}
-                  size={16}
-                  color={c.primary}
-                />
-                <Label bold size={13} flex={1}>
-                  {moreOptions ? "Fewer options" : "More options"}
-                </Label>
-                {!moreOptions && (
-                  <Label muted size={11}>
-                    Tags, icon, note
-                  </Label>
-                )}
-              </Pressable>
-              {moreOptions && (
-                <YStack gap={10}>
-                  <XStack gap={8} alignItems="center">
-                    <ExpenseOption
-                      label="Tags"
-                      value={
-                        tagIds.length
-                          ? `${tagIds.length} selected`
-                          : "Choose tags"
-                      }
-                      icon="activity"
-                      tint={c.rose}
-                      onPress={() => setPicker("tags")}
-                    />
-                    <IconButton
-                      name="plus"
-                      label="Create a tag"
-                      onPress={() => setTagCreatorOpen(true)}
-                    />
-                  </XStack>
-                  <YStack gap={4}>
-                    <Label size={13} bold>
-                      Transaction icon
-                    </Label>
-                    <XStack gap={4} flexWrap="wrap">
-                      {(
-                        [
-                          "bag",
-                          "coffee",
-                          "car",
-                          "plane",
-                          "bolt",
-                          "wallet",
-                        ] as const
-                      ).map((name) => (
-                        <Pressable
-                          key={name}
-                          accessibilityRole="radio"
-                          accessibilityLabel={`${name} icon`}
-                          accessibilityState={{
-                            selected: transactionIcon === name,
-                          }}
-                          onPress={() => setTransactionIcon(name)}
-                          style={({ pressed }) => ({
-                            width: 44,
-                            height: 44,
-                            borderRadius: 12,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor:
-                              transactionIcon === name ? c.soft : "transparent",
-                            opacity: pressed ? 0.72 : 1,
-                          })}
-                        >
-                          <Icon
-                            name={name}
-                            size={20}
-                            color={
-                              transactionIcon === name ? c.primary : c.muted
-                            }
-                          />
-                        </Pressable>
-                      ))}
-                    </XStack>
-                  </YStack>
-                  <Controller
-                    control={control}
-                    name="notes"
-                    render={({ field }) => (
-                      <Field
-                        label="Note (optional)"
-                        multiline
-                        placeholder="Add a note"
-                        value={field.value}
-                        onChangeText={field.onChange}
-                        error={errors.notes?.message}
-                      />
-                    )}
+              <YStack gap={10}>
+                <XStack gap={8} alignItems="center">
+                  <ExpenseOption
+                    label="Tags"
+                    value={
+                      tagIds.length
+                        ? `${tagIds.length} selected`
+                        : "Choose tags"
+                    }
+                    icon="activity"
+                    tint={c.rose}
+                    onPress={() => setPicker("tags")}
                   />
+                  <IconButton
+                    name="plus"
+                    label="Create a tag"
+                    onPress={() => setTagCreatorOpen(true)}
+                  />
+                </XStack>
+                <YStack gap={4}>
+                  <Label size={13} bold>
+                    Transaction icon
+                  </Label>
+                  <XStack gap={4} flexWrap="wrap">
+                    {(
+                      [
+                        "bag",
+                        "coffee",
+                        "car",
+                        "plane",
+                        "bolt",
+                        "wallet",
+                      ] as const
+                    ).map((name) => (
+                      <Pressable
+                        key={name}
+                        accessibilityRole="radio"
+                        accessibilityLabel={`${name} icon`}
+                        accessibilityState={{
+                          selected: transactionIcon === name,
+                        }}
+                        onPress={() => setTransactionIcon(name)}
+                        style={({ pressed }) => ({
+                          width: 44,
+                          height: 44,
+                          borderRadius: 12,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor:
+                            transactionIcon === name ? c.soft : "transparent",
+                          opacity: pressed ? 0.72 : 1,
+                        })}
+                      >
+                        <Icon
+                          name={name}
+                          size={20}
+                          color={transactionIcon === name ? c.primary : c.muted}
+                        />
+                      </Pressable>
+                    ))}
+                  </XStack>
                 </YStack>
-              )}
+                <Controller
+                  control={control}
+                  name="notes"
+                  render={({ field }) => (
+                    <Field
+                      label="Note (optional)"
+                      multiline
+                      placeholder="Add a note"
+                      value={field.value}
+                      onChangeText={field.onChange}
+                      error={errors.notes?.message}
+                    />
+                  )}
+                />
+              </YStack>
               {!!action.error && (
                 <>
                   <PipFeedback
@@ -798,34 +769,37 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             multiple
             selectionIcon={null}
             footer={
-              <Button
-                secondary
-                compact
-                icon="plus"
-                onPress={() =>
-                  action.run(async () => {
-                    const picked = await chooseContact();
-                    if (!picked) return;
-                    const digits = picked.phone.replace(/\D/g, "").slice(-10);
-                    const saved = d.savedContacts.find(
-                      (contact) =>
-                        contact.phone?.replace(/\D/g, "").slice(-10) === digits,
-                    );
-                    if (!saved) {
-                      setPicker(null);
-                      setInfoDialog({
-                        title: "Save this contact first",
-                        detail:
-                          "Add this phone contact to Saved contacts, then choose them here.",
-                      });
-                      return;
-                    }
-                    addFriend(saved.id);
-                  }, "Contact selected")
-                }
-              >
-                Phone contacts
-              </Button>
+              ledger ? undefined : (
+                <Button
+                  secondary
+                  compact
+                  icon="plus"
+                  onPress={() =>
+                    action.run(async () => {
+                      const picked = await chooseContact();
+                      if (!picked) return;
+                      const digits = picked.phone.replace(/\D/g, "").slice(-10);
+                      const saved = d.savedContacts.find(
+                        (contact) =>
+                          contact.phone?.replace(/\D/g, "").slice(-10) ===
+                          digits,
+                      );
+                      if (!saved) {
+                        setPicker(null);
+                        setInfoDialog({
+                          title: "Save this contact first",
+                          detail:
+                            "Add this phone contact to Saved contacts, then choose them here.",
+                        });
+                        return;
+                      }
+                      addFriend(saved.id);
+                    }, "Contact selected")
+                  }
+                >
+                  Phone contacts
+                </Button>
+              )
             }
             onSelect={(id) =>
               selected.includes(id)
@@ -1033,7 +1007,7 @@ function ExpenseOption({
         <Label size={11} muted>
           {label}
         </Label>
-        <Label size={13} bold numberOfLines={2}>
+        <Label size={13} bold numberOfLines={1} ellipsizeMode="tail">
           {value}
         </Label>
       </YStack>
@@ -1845,7 +1819,7 @@ export function GroupScreen() {
     router = useRouter(),
     c = useColors(),
     action = useAction(),
-    { width, height, fontScale } = useWindowDimensions(),
+    { width, fontScale } = useWindowDimensions(),
     [simplified, setSimplified] = useState(false),
     [view, setView] = useState<"records" | "balances">("records"),
     [membersOpen, setMembersOpen] = useState(false),
@@ -1857,6 +1831,7 @@ export function GroupScreen() {
     [memberContactsOpen, setMemberContactsOpen] = useState(false),
     [memberSearch, setMemberSearch] = useState(""),
     [deleteGroupOpen, setDeleteGroupOpen] = useState(false),
+    [leaveGroupOpen, setLeaveGroupOpen] = useState(false),
     [removeMember, setRemoveMember] = useState<{
       id: string;
       name: string;
@@ -1899,6 +1874,7 @@ export function GroupScreen() {
         const name = (id: string) => personName(d, id);
         const visual = groupStyle(l.groupId);
         const narrow = width / Math.max(1, fontScale) < 400;
+        const shellInset = width >= 1050 ? 36 : width < 360 ? 14 : 20;
         const currentMember = l.members.find(
           (member) => member.id === d.account.id,
         );
@@ -1912,18 +1888,22 @@ export function GroupScreen() {
         return (
           <YStack gap={16} paddingBottom={88} minHeight={620}>
             <YStack
-              gap={14}
-              padding={18}
-              borderRadius={24}
-              backgroundColor={c.card}
+              gap={12}
+              position="relative"
+              marginHorizontal={-shellInset}
+              marginTop={-shellInset}
+              paddingHorizontal={shellInset}
+              paddingTop={16}
+              paddingBottom={14}
+              backgroundColor={visual.background}
             >
-              <XStack gap={12} alignItems="center">
+              <XStack gap={12} alignItems="center" paddingRight={68}>
                 <View
                   style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 16,
-                    backgroundColor: visual.background,
+                    width: 44,
+                    height: 44,
+                    borderRadius: 14,
+                    backgroundColor: `${c.card}A8`,
                     alignItems: "center",
                     justifyContent: "center",
                   }}
@@ -1941,47 +1921,67 @@ export function GroupScreen() {
                   </Label>
                 </YStack>
               </XStack>
-              <XStack gap={8} alignItems="center">
+              {!l.deleted && (
+                <XStack
+                  gap={2}
+                  alignItems="center"
+                  position="absolute"
+                  top={9}
+                  right={9}
+                >
+                  <IconButton
+                    name="link"
+                    label="Create group invite link"
+                    disabled={action.busy}
+                    borderless
+                    size={32}
+                    iconSize={15}
+                    onPress={() =>
+                      void action.run(async () => {
+                        const invite = await extra(
+                          d.account.id,
+                          `/groups/${l.groupId}/invites`,
+                          {},
+                        );
+                        const url = `${API_URL}/g/${invite.token}`;
+                        await Share.share({
+                          message: `Join ${l.name} on SettleUp: ${url}`,
+                        });
+                      }, "Invite link ready to share")
+                    }
+                  />
+                  <IconButton
+                    name="settings"
+                    label="Group settings"
+                    borderless
+                    size={32}
+                    iconSize={15}
+                    onPress={() => setMembersOpen(true)}
+                  />
+                </XStack>
+              )}
+              <XStack gap={8} alignItems="center" alignSelf="flex-start">
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="View group members"
                   onPress={() => setMembersOpen(true)}
                   style={{
-                    flex: 1,
-                    minHeight: 52,
-                    borderRadius: 16,
-                    backgroundColor: c.mint,
-                    paddingHorizontal: 13,
-                    paddingVertical: 8,
+                    minHeight: 36,
+                    borderRadius: 12,
+                    backgroundColor: `${c.card}B8`,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
                     flexDirection: "row",
                     alignItems: "center",
-                    gap: 9,
+                    gap: 7,
                   }}
                 >
-                  <Icon name="groups" size={18} color={c.primary} />
-                  <YStack flex={1} minWidth={0} gap={1}>
-                    <Label bold size={13}>
-                      Members
-                    </Label>
-                    <Label muted size={11}>
-                      {l.members.length}{" "}
-                      {l.members.length === 1 ? "person" : "people"} in this
-                      group
-                    </Label>
-                  </YStack>
-                  <Icon name="chevron" size={15} color={c.muted} />
+                  <Icon name="groups" size={15} color={c.primary} />
+                  <Label bold size={11}>
+                    {l.members.length}{" "}
+                    {l.members.length === 1 ? "member" : "members"}
+                  </Label>
                 </Pressable>
-                {currentMember?.role === "OWNER" && !l.deleted && (
-                  <Button
-                    secondary
-                    compact
-                    icon="trash"
-                    onPress={() => setDeleteGroupOpen(true)}
-                    style={{ minHeight: 52, paddingHorizontal: 12 }}
-                  >
-                    Delete
-                  </Button>
-                )}
               </XStack>
             </YStack>
             {l.deleted && (
@@ -2024,14 +2024,15 @@ export function GroupScreen() {
                   </Heading>
                   <XStack gap={6} flexWrap="wrap" alignItems="center">
                     <IconButton
-                      name="sync"
+                      name="refresh"
                       label="Refresh group transactions"
                       disabled={refreshing}
-                      onPress={async () => {
-                        action.setError("");
-                        const result = await refresh();
-                        if (result.error) action.setError(result.error.message);
-                      }}
+                      onPress={() =>
+                        void action.run(async () => {
+                          const result = await refresh();
+                          if (result.error) throw result.error;
+                        }, "Group activity is up to date")
+                      }
                     />
                     <Button
                       secondary
@@ -2050,6 +2051,7 @@ export function GroupScreen() {
                       data={d}
                       transaction={t}
                       showCreator
+                      previousOccurredAt={rows[index - 1]?.occurredAt}
                       last={index === rows.length - 1}
                     />
                   ))}
@@ -2226,33 +2228,44 @@ export function GroupScreen() {
                 style={{
                   flex: 1,
                   backgroundColor: "rgba(20,22,25,0.55)",
-                  justifyContent: "center",
-                  padding: 20,
+                  alignItems: "flex-end",
                 }}
               >
                 <Pressable
                   onPress={() => {}}
                   style={{
                     backgroundColor: c.card,
-                    borderRadius: 22,
-                    padding: 16,
-                    width: "100%",
-                    maxWidth: 520,
-                    alignSelf: "center",
-                    maxHeight: height - 48,
-                    height: Math.min(520, height - 48),
+                    borderTopLeftRadius: 24,
+                    borderBottomLeftRadius: 24,
+                    paddingHorizontal: 16,
+                    paddingTop: 30,
+                    paddingBottom: 20,
+                    width: Math.min(380, width * 0.9),
+                    height: "100%",
                   }}
                 >
-                  <YStack gap={14}>
+                  <YStack gap={14} flex={1}>
                     <XStack
                       justifyContent="space-between"
                       alignItems="center"
                       gap={8}
                       flexWrap="wrap"
                     >
-                      <Heading size={20}>Members</Heading>
-                      <XStack gap={7}>
-                        {canManageMembers && !l.deleted && (
+                      <YStack gap={2} flex={1} minWidth={0}>
+                        <Heading size={20}>Group settings</Heading>
+                        <Label muted size={11} numberOfLines={1}>
+                          {l.name}
+                        </Label>
+                      </YStack>
+                      <IconButton
+                        name="close"
+                        label="Close group settings"
+                        onPress={() => setMembersOpen(false)}
+                      />
+                    </XStack>
+                    {!l.deleted && (
+                      <XStack gap={8} flexWrap="wrap">
+                        {canManageMembers && (
                           <Button
                             compact
                             icon="plus"
@@ -2276,24 +2289,41 @@ export function GroupScreen() {
                               }
                             }}
                           >
-                            Add
+                            Add people
                           </Button>
                         )}
                         <Button
                           secondary
                           compact
-                          onPress={() => setMembersOpen(false)}
+                          icon="link"
+                          disabled={action.busy}
+                          onPress={() =>
+                            void action.run(async () => {
+                              const invite = await extra(
+                                d.account.id,
+                                `/groups/${l.groupId}/invites`,
+                                {},
+                              );
+                              await Share.share({
+                                message: `Join ${l.name} on SettleUp: ${API_URL}/g/${invite.token}`,
+                              });
+                            }, "Invite link ready to share")
+                          }
                         >
-                          Done
+                          Invite link
                         </Button>
                       </XStack>
-                    </XStack>
+                    )}
+                    <Heading size={15}>Members · {l.members.length}</Heading>
                     <SearchBar
                       value={memberSearch}
                       onChangeText={setMemberSearch}
                       placeholder="Search members"
                     />
-                    <ScrollView showsVerticalScrollIndicator={false}>
+                    <ScrollView
+                      showsVerticalScrollIndicator={false}
+                      style={{ flex: 1 }}
+                    >
                       {visibleMembers.map((m) => (
                         <XStack
                           key={m.id}
@@ -2330,6 +2360,31 @@ export function GroupScreen() {
                         </XStack>
                       ))}
                     </ScrollView>
+                    {!l.deleted && currentMember?.role !== "OWNER" && (
+                      <Button
+                        secondary
+                        icon="logout"
+                        onPress={() => {
+                          setMembersOpen(false);
+                          setLeaveGroupOpen(true);
+                        }}
+                      >
+                        Leave group
+                      </Button>
+                    )}
+                    {!l.deleted && currentMember?.role === "OWNER" && (
+                      <Button
+                        secondary
+                        icon="trash"
+                        onPress={() => {
+                          setMembersOpen(false);
+                          setDeleteGroupOpen(true);
+                        }}
+                        style={{ backgroundColor: c.rose }}
+                      >
+                        Delete group
+                      </Button>
+                    )}
                   </YStack>
                 </Pressable>
               </Pressable>
@@ -2368,6 +2423,36 @@ export function GroupScreen() {
                     `${selectedContacts.length} member${selectedContacts.length === 1 ? "" : "s"} added`,
                   );
               }}
+            />
+            <ActionDialog
+              visible={leaveGroupOpen}
+              icon="logout"
+              title="Leave this group?"
+              detail="You will lose access to the group. Settle any outstanding balance first."
+              onClose={() => setLeaveGroupOpen(false)}
+              actions={[
+                {
+                  label: "Cancel",
+                  secondary: true,
+                  onPress: () => setLeaveGroupOpen(false),
+                },
+                {
+                  label: "Leave group",
+                  destructive: true,
+                  loading: action.busy,
+                  onPress: () => {
+                    setLeaveGroupOpen(false);
+                    void action.run(async () => {
+                      await extra(
+                        d.account.id,
+                        `/groups/${l.groupId}/leave`,
+                        {},
+                      );
+                      router.replace("/groups");
+                    }, "You left the group");
+                  },
+                },
+              ]}
             />
             <ActionDialog
               visible={deleteGroupOpen}

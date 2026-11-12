@@ -16,7 +16,7 @@ class UpiPaymentModule : Module() {
       if (activity == null) {
         promise.reject("UPI_UNAVAILABLE", "Payment apps are unavailable right now.", null)
       } else if (parsed?.scheme != "upi" || parsed.host != "pay") {
-        promise.reject("UPI_INVALID", "Use a valid UPI payment link.", null)
+        promise.reject("UPI_INVALID", "Use a valid UPI URI.", null)
       } else if (UpiPaymentActivity.pending != null) {
         promise.reject("UPI_BUSY", "A payment app is already open.", null)
       } else {

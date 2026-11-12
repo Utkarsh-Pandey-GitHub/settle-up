@@ -50,6 +50,7 @@ export function createWidgetSnapshot(
     goals: data.goals
       .filter(
         (goal) =>
+          goal.active !== false &&
           goal.currency === data.account.currency &&
           Date.parse(goal.start) <= today.toMillis() &&
           Date.parse(goal.end) > today.toMillis(),

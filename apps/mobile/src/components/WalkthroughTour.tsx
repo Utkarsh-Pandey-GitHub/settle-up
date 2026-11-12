@@ -55,7 +55,7 @@ const steps = [
   {
     title: "Your top controls",
     detail:
-      "SettleUp identifies your home space. SMS lets you review bank debits. The link icon creates payment links. Your avatar switches accounts and leads to Settings.",
+      "SettleUp identifies your home space. SMS lets you review bank debits. Your avatar switches accounts and leads to Settings.",
   },
   {
     title: "Your five main destinations",
@@ -70,7 +70,7 @@ const steps = [
   {
     title: "Widgets for quick access",
     detail:
-      "Add SettleUp widgets from your phone’s home-screen widget picker. Quick actions opens QR scan, bill scan, expense, and payment links. Spending shows progress and goals at a glance.",
+      "Add SettleUp widgets from your phone’s home-screen widget picker. Quick actions opens QR scan, bill scan, expense, and groups. Spending shows progress and goals at a glance.",
   },
 ];
 
@@ -78,7 +78,6 @@ const pointers: { icon: IconName; text: string }[][] = [
   [
     { icon: "home", text: "SettleUp — your home space." },
     { icon: "sms", text: "SMS — review bank debits." },
-    { icon: "link", text: "Link — create or open payment links." },
     { icon: "groups", text: "Avatar — accounts and Settings." },
   ],
   [
@@ -102,7 +101,7 @@ const pointers: { icon: IconName; text: string }[][] = [
   [
     {
       icon: "wallet",
-      text: "Quick actions — QR, bill, expense, and payment links.",
+      text: "Quick actions — QR, bill, expense, and groups.",
     },
     { icon: "chart", text: "Spending — weekly or monthly progress and goals." },
   ],

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { XStack, YStack } from "tamagui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,8 +7,10 @@ import {
   money,
   periodRange,
   goalProgress,
+  goalCadenceLimits,
   type Period,
 } from "@settleup/domain";
+import { analytics } from "@settleup/domain/src/analytics";
 import { DataScreen, SectionTitle } from "./overview";
 import {
   Card,
@@ -30,97 +33,185 @@ import { Shell } from "../components/Shell";
 import { copyText } from "../../modules/home-widgets/client";
 import { GoalCreator } from "./goal-form";
 export function GoalsScreen() {
-  const [editing, setEditing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const action = useAction();
   return (
     <DataScreen>
       {(d) => (
-        <YStack gap={22}>
-          <XStack justifyContent="space-between" flexWrap="wrap" gap={12}>
-            <YStack>
-              <Heading>Room for what matters.</Heading>
+        <YStack gap={18}>
+          <XStack justifyContent="space-between" alignItems="center" gap={12}>
+            <YStack flex={1} gap={3}>
+              <Heading>Spending goals</Heading>
               <Label muted>
-                A spending plan, with a little breathing room.
+                Daily, weekly, and monthly limits in one place.
               </Label>
             </YStack>
-            <Button icon="plus" onPress={() => setEditing(!editing)}>
-              New goal
+            <Button icon="plus" compact onPress={() => setCreating(true)}>
+              Add
             </Button>
           </XStack>
-          {editing && (
+          {creating && (
             <Card>
               <GoalCreator
                 data={d}
-                onSaved={() => setEditing(false)}
-                onCancel={() => setEditing(false)}
+                onSaved={() => setCreating(false)}
+                onCancel={() => setCreating(false)}
               />
             </Card>
           )}
           {!!action.error && <Notice error>{action.error}</Notice>}
-          {d.goals.map((g) => {
-            const p = goalProgress(g.amountMinor, g.spentMinor, g.start, g.end);
-            return (
-              <Card key={g.id}>
-                <YStack gap={16}>
-                  <XStack justifyContent="space-between">
-                    <Heading size={20}>{g.name}</Heading>
-                    <Label
-                      color={p.status === "EXCEEDED" ? "#B42332" : "#218262"}
-                      size={12}
-                    >
-                      {p.status.toLowerCase()}
-                    </Label>
-                  </XStack>
-                  <Label bold size={27}>
-                    {money(g.spentMinor, g.currency)}{" "}
-                    <Label muted size={14}>
-                      of {money(g.amountMinor, g.currency)}
-                    </Label>
-                  </Label>
-                  <Progress
-                    value={p.percentage}
-                    color={p.percentage >= 100 ? "#D66169" : "#8252E3"}
-                  />
-                  <XStack justifyContent="space-between">
-                    <Label muted size={12}>
-                      {p.percentage}% used · {p.daysRemaining} days left
-                    </Label>
-                    <Label bold size={12}>
-                      {money(p.remaining, g.currency)} remaining
-                    </Label>
-                  </XStack>
-                  {p.projectedOverspend > 0 && (
-                    <Notice>
-                      At this pace, projected overspend is{" "}
-                      {money(p.projectedOverspend, g.currency)}. A small
-                      adjustment now can help.
-                    </Notice>
-                  )}
-                  <Label muted size={11}>
-                    Reminder thresholds: {g.thresholds.join("%, ")}%.
-                    Notifications require permission in Settings.
-                  </Label>
-                  <Button
-                    secondary
-                    onPress={() =>
-                      action.run(
-                        () =>
-                          extra(
-                            d.account.id,
-                            `/goals/${g.id}`,
-                            undefined,
-                            "DELETE",
-                          ),
-                        "Goal removed",
-                      )
-                    }
+          <YStack gap={8}>
+            {d.goals.map((g) => {
+              const expanded = selectedId === g.id;
+              const limits = goalCadenceLimits(g);
+              const cadence = (
+                [
+                  ["Daily", "DAY", limits.daily, limits.explicit.daily],
+                  ["Weekly", "WEEK", limits.weekly, limits.explicit.weekly],
+                  ["Monthly", "MONTH", limits.monthly, limits.explicit.monthly],
+                ] as const
+              ).map(([label, period, limit, explicit]) => ({
+                label,
+                limit,
+                explicit,
+                spent: analytics(d, {
+                  ...periodRange(period, "Asia/Kolkata"),
+                  currency: g.currency,
+                  tagIds: g.tagIds,
+                  ledgerIds: g.ledgerIds,
+                }).spendingMinor,
+              }));
+              const exceeded = cadence.some((item) => item.spent > item.limit);
+              return (
+                <Card key={g.id} style={{ padding: 12 }}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded }}
+                    onPress={() => {
+                      setEditingId(null);
+                      setSelectedId(expanded ? null : g.id);
+                    }}
+                    style={{ minHeight: 48, justifyContent: "center" }}
                   >
-                    Remove goal
-                  </Button>
-                </YStack>
-              </Card>
-            );
-          })}
+                    <XStack alignItems="center" gap={10}>
+                      <YStack flex={1} minWidth={0} gap={2}>
+                        <Label bold numberOfLines={1}>
+                          {g.name}
+                        </Label>
+                        <Label muted size={11} numberOfLines={1}>
+                          {g.active === false
+                            ? "Inactive"
+                            : exceeded
+                              ? "Limit exceeded"
+                              : "On track"}{" "}
+                          · {money(limits.monthly, g.currency)} monthly
+                        </Label>
+                      </YStack>
+                      <Icon name={expanded ? "up" : "down"} size={16} />
+                    </XStack>
+                  </Pressable>
+                  {expanded && (
+                    <YStack gap={12} paddingTop={12}>
+                      {editingId === g.id ? (
+                        <GoalCreator
+                          key={g.id}
+                          data={d}
+                          goal={g}
+                          onSaved={() => setEditingId(null)}
+                          onCancel={() => setEditingId(null)}
+                        />
+                      ) : (
+                        <>
+                          {cadence.map((item) => (
+                            <XStack
+                              key={item.label}
+                              justifyContent="space-between"
+                              gap={12}
+                              paddingVertical={5}
+                            >
+                              <Label muted size={12}>
+                                {item.label}{" "}
+                                {item.explicit ? "limit" : "derived"}
+                              </Label>
+                              <Label
+                                bold
+                                size={12}
+                                color={
+                                  item.spent > item.limit
+                                    ? "#B42332"
+                                    : undefined
+                                }
+                              >
+                                {money(item.spent, g.currency)} /{" "}
+                                {money(item.limit, g.currency)}
+                              </Label>
+                            </XStack>
+                          ))}
+                          <Label muted size={11}>
+                            Alerts at {g.thresholds.join("%, ")}%.
+                          </Label>
+                          <XStack gap={7} flexWrap="wrap">
+                            <Button
+                              secondary
+                              compact
+                              onPress={() => setEditingId(g.id)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              secondary
+                              compact
+                              onPress={() =>
+                                action.run(
+                                  () =>
+                                    extra(
+                                      d.account.id,
+                                      "/goals/" + g.id,
+                                      { active: g.active === false },
+                                      "PATCH",
+                                    ),
+                                  g.active === false
+                                    ? "Goal activated"
+                                    : "Goal paused",
+                                )
+                              }
+                            >
+                              {g.active === false ? "Activate" : "Pause"}
+                            </Button>
+                            <Button
+                              secondary
+                              compact
+                              onPress={() =>
+                                action.run(
+                                  () =>
+                                    extra(
+                                      d.account.id,
+                                      "/goals/" + g.id,
+                                      undefined,
+                                      "DELETE",
+                                    ),
+                                  "Goal removed",
+                                )
+                              }
+                            >
+                              Remove
+                            </Button>
+                          </XStack>
+                        </>
+                      )}
+                    </YStack>
+                  )}
+                </Card>
+              );
+            })}
+            {!d.goals.length && (
+              <Label muted>
+                No goals yet. Add one limit to derive the rest.
+              </Label>
+            )}
+          </YStack>
         </YStack>
       )}
     </DataScreen>
@@ -252,14 +343,35 @@ export function TagsScreen() {
   );
 }
 export function ShareScreen() {
+  const { analyticsConfig } = useLocalSearchParams<{
+    analyticsConfig?: string;
+  }>();
+  const preset = (() => {
+    try {
+      const value = analyticsConfig ? JSON.parse(analyticsConfig) : null;
+      return value &&
+        Array.isArray(value.ranges) &&
+        value.ranges.length > 0 &&
+        value.ranges.length <= 5
+        ? (value as {
+            ranges: { label: string; start: string; end: string }[];
+            tagIds?: string[];
+            ledgerIds?: string[];
+            includeGoals?: boolean;
+          })
+        : null;
+    } catch {
+      return null;
+    }
+  })();
   const [phone, setPhone] = useState(""),
     [privateLink, setPrivate] = useState(false),
     [details, setDetails] = useState(false),
     [descriptions, setDescriptions] = useState(false),
     [hours, setHours] = useState("24"),
     [period, setPeriod] = useState<Period>("MONTH"),
-    [ledgerIds, setLedgers] = useState<string[]>([]),
-    [tagIds, setTags] = useState<string[]>([]),
+    [ledgerIds, setLedgers] = useState<string[]>(() => preset?.ledgerIds ?? []),
+    [tagIds, setTags] = useState<string[]>(() => preset?.tagIds ?? []),
     [picker, setPicker] = useState<"period" | "groups" | "tags" | null>(null),
     [result, setResult] = useState<{
       id: string;
@@ -287,6 +399,14 @@ export function ShareScreen() {
             Give a parent, partner, or guardian a read-only view that refreshes
             when they open it. You choose the period, records, and expiry.
           </Label>
+          {preset && (
+            <Notice>
+              This snapshot includes {preset.ranges.length} analytics duration
+              {preset.ranges.length === 1 ? "" : "s"}
+              {preset.includeGoals ? ", goal lines" : ""}, and the selected
+              category breakdown.
+            </Notice>
+          )}
           <Card>
             <YStack gap={17}>
               <Label bold>Coverage period</Label>
@@ -385,10 +505,15 @@ export function ShareScreen() {
                     const previous = links.data ?? [];
                     query.setQueryData(shareKey, [optimistic, ...previous]);
                     try {
+                      const primary = preset?.ranges[0];
                       const created = await repository.share(d.account.id, {
-                        ...periodRange(period, "Asia/Kolkata"),
-                        period: period as
-                          "DAY" | "WEEK" | "MONTH" | "LAST_30" | "YEAR",
+                        ...(primary
+                          ? { start: primary.start, end: primary.end }
+                          : periodRange(period, "Asia/Kolkata")),
+                        period: primary
+                          ? undefined
+                          : (period as
+                              "DAY" | "WEEK" | "MONTH" | "LAST_30" | "YEAR"),
                         currency: d.account.currency,
                         ledgerIds,
                         tagIds,
@@ -396,6 +521,8 @@ export function ShareScreen() {
                         showDescriptions: descriptions,
                         recipientPhone: privateLink ? phone : undefined,
                         expiresInHours: Number(hours),
+                        comparisonRanges: preset?.ranges ?? [],
+                        includeGoals: preset?.includeGoals ?? false,
                       });
                       setResult(created);
                       query.setQueryData(shareKey, [
@@ -710,6 +837,69 @@ export function SharedScreen() {
                         {money(day.amountMinor, q.data.currency)}
                       </Label>
                     </XStack>
+                  ))}
+                </Card>
+              )}
+              {!!q.data.comparisons?.length && (
+                <Card>
+                  <SectionTitle title="Compared durations" />
+                  {q.data.comparisons.map((comparison: any) => (
+                    <YStack
+                      key={`${comparison.label}-${comparison.start}`}
+                      gap={8}
+                      paddingVertical={12}
+                    >
+                      <XStack justifyContent="space-between" gap={12}>
+                        <YStack flex={1}>
+                          <Label bold>{comparison.label}</Label>
+                          <Label muted size={11}>
+                            {new Date(comparison.start).toLocaleDateString()} –{" "}
+                            {new Date(comparison.end).toLocaleDateString()}
+                          </Label>
+                        </YStack>
+                        <Label bold>
+                          {money(comparison.spendingMinor, q.data.currency)}
+                        </Label>
+                      </XStack>
+                      <XStack gap={4} height={44} alignItems="flex-end">
+                        {comparison.byDay.map((day: any) => {
+                          const maximum = Math.max(
+                            1,
+                            ...comparison.byDay.map(
+                              (entry: any) => entry.amountMinor,
+                            ),
+                          );
+                          return (
+                            <View
+                              key={day.date}
+                              accessibilityLabel={`${day.date}: ${money(day.amountMinor, q.data.currency)}`}
+                              style={{
+                                flex: 1,
+                                minWidth: 3,
+                                height: `${Math.max(5, (day.amountMinor / maximum) * 100)}%`,
+                                borderRadius: 3,
+                                backgroundColor: "#7658B8",
+                              }}
+                            />
+                          );
+                        })}
+                      </XStack>
+                    </YStack>
+                  ))}
+                </Card>
+              )}
+              {!!q.data.goals?.length && (
+                <Card>
+                  <SectionTitle title="Active goal limits" />
+                  {q.data.goals.map((goal: any) => (
+                    <YStack key={goal.name} gap={6} paddingVertical={10}>
+                      <Label bold>{goal.name}</Label>
+                      <Label muted size={12}>
+                        Daily {money(goal.daily, goal.currency)} · Weekly{" "}
+                        {money(goal.weekly, goal.currency)} · Monthly{" "}
+                        {money(goal.monthly, goal.currency)}
+                      </Label>
+                    </YStack>
                   ))}
                 </Card>
               )}

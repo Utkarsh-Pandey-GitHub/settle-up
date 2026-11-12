@@ -32,7 +32,7 @@ class UpiPaymentActivity : ComponentActivity() {
     val value = intent.getStringExtra(EXTRA_URI)
     val uri = runCatching { Uri.parse(value) }.getOrNull()
     if (uri?.scheme != "upi" || uri.host != "pay") {
-      fail("UPI_INVALID", "Use a valid UPI payment link.")
+      fail("UPI_INVALID", "Use a valid UPI URI.")
       return
     }
     val paymentIntent = Intent(Intent.ACTION_VIEW, uri)

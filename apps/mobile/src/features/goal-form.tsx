@@ -1,26 +1,50 @@
 import React, { useState } from "react";
 import { XStack, YStack } from "tamagui";
-import type { Dashboard } from "@settleup/contracts";
-import { parseMoney, periodRange } from "@settleup/domain";
-import { repository } from "../data/repository";
+import type { Dashboard, GoalView } from "@settleup/contracts";
+import { currencyDigits, parseMoney, periodRange } from "@settleup/domain";
+import { extra, repository } from "../data/repository";
 import { useAction } from "../data/hooks";
 import { Button, Chip, Field, Label, Notice } from "../components/ui";
 
 export function GoalCreator({
   data,
+  goal,
   onSaved,
   onCancel,
 }: {
   data: Dashboard;
+  goal?: GoalView;
   onSaved(): void;
   onCancel(): void;
 }) {
-  const [name, setName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [period, setPeriod] = useState<"DAY" | "WEEK" | "MONTH" | "YEAR">(
-    "MONTH",
+  const amountInput = (value?: number | null) => {
+    if (value == null) return "";
+    const digits = currencyDigits(data.account.currency);
+    return (value / 10 ** digits).toFixed(digits).replace(/\.00$/, "");
+  };
+  const [name, setName] = useState(goal?.name ?? "");
+  const [daily, setDaily] = useState(
+    amountInput(
+      goal?.dailyLimitMinor ??
+        (goal?.period === "DAY" ? goal.amountMinor : null),
+    ),
   );
-  const [tags, setTags] = useState<string[]>([]);
+  const [weekly, setWeekly] = useState(
+    amountInput(
+      goal?.weeklyLimitMinor ??
+        (goal?.period === "WEEK" ? goal.amountMinor : null),
+    ),
+  );
+  const [monthly, setMonthly] = useState(
+    amountInput(
+      goal?.monthlyLimitMinor ??
+        (goal && !["DAY", "WEEK"].includes(goal.period)
+          ? goal.amountMinor
+          : null),
+    ),
+  );
+  const [active, setActive] = useState(goal?.active !== false);
+  const [tags, setTags] = useState<string[]>(goal?.tagIds ?? []);
   const action = useAction();
   return (
     <YStack gap={14}>
@@ -30,27 +54,30 @@ export function GoalCreator({
         value={name}
         onChangeText={setName}
       />
-      <Field
-        label={`Budget · ${data.account.currency}`}
-        placeholder="0.00"
-        value={amount}
-        onChangeText={setAmount}
-        keyboardType="decimal-pad"
-      />
-      <Label bold size={12}>
-        Time period
+      <Label muted size={12}>
+        Add any combination. Blank limits are automatically prorated from the
+        broadest limit you set.
       </Label>
-      <XStack gap={7} flexWrap="wrap">
-        {(["DAY", "WEEK", "MONTH", "YEAR"] as const).map((value) => (
-          <Chip
-            key={value}
-            selected={period === value}
-            onPress={() => setPeriod(value)}
-          >
-            {value.toLowerCase()}
-          </Chip>
+      <XStack gap={10} flexWrap="wrap">
+        {[
+          ["Daily (optional)", daily, setDaily, "—"],
+          ["Weekly (optional)", weekly, setWeekly, "—"],
+          ["Monthly (optional)", monthly, setMonthly, "—"],
+        ].map(([label, value, setter, placeholder]) => (
+          <YStack key={String(label)} flex={1} minWidth={145}>
+            <Field
+              label={`${label} · ${data.account.currency}`}
+              placeholder={String(placeholder)}
+              value={String(value)}
+              onChangeText={setter as (value: string) => void}
+              keyboardType="decimal-pad"
+            />
+          </YStack>
         ))}
       </XStack>
+      <Chip selected={active} onPress={() => setActive((value) => !value)}>
+        {active ? "Active goal" : "Inactive goal"}
+      </Chip>
       <Label bold size={12}>
         Categories · leave empty for all spending
       </Label>
@@ -80,27 +107,53 @@ export function GoalCreator({
         </Button>
         <Button
           loading={action.busy}
-          disabled={action.busy || !name.trim() || !amount.trim()}
+          disabled={
+            action.busy ||
+            !name.trim() ||
+            (!daily.trim() && !weekly.trim() && !monthly.trim())
+          }
           onPress={async () => {
+            const dailyMinor = daily.trim()
+              ? parseMoney(daily, data.account.currency)
+              : null;
+            const weeklyMinor = weekly.trim()
+              ? parseMoney(weekly, data.account.currency)
+              : null;
+            const monthlyMinor = monthly.trim()
+              ? parseMoney(monthly, data.account.currency)
+              : null;
+            const primary = monthlyMinor ?? weeklyMinor ?? dailyMinor!;
+            const period: "DAY" | "WEEK" | "MONTH" = monthlyMinor
+              ? "MONTH"
+              : weeklyMinor
+                ? "WEEK"
+                : "DAY";
             const range = periodRange(period, "Asia/Kolkata");
+            const input = {
+              name: name.trim(),
+              amountMinor: primary,
+              dailyLimitMinor: dailyMinor,
+              weeklyLimitMinor: weeklyMinor,
+              monthlyLimitMinor: monthlyMinor,
+              active,
+              currency: data.account.currency,
+              ...range,
+              period,
+              tagIds: tags,
+              ledgerIds: [],
+              thresholds: [50, 80, 100],
+            };
             const saved = await action.run(
               () =>
-                repository.createGoal(data.account.id, {
-                  name: name.trim(),
-                  amountMinor: parseMoney(amount, data.account.currency),
-                  currency: data.account.currency,
-                  ...range,
-                  period,
-                  tagIds: tags,
-                  ledgerIds: [],
-                  thresholds: [50, 80, 100],
-                }),
-              "Goal created",
+                goal
+                  ? extra(data.account.id, `/goals/${goal.id}`, input, "PATCH")
+                  : repository.createGoal(data.account.id, input),
+              goal ? "Goal updated" : "Goal created",
             );
             if (saved) onSaved();
           }}
         >
-          Save goal
+          {goal ? "Save changes" : "Save goal"}
         </Button>
       </XStack>
     </YStack>

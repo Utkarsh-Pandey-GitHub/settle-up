@@ -94,6 +94,7 @@ export type IconName =
   | "download"
   | "refresh"
   | "sync"
+  | "filter"
   | "more"
   | "edit"
   | "trash"
@@ -103,6 +104,7 @@ const paths: Record<string, string> = {
   image: "M3 3h18v18H3Z M3 17l6-6 4 4 3-3 5 5 M8 7h.01",
   home: "M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z",
   activity: "M3 12h4l2-7 4 14 2-7h6",
+  filter: "M4 6h16 M7 12h10 M10 18h4",
   transactions: "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01",
   plus: "M12 5v14 M5 12h14",
   chart: "M4 20V11 M10 20V4 M16 20v-7 M22 20V8",
@@ -190,7 +192,7 @@ export function Label({
   return (
     <Text
       fontFamily="$body"
-      fontWeight={bold ? "700" : "400"}
+      fontWeight={bold ? "600" : "400"}
       fontSize={size}
       lineHeight={size * 1.4}
       color={color ?? (muted ? c.muted : c.text)}
@@ -382,12 +384,16 @@ export function IconButton({
   label,
   borderless = false,
   disabled = false,
+  size = 44,
+  iconSize,
 }: {
   name: IconName;
   onPress(): void;
   label: string;
   borderless?: boolean;
   disabled?: boolean;
+  size?: number;
+  iconSize?: number;
 }) {
   const c = useColors();
   return (
@@ -398,18 +404,22 @@ export function IconButton({
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
-        width: 44,
+        width: size,
         opacity: disabled ? 0.5 : 1,
-        height: 44,
+        height: size,
         alignItems: "center",
         justifyContent: "center",
         borderWidth: borderless ? 0 : 1,
         borderColor: borderless ? "transparent" : c.line,
-        borderRadius: 13,
+        borderRadius: Math.max(9, size * 0.3),
         backgroundColor: pressed ? c.soft : "transparent",
       })}
     >
-      <Icon name={name} color={c.text} />
+      <Icon
+        name={name}
+        size={iconSize ?? Math.min(22, size * 0.5)}
+        color={c.text}
+      />
     </Pressable>
   );
 }

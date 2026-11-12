@@ -541,7 +541,8 @@ export async function syncGoalNotifications(
   const records: Record<string, number> = raw ? JSON.parse(raw) : {};
   for (const [id, end] of Object.entries(records))
     if (end < Date.now()) delete records[id];
-  for (const goal of data.goals)
+  for (const goal of data.goals) {
+    if (goal.active === false) continue;
     for (const threshold of goal.thresholds) {
       const id = `${goal.id}:${goal.start}:${threshold}`;
       if (
@@ -560,6 +561,7 @@ export async function syncGoalNotifications(
       });
       records[id] = Date.parse(goal.end);
     }
+  }
   await SecureStore.setItemAsync(key, JSON.stringify(records));
 }
 

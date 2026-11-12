@@ -20,6 +20,7 @@ import {
   obligations,
   applyRepayment,
   applySimplifiedRepayment,
+  goalCadenceLimits,
   periodRange,
 } from "@settleup/domain";
 import { analytics } from "@settleup/domain/src/analytics";
@@ -262,13 +263,11 @@ export async function request<T>(
       ? 65000
       : path === "/sms/classify"
         ? 30000
-        : path.startsWith("/payment-links")
-          ? 75000
-          : path === "/auth/truecaller"
-            ? 30000
-            : path.startsWith("/auth/")
-              ? 90000
-              : 15000;
+        : path === "/auth/truecaller"
+          ? 30000
+          : path.startsWith("/auth/")
+            ? 90000
+            : 15000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   let result: any;
@@ -810,6 +809,34 @@ export class DemoRepository implements AppRepository {
           name: d.tags.find((g) => g.id === t.id)?.name ?? "Uncategorized",
           amountMinor: t.amountMinor,
         })),
+        comparisons: s.comparisonRanges.map((range) => {
+          const comparison = analytics(d, {
+            ...range,
+            currency: s.currency,
+            ledgerIds: s.ledgerIds,
+            tagIds: s.tagIds,
+          });
+          return {
+            ...range,
+            spendingMinor: comparison.spendingMinor,
+            byDay: comparison.byDay,
+            categories: comparison.byTag.map((entry) => ({
+              name:
+                d.tags.find((tag) => tag.id === entry.id)?.name ??
+                "Uncategorized",
+              amountMinor: entry.amountMinor,
+            })),
+          };
+        }),
+        goals: s.includeGoals
+          ? d.goals
+              .filter((goal) => goal.active !== false)
+              .map((goal) => ({
+                name: goal.name,
+                currency: goal.currency,
+                ...goalCadenceLimits(goal),
+              }))
+          : undefined,
       },
     });
     return { id: shareId, url: `/shared/${token}`, expiresAt };
@@ -878,6 +905,24 @@ export class DemoRepository implements AppRepository {
             createdAt: new Date().toISOString(),
           })),
       );
+    } else if (
+      path.match(/^\/groups\/[^/]+\/invites$/) &&
+      method !== "DELETE"
+    ) {
+      const token = uuid().replace(/-/g, "").slice(0, 24);
+      return {
+        token,
+        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+        appUrl: `settleup:///join-group/${token}`,
+      };
+    } else if (path.match(/^\/groups\/[^/]+\/leave$/)) {
+      const groupId = path.split("/")[2];
+      const ledger = d.ledgers.find((entry) => entry.groupId === groupId);
+      if (!ledger) throw new Error("Group unavailable.");
+      const member = ledger.members.find((entry) => entry.id === id);
+      if (member?.role === "OWNER")
+        throw new Error("The owner must delete the group before leaving.");
+      d.ledgers = d.ledgers.filter((entry) => entry.groupId !== groupId);
     } else if (path.match(/^\/groups\/[^/]+$/) && method === "DELETE") {
       const groupId = path.split("/")[2];
       const ledger = d.ledgers.find((entry) => entry.groupId === groupId);
@@ -899,6 +944,9 @@ export class DemoRepository implements AppRepository {
     else if (path.startsWith("/tags/")) {
       const t = d.tags.find((t) => t.id === path.split("/")[2]);
       if (t) Object.assign(t, body);
+    } else if (path.startsWith("/goals/") && method === "PATCH") {
+      const goal = d.goals.find((entry) => entry.id === path.split("/")[2]);
+      if (goal) Object.assign(goal, body);
     } else if (path.startsWith("/goals/"))
       d.goals = d.goals.filter((g) => g.id !== path.split("/")[2]);
     else if (path.match(/^\/groups\/[^/]+\/members$/) && method !== "DELETE") {
@@ -1249,6 +1297,13 @@ function extraDashboardUpdate(
         ],
       });
     };
+  const leaveGroupMatch = path.match(/^\/groups\/([^/]+)\/leave$/);
+  if (leaveGroupMatch && method === "POST")
+    return (dashboard: Dashboard) => {
+      dashboard.ledgers = dashboard.ledgers.filter(
+        (entry) => entry.groupId !== leaveGroupMatch[1],
+      );
+    };
   const memberMatch = path.match(/^\/groups\/([^/]+)\/members(?:\/([^/]+))?$/);
   if (memberMatch && method === "POST")
     return (dashboard: Dashboard) => {
@@ -1373,6 +1428,7 @@ export const extra = async (
     return (repository as DemoRepository).extra(accountId, path, body, method);
   const operation = () =>
     effectiveMethod !== "GET" &&
+    !path.endsWith("/invites") &&
     /^(?:\/transactions|\/groups|\/ledgers|\/tags|\/goals|\/profile|\/blocks|\/contacts)/.test(
       path,
     )

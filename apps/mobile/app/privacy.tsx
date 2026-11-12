@@ -139,7 +139,6 @@ export default function PrivacyScreen() {
           Selected contacts — phone numbers of people you choose to split with.
           We do not upload your full address book.
         </Bullet>
-        <Bullet>UPI ID — optionally provided for payment request links.</Bullet>
         <Bullet>
           Notification preferences — your push notification choices.
         </Bullet>
@@ -183,9 +182,6 @@ export default function PrivacyScreen() {
           analytics.
         </Bullet>
         <Bullet>Group ledgers — show shared records to ledger members.</Bullet>
-        <Bullet>
-          Payment links — generate shareable UPI payment requests.
-        </Bullet>
         <Bullet>
           Notifications — push notifications about ledger activity (opt-in).
         </Bullet>

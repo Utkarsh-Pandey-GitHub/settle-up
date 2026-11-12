@@ -97,7 +97,6 @@ export default function PrivacyPolicyWeb() {
         <Bullet text="Profile information — optional name, email, avatar, currency, and timezone." />
         <Bullet text="Financial entries — expenses, splits, repayments, goals, tags, and notes you create." />
         <Bullet text="Selected contacts — phone numbers of people you choose to split with. We do not upload your full address book." />
-        <Bullet text="UPI ID — optionally provided for payment request links." />
         <Bullet text="Notification preferences — your push notification choices." />
 
         <Text style={styles.subHeading}>
@@ -118,7 +117,6 @@ export default function PrivacyPolicyWeb() {
         <Bullet text="Authentication — verify your phone number." />
         <Bullet text="Core functionality — manage expenses, splits, repayments, goals, and analytics." />
         <Bullet text="Group ledgers — show shared records to ledger members." />
-        <Bullet text="Payment links — generate shareable UPI payment requests." />
         <Bullet text="Notifications — push notifications about ledger activity (opt-in)." />
         <Bullet text="Analytics snapshots — spending analytics you can share via time-limited links." />
 

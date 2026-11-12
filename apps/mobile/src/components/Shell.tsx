@@ -426,12 +426,6 @@ export function Shell({
                     onPress={() => go("/sms")}
                   />
                 )}
-                <IconButton
-                  name="link"
-                  label="Payment links"
-                  borderless
-                  onPress={() => go("/payment-links")}
-                />
                 <Pressable
                   onPress={() => go("/accounts")}
                   accessibilityRole="button"

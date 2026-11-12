@@ -334,12 +334,6 @@ export function AuthScreen() {
   const verifiedSession = useRef<Session | null>(
     active ? (getTokenSession(active.id) ?? null) : null,
   );
-  const pendingPayment = useSession((s) => s.pendingPayment);
-  const resumePayment = async () => {
-    const token = useSession.getState().pendingPayment;
-    await useSession.getState().setPendingPayment(null);
-    router.replace(token ? `/pay/${token}` : "/");
-  };
   const acceptSession = async (
     session: Session & { suggestedName?: string },
   ) => {
@@ -386,7 +380,7 @@ export function AuthScreen() {
       }
     }
     if (session.account.name !== "New friend") {
-      await resumePayment();
+      router.replace("/");
       return;
     }
     setVerifiedId(session.account.id);
@@ -716,15 +710,6 @@ export function AuthScreen() {
             )}
             {stage === "ready" && (
               <>
-                {pendingPayment && (
-                  <Button
-                    onPress={() =>
-                      action.run(resumePayment, "Payment request ready")
-                    }
-                  >
-                    Continue to payment request
-                  </Button>
-                )}
                 <Label bold size={14}>
                   Start with something from today.
                 </Label>

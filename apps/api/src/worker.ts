@@ -26,7 +26,6 @@ export class ExpoNotificationProvider implements NotificationProvider {
 }
 export async function cleanup(now = new Date()) {
   await atomic(async (tx) => {
-    await tx.paymentLink.deleteMany({ where: { expiresAt: { lte: now } } });
     await tx.smsImportRecord.deleteMany({ where: { expiresAt: { lte: now } } });
     await tx.otpChallenge.deleteMany({
       where: { expiresAt: { lt: new Date(+now - 86400000) } },
@@ -65,6 +64,7 @@ export async function processGoals() {
   for (const user of users) {
     const data = await new PrismaDashboardRepository().get(user.id);
     for (const goal of data.goals) {
+      if (goal.active === false) continue;
       const progress = goalProgress(
         goal.amountMinor,
         goal.spentMinor,

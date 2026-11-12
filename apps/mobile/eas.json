@@ -8,7 +8,8 @@
       "developmentClient": true,
       "distribution": "internal",
       "channel": "development",
-      "environment": "development"
+      "environment": "development",
+      "credentialsSource": "remote"
     },
     "preview": {
       "distribution": "internal",
@@ -16,7 +17,8 @@
       "environment": "preview",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "credentialsSource": "remote"
     },
     "production": {
       "autoIncrement": false,
@@ -24,7 +26,8 @@
       "environment": "production",
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "credentialsSource": "remote"
     }
   },
   "submit": {

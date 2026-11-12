@@ -15,18 +15,11 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { YStack, XStack } from "tamagui";
 import { useFocusEffect, useRouter } from "expo-router";
-import {
-  parseUpi,
-  parseMoney,
-  money,
-  type ImportSuggestion,
-} from "@settleup/domain";
-import type { CreateTransaction, Dashboard } from "@settleup/contracts";
+import { parseUpi, money, type ImportSuggestion } from "@settleup/domain";
 import {
   AndroidSmsProvider,
   type SmsDecision,
   paymentLauncher,
-  paymentRequest,
 } from "../services/device";
 import { repository } from "../data/repository";
 import { useAction } from "../data/hooks";
@@ -49,14 +42,9 @@ export function ScanScreen() {
     [uri, setUri] = useState(""),
     [payment, setPayment] = useState<ReturnType<typeof parseUpi> | null>(null),
     [payeeAddress, setPayeeAddress] = useState(""),
-    [track, setTrack] = useState(true),
-    [amount, setAmount] = useState(""),
     [processed, setProcessed] = useState(false),
     [paymentSource, setPaymentSource] = useState<"scan" | "manual">("scan"),
     [paymentOutcome, setPaymentOutcome] = useState(""),
-    [receiptConfirmation, setReceiptConfirmation] =
-      useState<CreateTransaction | null>(null),
-    [retryWithoutAmount, setRetryWithoutAmount] = useState(false),
     [pasteMode, setPasteMode] = useState(false);
   const action = useAction();
   const router = useRouter();
@@ -91,11 +79,8 @@ export function ScanScreen() {
       setPayment(result);
       setPaymentSource(source);
       setPaymentOutcome("");
-      setReceiptConfirmation(null);
-      setRetryWithoutAmount(false);
       setPayeeAddress(result.payeeAddress);
       setUri(result.uri);
-      setAmount(result.amountMinor ? String(result.amountMinor / 100) : "");
       action.setError("");
     } catch (e) {
       action.setError((e as Error).message);
@@ -133,73 +118,39 @@ export function ScanScreen() {
     }
   };
 
-  const launchPayment = (d: Dashboard, omitAmount = false) =>
+  const launchPayment = () =>
     action.run(async () => {
       if (!payment) return;
-      const value = parseMoney(amount);
       const activeAddress = payeeAddress || payment.payeeAddress;
       const confirmed = new URL(payment.uri);
-      const canAdjust =
-        !confirmed.searchParams.has("sign") &&
-        (paymentSource === "manual" || !payment.amountMinor);
-      if (canAdjust) {
-        confirmed.searchParams.set("pa", activeAddress);
-        if (omitAmount) confirmed.searchParams.delete("am");
-        else confirmed.searchParams.set("am", (value / 100).toFixed(2));
-      }
-      const launchUri = confirmed.searchParams.has("sign")
-        ? payment.uri
-        : parseUpi(confirmed.toString()).uri;
+      confirmed.searchParams.set("pa", activeAddress);
+      // The payer always enters the final amount in their UPI app. A QR
+      // signature covers the original amount, so it cannot be forwarded after
+      // removing `am`; the UPI app still confirms the payee before payment.
+      confirmed.searchParams.delete("am");
+      confirmed.searchParams.delete("sign");
+      const launchUri = parseUpi(confirmed.toString()).uri;
       await paymentLauncher.ensureAvailable(launchUri);
-      const trackedRequest = await paymentRequest(d.account.id, launchUri);
-      const completedEntry: CreateTransaction = {
-        title: payment.payeeName,
-        amountMinor: value,
-        currency: "INR",
-        type: "PERSONAL_EXPENSE",
-        status: "SETTLED",
-        occurredAt: trackedRequest.occurredAt,
-        idempotencyKey: trackedRequest.key,
-        notes: payment.note
-          ? `${payment.note}\nUPI ID: ${activeAddress}`
-          : `UPI ID: ${activeAddress}`,
-        paymentReference: payment.reference || undefined,
-        tagIds: [],
-        participants: [],
-        splitMethod: "EQUAL",
-      };
       setProcessed(true);
       let result;
       try {
         result = await paymentLauncher.open(launchUri);
       } catch (error) {
         setProcessed(false);
-        setRetryWithoutAmount(canAdjust && !omitAmount);
         throw error;
       }
       if (result.status === "SUCCESS") {
-        if (track) {
-          setReceiptConfirmation(completedEntry);
-          await repository.create(d.account.id, completedEntry);
-          setReceiptConfirmation(null);
-        }
-        setRetryWithoutAmount(false);
-        setPaymentOutcome(
-          "The UPI app reported success. Your tracked payment is complete.",
-        );
+        setPaymentOutcome("The UPI app reported a successful payment.");
       } else if (result.status === "FAILURE" || result.status === "CANCELLED") {
         setProcessed(false);
-        setRetryWithoutAmount(canAdjust && !omitAmount);
         setPaymentOutcome(
           result.status === "FAILURE"
-            ? "The UPI app reported a failed payment. Nothing was saved."
-            : "Payment was cancelled. Nothing was saved.",
+            ? "The UPI app reported a failed payment."
+            : "Payment was cancelled.",
         );
       } else {
-        setRetryWithoutAmount(false);
-        setReceiptConfirmation(track ? completedEntry : null);
         setPaymentOutcome(
-          "The UPI app did not confirm the outcome. Check its receipt before marking this paid.",
+          "The UPI app did not confirm the outcome. Check its receipt for the final status.",
         );
       }
     }, "Returned from the UPI app.");
@@ -271,7 +222,7 @@ export function ScanScreen() {
             {pasteMode && (
               <YStack gap={12} width="100%">
                 <Field
-                  label="UPI ID or payment link"
+                  label="UPI ID or UPI URI"
                   placeholder="merchant@upi"
                   value={uri}
                   onChangeText={setUri}
@@ -292,7 +243,7 @@ export function ScanScreen() {
   if (payment) {
     return (
       <DataScreen>
-        {(d) => (
+        {() => (
           <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
             <XStack alignItems="center" gap={12}>
               <Pressable
@@ -302,8 +253,6 @@ export function ScanScreen() {
                   setPayment(null);
                   setProcessed(false);
                   setPaymentOutcome("");
-                  setReceiptConfirmation(null);
-                  setRetryWithoutAmount(false);
                   action.setError("");
                 }}
                 style={{
@@ -383,25 +332,10 @@ export function ScanScreen() {
                   )}
                 </YStack>
 
-                <Field
-                  label="Amount (INR)"
-                  value={amount}
-                  onChangeText={setAmount}
-                  editable={paymentSource === "manual" || !payment.amountMinor}
-                  keyboardType="decimal-pad"
-                  placeholder="0.00"
-                />
-                {payment.fixedAmount && (
-                  <Label muted size={11}>
-                    This amount is fixed by the dynamic QR.
-                  </Label>
-                )}
-                {paymentSource === "scan" && !payment.amountMinor && (
-                  <Label muted size={11}>
-                    SettleUp will pass this amount to your UPI app. If that app
-                    rejects it, retry without the amount and enter it there.
-                  </Label>
-                )}
+                <Notice>
+                  Enter and confirm the amount in your UPI app. SettleUp does
+                  not pass an amount from the QR.
+                </Notice>
 
                 {!!payment.note && (
                   <YStack gap={4}>
@@ -412,80 +346,17 @@ export function ScanScreen() {
                   </YStack>
                 )}
 
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: track }}
-                  aria-checked={track}
-                  onPress={() => setTrack(!track)}
-                  style={{
-                    minHeight: 48,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 12,
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 24,
-                      height: 24,
-                      backgroundColor: track ? "#6652A3" : "#E6E1EC",
-                      borderRadius: 6,
-                      justifyContent: "center",
-                      alignItems: "center",
-                    }}
-                  >
-                    {track && <Icon name="check" color="#FFF" size={16} />}
-                  </View>
-                  <Label size={13}>Track this payment in SettleUp</Label>
-                </Pressable>
-
                 {!!action.error && <Notice error>{action.error}</Notice>}
 
                 {!!paymentOutcome && <Notice>{paymentOutcome}</Notice>}
 
-                <Notice>
-                  SettleUp saves a tracked expense only after the UPI app
-                  reports success or you confirm its receipt.
-                </Notice>
-
                 <Button
                   loading={action.busy}
                   disabled={action.busy || processed}
-                  onPress={() => launchPayment(d)}
+                  onPress={launchPayment}
                 >
-                  {amount ? `Pay ₹${amount}` : "Confirm & pay"}
+                  Open UPI app
                 </Button>
-
-                {retryWithoutAmount && !processed && (
-                  <Button
-                    secondary
-                    loading={action.busy}
-                    disabled={action.busy}
-                    onPress={() => launchPayment(d, true)}
-                  >
-                    Retry without amount
-                  </Button>
-                )}
-
-                {receiptConfirmation && (
-                  <Button
-                    secondary
-                    loading={action.busy}
-                    disabled={action.busy}
-                    onPress={() =>
-                      action.run(async () => {
-                        await repository.create(
-                          d.account.id,
-                          receiptConfirmation,
-                        );
-                        setReceiptConfirmation(null);
-                        setPaymentOutcome("Payment saved as complete.");
-                      }, "Payment saved as complete")
-                    }
-                  >
-                    I checked the receipt — mark paid
-                  </Button>
-                )}
 
                 {processed && (
                   <Notice>
@@ -703,34 +574,9 @@ export function ScanScreen() {
           </View>
         )}
 
-        <Pressable
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: track }}
-          aria-checked={track}
-          onPress={() => setTrack(!track)}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 12,
-            minHeight: 44,
-          }}
-        >
-          <View
-            style={{
-              width: 24,
-              height: 24,
-              borderRadius: 6,
-              backgroundColor: track ? "#6652A3" : "rgba(255,255,255,0.2)",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            {track && <Icon name="check" color="#FFF" size={16} />}
-          </View>
-          <Label size={13} color="#FFF">
-            Record this payment in SettleUp (Settled)
-          </Label>
-        </Pressable>
+        <Label size={12} color="rgba(255,255,255,0.82)" textAlign="center">
+          You will enter the amount in your UPI app.
+        </Label>
 
         <Pressable
           accessibilityRole="button"
@@ -777,7 +623,7 @@ export function ScanScreen() {
               style={{ flex: 1, width: screenWidth < 340 ? "100%" : undefined }}
             >
               <Field
-                label="UPI ID or payment link"
+                label="UPI ID or UPI URI"
                 placeholder="merchant@upi"
                 value={uri}
                 onChangeText={setUri}
@@ -806,6 +652,8 @@ export function SmsScreen() {
 
 function SmsPrivacyExplainer({ onClose }: { onClose(): void }) {
   const c = useColors();
+  const { width, fontScale } = useWindowDimensions();
+  const compact = width / Math.max(fontScale, 1) < 380;
   const reveal = React.useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const animation = Animated.spring(reveal, {
@@ -841,10 +689,10 @@ function SmsPrivacyExplainer({ onClose }: { onClose(): void }) {
         style={{
           position: "relative",
           overflow: "hidden",
-          borderRadius: 20,
+          borderRadius: compact ? 16 : 20,
           backgroundColor: c.mint,
-          padding: 14,
-          paddingRight: 42,
+          padding: compact ? 10 : 14,
+          paddingRight: compact ? 36 : 42,
         }}
       >
         <Pressable
@@ -867,37 +715,44 @@ function SmsPrivacyExplainer({ onClose }: { onClose(): void }) {
         >
           <Icon name="close" size={14} color={c.muted} />
         </Pressable>
-        <XStack gap={10} alignItems="center">
-          <Mascot size={78} mood="reading" />
-          <YStack flex={1} gap={7}>
-            <Heading size={16}>Pip checks monetary messages</Heading>
-            <Label muted size={11} lineHeight={16}>
-              After you allow SMS access, monetary messages are checked by the
-              configured AI for confirmed spending. OTPs are excluded and
-              nothing becomes a transaction until you accept it.
+        <XStack gap={compact ? 7 : 10} alignItems="center">
+          <Mascot size={compact ? 48 : 70} mood="reading" />
+          <YStack flex={1} gap={compact ? 4 : 7} minWidth={0}>
+            <Heading size={compact ? 14 : 16}>
+              Pip checks monetary messages
+            </Heading>
+            <Label
+              muted
+              size={compact ? 10 : 11}
+              lineHeight={compact ? 14 : 16}
+            >
+              {compact
+                ? "Pip finds confirmed spending in recent SMS. OTPs are ignored, and you approve every transaction."
+                : "Pip checks recent monetary messages for confirmed spending. OTPs are excluded and nothing becomes a transaction until you accept it."}
             </Label>
-            <XStack gap={6} flexWrap="wrap">
-              {["OTPs excluded", "7-day window", "You approve each one"].map(
-                (item) => (
-                  <View
-                    key={item}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 4,
-                      borderRadius: 10,
-                      backgroundColor: `${c.card}B8`,
-                      paddingHorizontal: 8,
-                      paddingVertical: 5,
-                    }}
-                  >
-                    <Icon name="check" size={11} color="#43816E" />
-                    <Label size={10} bold>
-                      {item}
-                    </Label>
-                  </View>
-                ),
-              )}
+            <XStack gap={4} flexWrap="wrap">
+              {(compact
+                ? ["No OTPs", "7 days", "You approve"]
+                : ["OTPs excluded", "7-day window", "You approve each one"]
+              ).map((item) => (
+                <View
+                  key={item}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                    borderRadius: 10,
+                    backgroundColor: `${c.card}B8`,
+                    paddingHorizontal: compact ? 6 : 8,
+                    paddingVertical: compact ? 3 : 5,
+                  }}
+                >
+                  <Icon name="check" size={11} color="#43816E" />
+                  <Label size={10} bold>
+                    {item}
+                  </Label>
+                </View>
+              ))}
             </XStack>
           </YStack>
         </XStack>

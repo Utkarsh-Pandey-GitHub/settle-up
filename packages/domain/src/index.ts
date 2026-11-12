@@ -524,6 +524,56 @@ export type Period =
   | "LAST_30"
   | "PREVIOUS_WEEK"
   | "PREVIOUS_MONTH";
+
+export type GoalCadence = {
+  amountMinor: number;
+  period: string;
+  dailyLimitMinor?: number | null;
+  weeklyLimitMinor?: number | null;
+  monthlyLimitMinor?: number | null;
+};
+
+/** Resolves a goal into comparable calendar limits. Missing limits are
+ * prorated from the broadest limit the user supplied. */
+export function goalCadenceLimits(
+  goal: GoalCadence,
+  at = new Date(),
+  zone = "Asia/Kolkata",
+) {
+  const daysInMonth = DateTime.fromJSDate(at, { zone }).daysInMonth ?? 30;
+  let daily = goal.dailyLimitMinor ?? null;
+  let weekly = goal.weeklyLimitMinor ?? null;
+  let monthly = goal.monthlyLimitMinor ?? null;
+  if (daily === null && weekly === null && monthly === null) {
+    if (goal.period === "DAY") daily = goal.amountMinor;
+    else if (goal.period === "WEEK") weekly = goal.amountMinor;
+    else monthly = goal.amountMinor;
+  }
+  if (monthly !== null) {
+    daily ??= Math.round(monthly / daysInMonth);
+    weekly ??= Math.round((monthly / daysInMonth) * 7);
+  } else if (weekly !== null) {
+    daily ??= Math.round(weekly / 7);
+    monthly = Math.round((weekly / 7) * daysInMonth);
+  } else if (daily !== null) {
+    weekly = daily * 7;
+    monthly = daily * daysInMonth;
+  }
+  return {
+    daily: daily!,
+    weekly: weekly!,
+    monthly: monthly!,
+    explicit: {
+      daily: goal.dailyLimitMinor != null || goal.period === "DAY",
+      weekly: goal.weeklyLimitMinor != null || goal.period === "WEEK",
+      monthly:
+        goal.monthlyLimitMinor != null ||
+        !["DAY", "WEEK"].includes(goal.period),
+    },
+    daysInMonth,
+  };
+}
+
 export function periodRange(period: Period, zone: string, now = new Date()) {
   const local = DateTime.fromJSDate(now, { zone });
   if (!local.isValid)

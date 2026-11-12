@@ -6,7 +6,7 @@ import { Card, Heading, Label } from "../src/components/ui";
 const sections = [
   [
     "Using SettleUp",
-    "You must provide accurate account information and use the app only for lawful personal expense tracking and payment requests.",
+    "You must provide accurate account information and use the app only for lawful personal expense tracking and payments.",
   ],
   [
     "Financial records",

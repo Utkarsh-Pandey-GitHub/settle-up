@@ -50,9 +50,9 @@
       <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Add expense" android:textColor="#211D29" android:textSize="10sp" android:textStyle="bold" android:maxLines="1" />
     </LinearLayout>
 
-    <LinearLayout android:id="@+id/action_payment" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:contentDescription="Create payment link">
+    <LinearLayout android:id="@+id/action_payment" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:contentDescription="Open groups">
       <ImageView android:layout_width="46dp" android:layout_height="46dp" android:padding="3dp" android:background="@drawable/widget_icon_circle" android:backgroundTint="#FFF0D4" android:src="@drawable/widget_mascot_payment" android:contentDescription="@null" />
-      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Payment link" android:textColor="#211D29" android:textSize="10sp" android:textStyle="bold" android:maxLines="1" />
+      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Groups" android:textColor="#211D29" android:textSize="10sp" android:textStyle="bold" android:maxLines="1" />
     </LinearLayout>
   </LinearLayout>
 </LinearLayout>

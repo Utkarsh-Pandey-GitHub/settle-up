@@ -3,7 +3,7 @@
   <string name="widget_spending_description">Weekly or monthly spending, daily graph, and active goals from your last app sync.</string>
   <string name="widget_brand">SettleUp</string>
   <string name="widget_quick_compact_name">SettleUp actions · 4×2</string>
-  <string name="widget_quick_description">Scan a QR or bill, add an expense, or create a payment link.</string>
+  <string name="widget_quick_description">Scan a QR or bill, add an expense, or open groups.</string>
   <string name="widget_week">Week</string>
   <string name="widget_month">Month</string>
   <string name="widget_open">Open SettleUp to sync</string>
