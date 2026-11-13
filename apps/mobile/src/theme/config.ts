@@ -1,13 +1,15 @@
 import { createTamagui, createFont } from "tamagui";
 import { defaultConfig } from "@tamagui/config/v4";
 import { Platform } from "react-native";
-export const bodyFont =
-  Platform.OS === "ios"
-    ? "System"
-    : Platform.OS === "android"
-      ? "sans-serif"
-      : "Arial";
-export const headingFont = Platform.OS === "android" ? "serif" : "Georgia";
+// Inter is loaded in app/_layout.tsx. Android needs one family per weight.
+export const fonts = {
+  regular: "Inter_400Regular",
+  medium: "Inter_500Medium",
+  semibold: "Inter_600SemiBold",
+  bold: "Inter_700Bold",
+};
+export const bodyFont = fonts.regular;
+export const headingFont = fonts.semibold;
 const font = createFont({
   family: bodyFont,
   size: { 1: 12, 2: 13, 3: 14, 4: 16, 5: 18, 6: 22, 7: 28, 8: 36, 9: 48 },
@@ -26,15 +28,15 @@ export const config = createTamagui({
   themes: {
     light: {
       ...defaultConfig.themes.light,
-      background: "#F5F4F7",
-      color: "#211D29",
-      borderColor: "#E1DDE7",
+      background: "#F6F7F9",
+      color: "#0F172A",
+      borderColor: "#E4E7EC",
     },
     dark: {
       ...defaultConfig.themes.dark,
-      background: "#1C1922",
-      color: "#F6F4FA",
-      borderColor: "#40374C",
+      background: "#0B0D12",
+      color: "#F1F5F9",
+      borderColor: "#262B36",
     },
   },
 });

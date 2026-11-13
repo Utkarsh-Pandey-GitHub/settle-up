@@ -18,7 +18,12 @@ import {
   shareSchema,
   goalSchema,
 } from "@settleup/contracts";
-import { DomainError, normalizePhone, SMS_TTL_MS } from "@settleup/domain";
+import {
+  DomainError,
+  hasNetBalance,
+  normalizePhone,
+  SMS_TTL_MS,
+} from "@settleup/domain";
 import { analytics } from "@settleup/domain/src/analytics";
 import { AuthService, validateConfig } from "./auth/service";
 import { FinanceService, PrismaDashboardRepository } from "./finance/service";
@@ -37,6 +42,12 @@ import {
   quickAddRequestSchema,
   quickAddUserMessage,
 } from "./ai/quick-add";
+import {
+  ASK_SYSTEM_PROMPT,
+  askRequestSchema,
+  askUserMessage,
+  parseAskResponse,
+} from "./ai/ask";
 import {
   db,
   atomic,
@@ -402,6 +413,54 @@ export function createApp() {
         );
       const parsed = parseBillVisionResponse(await response.text());
       return normalizeBillExtraction(parsed, body.currency);
+    },
+  );
+  app.post(
+    "/ai/analytics-query",
+    { config: { rateLimit: { max: 60, timeWindow: "15 minutes" } } },
+    async (req) => {
+      await actor(req);
+      const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+      if (!apiKey)
+        throw new DomainError("AI_ASK_DISABLED", "Ask your data is not configured yet.", 503);
+      const body = askRequestSchema.parse(req.body);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15_000);
+      let response: Response;
+      try {
+        response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            "content-type": "application/json",
+            "http-referer": process.env.PUBLIC_APP_URL || "https://settleup.tinkrs.space",
+            "x-title": "SettleUp Ask your data",
+          },
+          body: JSON.stringify({
+            model:
+              process.env.QUICK_ADD_MODEL ||
+              process.env.SMS_CLASSIFIER_MODEL ||
+              process.env.BILL_VISION_MODEL ||
+              "openai/gpt-6-luna-pro",
+            messages: [
+              { role: "system", content: ASK_SYSTEM_PROMPT },
+              { role: "user", content: askUserMessage(body) },
+            ],
+            response_format: { type: "json_object" },
+            provider: { data_collection: "deny" },
+            temperature: 0,
+            max_tokens: 400,
+          }),
+          signal: controller.signal,
+        });
+      } catch {
+        throw new DomainError("AI_ASK_UNAVAILABLE", "The assistant is unavailable right now.", 503);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!response.ok)
+        throw new DomainError("AI_ASK_UNAVAILABLE", "The assistant is unavailable right now.", 503);
+      return parseAskResponse(await response.text(), body);
     },
   );
   app.post(
@@ -1177,14 +1236,21 @@ export function createApp() {
         select: { id: true },
       });
       const ledgerIds = ledgers.map((item) => item.id);
-      const outstanding = await tx.obligation.count({
+      // Net balance, not raw debts: obligations that cancel each other out
+      // must not keep someone in the group.
+      const openDebts = await tx.obligation.findMany({
         where: {
           ledgerId: { in: ledgerIds },
           remainingMinor: { gt: 0 },
-          OR: [{ debtorId: userId }, { creditorId: userId }],
           transaction: { deletedAt: null },
         },
       });
+      const outstanding = ledgerIds.some((ledgerId) =>
+        hasNetBalance(
+          openDebts.filter((debt) => debt.ledgerId === ledgerId) as any,
+          userId,
+        ),
+      );
       if (outstanding)
         throw new DomainError(
           "OUTSTANDING_BALANCE",
@@ -1264,14 +1330,21 @@ export function createApp() {
         select: { id: true },
       });
       const ledgerIds = ledgers.map((ledger) => ledger.id);
-      const outstanding = await tx.obligation.count({
+      // Net balance, not raw debts: obligations that cancel each other out
+      // must not keep someone in the group.
+      const openDebts = await tx.obligation.findMany({
         where: {
           ledgerId: { in: ledgerIds },
           remainingMinor: { gt: 0 },
-          OR: [{ debtorId: memberId }, { creditorId: memberId }],
           transaction: { deletedAt: null },
         },
       });
+      const outstanding = ledgerIds.some((ledgerId) =>
+        hasNetBalance(
+          openDebts.filter((debt) => debt.ledgerId === ledgerId) as any,
+          memberId,
+        ),
+      );
       if (outstanding)
         throw new DomainError(
           "OUTSTANDING_BALANCE",

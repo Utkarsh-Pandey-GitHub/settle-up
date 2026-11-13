@@ -311,7 +311,7 @@ export function Shell({
                   onPress={() => go("/settings")}
                   style={{ minHeight: 36, justifyContent: "center" }}
                 >
-                  <Label size={11} color="#59458F" bold>
+                  <Label size={11} color="#4338CA" bold>
                     Privacy settings →
                   </Label>
                 </Pressable>
@@ -395,7 +395,7 @@ export function Shell({
                       paddingHorizontal: 7,
                     }}
                   >
-                    <Label size={9} bold color="#59458F">
+                    <Label size={9} bold color="#4338CA">
                       DEMO
                     </Label>
                   </View>
@@ -547,12 +547,20 @@ export function Shell({
                         alignItems: "center",
                         justifyContent: "center",
                         backgroundColor:
-                          n.path === "/quick-add" ? c.primary : "transparent",
-                        borderRadius: n.path === "/quick-add" ? 22 : 14,
-                        borderWidth: n.path === "/quick-add" ? 4 : 0,
-                        borderColor: c.card,
+                          n.path === "/quick-add" ? c.accentSoft : "transparent",
+                        borderRadius: n.path === "/quick-add" ? 29 : 14,
+                        borderWidth: n.path === "/quick-add" ? 3 : 0,
+                        borderColor: n.path === "/quick-add" ? c.card : "transparent",
+                        shadowColor: "#312E81",
+                        shadowOpacity: n.path === "/quick-add" ? 0.18 : 0,
+                        shadowRadius: 10,
+                        shadowOffset: { width: 0, height: 4 },
+                        elevation: n.path === "/quick-add" ? 6 : 0,
                       }}
                     >
+                      {n.path === "/quick-add" ? (
+                        <Mascot size={46} mood="wave" mark />
+                      ) : (
                       <Icon
                         name={n.icon as IconName}
                         size={n.path === "/quick-add" ? 32 : 25}
@@ -564,6 +572,7 @@ export function Shell({
                               : c.text
                         }
                       />
+                      )}
                     </View>
                     <Label
                       size={width < 360 ? 10 : 11}

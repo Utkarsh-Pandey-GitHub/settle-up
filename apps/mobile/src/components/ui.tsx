@@ -17,46 +17,70 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Text, YStack, XStack } from "tamagui";
-import Svg, { Path, Circle, Rect, Ellipse, G } from "react-native-svg";
+import Svg, {
+  Path,
+  Circle,
+  Rect,
+  Ellipse,
+  G,
+  Defs,
+  Stop,
+  LinearGradient,
+  RadialGradient,
+  ClipPath,
+} from "react-native-svg";
+import * as L from "lucide-react-native";
+import type { LucideIcon } from "lucide-react-native";
+import { Illustration } from "./illustrations";
 import { useSession } from "../data/session";
 import { useKeyboardAwareField } from "./KeyboardAwareScreen";
-import { bodyFont } from "../theme/config";
+import { bodyFont, fonts } from "../theme/config";
+// Calm, neutral surfaces with a single indigo accent. Green/red are reserved
+// for money direction (owed to you / you owe).
+export const palette = {
+  light: {
+    bg: "#F6F7F9",
+    card: "#FFFFFF",
+    text: "#0F172A",
+    muted: "#64748B",
+    line: "#E4E7EC",
+    soft: "#F1F3F7",
+    mint: "#ECFDF5",
+    amber: "#FFFBEB",
+    rose: "#FEF2F2",
+    peach: "#F1F3F7",
+    blue: "#FFFFFF",
+    butter: "#FFFFFF",
+    primary: "#4F46E5",
+    onPrimary: "#FFFFFF",
+    accent: "#4F46E5",
+    accentSoft: "#EEF2FF",
+    positive: "#047857",
+    negative: "#B91C1C",
+  },
+  dark: {
+    bg: "#0B0D12",
+    card: "#151922",
+    text: "#F1F5F9",
+    muted: "#94A3B8",
+    line: "#262B36",
+    soft: "#1C212C",
+    mint: "#0F2A22",
+    amber: "#2A2214",
+    rose: "#2C1517",
+    peach: "#1C212C",
+    blue: "#151922",
+    butter: "#151922",
+    primary: "#818CF8",
+    onPrimary: "#0B0D12",
+    accent: "#818CF8",
+    accentSoft: "#1E2140",
+    positive: "#34D399",
+    negative: "#F87171",
+  },
+};
 export const useColors = () =>
-  useSession((s) => s.dark)
-    ? {
-        bg: "#1C1922",
-        card: "#26212E",
-        text: "#F6F3FB",
-        muted: "#BAB2C6",
-        line: "#40374C",
-        soft: "#342B43",
-        mint: "#243A35",
-        amber: "#3C3226",
-        rose: "#3D2A35",
-        peach: "#302839",
-        blue: "#322A40",
-        butter: "#302839",
-        primary: "#C4B3EB",
-        onPrimary: "#221A32",
-        accent: "#C4B3EB",
-      }
-    : {
-        bg: "#F5F4F7",
-        card: "#FFFFFF",
-        text: "#211D29",
-        muted: "#716B7B",
-        line: "#E1DDE7",
-        soft: "#F0ECF8",
-        mint: "#E8F6EF",
-        amber: "#FCF2DE",
-        rose: "#FBECEF",
-        peach: "#F2EEF9",
-        blue: "#FFFFFF",
-        butter: "#FFFFFF",
-        primary: "#6652A3",
-        onPrimary: "#FFFFFF",
-        accent: "#6652A3",
-      };
+  useSession((s) => s.dark) ? palette.dark : palette.light;
 export type IconName =
   | "camera"
   | "image"
@@ -146,35 +170,60 @@ const paths: Record<string, string> = {
   trash: "M4 7h16 M9 7V4h6v3 M7 7l1 14h8l1-14 M10 11v6 M14 11v6",
   help: "M9 8a3 3 0 1 1 5 2c-2 1-2 2-2 4 M12 17h.01",
 };
+const lucide: Record<IconName, LucideIcon> = {
+  camera: L.Camera,
+  image: L.Image,
+  home: L.House,
+  activity: L.Activity,
+  filter: L.ListFilter,
+  transactions: L.ReceiptText,
+  plus: L.Plus,
+  chart: L.ChartColumn,
+  groups: L.Users,
+  goal: L.Target,
+  scan: L.ScanLine,
+  sms: L.MessageSquareText,
+  settings: L.Settings,
+  bell: L.Bell,
+  arrow: L.ArrowRight,
+  back: L.ArrowLeft,
+  down: L.ChevronDown,
+  up: L.ChevronUp,
+  check: L.Check,
+  close: L.X,
+  search: L.Search,
+  wallet: L.Wallet,
+  coffee: L.Coffee,
+  car: L.Car,
+  bag: L.ShoppingBag,
+  plane: L.Plane,
+  bolt: L.Sparkles,
+  chevron: L.ChevronRight,
+  logout: L.LogOut,
+  link: L.Share2,
+  lock: L.Lock,
+  calendar: L.Calendar,
+  moon: L.Moon,
+  sun: L.Sun,
+  download: L.Download,
+  refresh: L.RefreshCw,
+  sync: L.RefreshCcw,
+  more: L.Ellipsis,
+  edit: L.Pencil,
+  trash: L.Trash2,
+  help: L.CircleHelp,
+};
 export function Icon({
   name,
   size = 22,
-  color = "#7C7885",
+  color = "#64748B",
 }: {
   name: IconName;
   size?: number;
   color?: string;
 }) {
-  return (
-    <Svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={color}
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <Path d={paths[name] ?? paths.activity} />
-      {name === "groups" && <Circle cx="9.5" cy="7" r="4" />}
-      {name === "settings" && <Circle cx="12" cy="12" r="5" />}
-      {name === "search" && <Circle cx="10" cy="10" r="7" />}
-      {(name === "sun" || name === "help") && (
-        <Circle cx="12" cy="12" r={name === "help" ? 10 : 5} />
-      )}
-    </Svg>
-  );
+  const Glyph = lucide[name] ?? L.Activity;
+  return <Glyph size={size} color={color} strokeWidth={size <= 16 ? 2 : 1.75} />;
 }
 export function Label({
   children,
@@ -191,10 +240,9 @@ export function Label({
   const c = useColors();
   return (
     <Text
-      fontFamily="$body"
-      fontWeight={bold ? "600" : "400"}
+      fontFamily={(bold ? fonts.semibold : fonts.regular) as any}
       fontSize={size}
-      lineHeight={size * 1.4}
+      lineHeight={size * 1.45}
       color={color ?? (muted ? c.muted : c.text)}
       {...props}
     >
@@ -219,9 +267,9 @@ export function Heading({
     <Label
       size={size}
       bold
-      fontFamily="$heading"
-      lineHeight={size * 1.18}
-      letterSpacing={-0.35}
+      fontFamily={fonts.semibold as any}
+      lineHeight={size * 1.22}
+      letterSpacing={size >= 22 ? -0.6 : -0.2}
       accessibilityRole="header"
       textAlign={textAlign}
       {...layout}
@@ -244,10 +292,10 @@ export function Card({
       style={[
         {
           backgroundColor: c.card,
-          borderWidth: 0,
+          borderWidth: 1,
           borderColor: c.line,
-          borderRadius: 16,
-          padding: width < 360 ? 13 : 18,
+          borderRadius: 14,
+          padding: width < 360 ? 14 : 18,
         },
         style,
       ]}
@@ -331,7 +379,7 @@ export function Button({
       onPress={onPress}
       style={({ pressed }) => [
         {
-          minHeight: 48,
+          minHeight: compact ? 40 : 48,
           minWidth: 0,
           paddingHorizontal: compact
             ? width < 360
@@ -341,17 +389,15 @@ export function Button({
               ? 14
               : 20,
           paddingVertical: 11,
-          borderRadius: 15,
-          borderBottomWidth: 1,
+          borderRadius: 12,
           backgroundColor: secondary ? c.card : c.primary,
           borderWidth: 1,
           borderColor: secondary ? c.line : c.primary,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "center",
-          gap: 9,
-          opacity: unavailable ? 0.6 : pressed ? 0.8 : 1,
-          transform: [{ scale: pressed ? 0.98 : 1 }],
+          gap: 8,
+          opacity: unavailable ? 0.5 : pressed ? 0.85 : 1,
         },
         style,
       ]}
@@ -364,11 +410,11 @@ export function Button({
       ) : leading ? (
         leading
       ) : !!icon ? (
-        <Icon name={icon} size={20} color={secondary ? c.text : c.onPrimary} />
+        <Icon name={icon} size={18} color={secondary ? c.text : c.onPrimary} />
       ) : null}
       <Label
         bold
-        size={width < 360 ? 14 : 15}
+        size={compact ? 13 : width < 360 ? 14 : 15}
         color={secondary ? c.text : c.onPrimary}
         flexShrink={1}
         textAlign="center"
@@ -433,7 +479,7 @@ export function Field({
   const keyboardField = useKeyboardAwareField();
   return (
     <YStack gap={7}>
-      <Label bold size={13}>
+      <Label size={13} color={c.muted}>
         {label}
       </Label>
       <TextInput
@@ -447,9 +493,9 @@ export function Field({
         }}
         style={[
           {
-            minHeight: 49,
+            minHeight: 48,
             borderWidth: 1,
-            borderColor: error ? "#B42332" : c.line,
+            borderColor: error ? c.negative : c.line,
             borderRadius: 10,
             padding: 13,
             color: c.text,
@@ -487,17 +533,17 @@ export function Chip({
       style={{
         maxWidth: "100%",
         flexShrink: 1,
-        minHeight: 44,
-        paddingHorizontal: 15,
-        paddingVertical: 10,
+        minHeight: 36,
+        paddingHorizontal: 12,
+        paddingVertical: 7,
         borderWidth: 1,
-        borderColor: selected ? c.primary : c.line,
-        backgroundColor: selected ? c.primary : c.card,
-        borderRadius: 12,
+        borderColor: selected ? c.accent : c.line,
+        backgroundColor: selected ? c.accentSoft : c.card,
+        borderRadius: 999,
         justifyContent: "center",
       }}
     >
-      <Label size={13} color={selected ? c.onPrimary : c.text} bold={selected}>
+      <Label size={13} color={selected ? c.accent : c.text} bold={selected}>
         {children}
       </Label>
     </Pressable>
@@ -505,7 +551,7 @@ export function Chip({
 }
 export function Progress({
   value,
-  color = "#6652A3",
+  color = "#4F46E5",
 }: {
   value: number;
   color?: string;
@@ -520,18 +566,18 @@ export function Progress({
         now: Math.max(0, Math.min(100, value)),
       }}
       style={{
-        height: 8,
-        backgroundColor: c.line,
-        borderRadius: 5,
+        height: 6,
+        backgroundColor: c.soft,
+        borderRadius: 3,
         overflow: "hidden",
       }}
     >
       <View
         style={{
           width: `${Math.max(0, Math.min(100, value))}%`,
-          height: 8,
+          height: 6,
           backgroundColor: color,
-          borderRadius: 5,
+          borderRadius: 3,
         }}
       />
     </View>
@@ -561,325 +607,239 @@ export const avatarPresets = [
   { id: "cloud", label: "Cloud", bg: "#E8F5FA", ink: "#547586" },
 ] as const;
 
+type PersonSpec = {
+  skin: string;
+  hair: string;
+  shirt: string;
+  style: "short" | "crop" | "long" | "bun" | "curly";
+  extra?: "helmet" | "beret" | "glasses" | "cap";
+};
+const people: Record<string, PersonSpec> = {
+  man: { skin: "#E0AC8A", hair: "#3B2A20", shirt: "#3F6E7A", style: "short" },
+  boy: { skin: "#F1C6A5", hair: "#5A3A22", shirt: "#4F66B0", style: "crop", extra: "cap" },
+  lady: { skin: "#C98E6B", hair: "#2B1B16", shirt: "#B0577A", style: "long" },
+  girl: { skin: "#F3CDB0", hair: "#8A4B2A", shirt: "#E07A5F", style: "bun" },
+  astronaut: { skin: "#D9A07E", hair: "#2E2A33", shirt: "#E5E7EB", style: "short", extra: "helmet" },
+  artist: { skin: "#E8B693", hair: "#6B2E2E", shirt: "#C2554F", style: "curly", extra: "beret" },
+  reader: { skin: "#B97E5A", hair: "#1F1A17", shirt: "#4F7463", style: "short", extra: "glasses" },
+  cyclist: { skin: "#EDBE9C", hair: "#3D2B1F", shirt: "#3B82C4", style: "crop", extra: "helmet" },
+};
+type AnimalSpec = {
+  fur: string;
+  inner: string;
+  ears: "pointy" | "round" | "long" | "tufts" | "floppy";
+  muzzle?: string;
+  patches?: string;
+};
+const animals: Record<string, AnimalSpec> = {
+  cat: { fur: "#E3A35C", inner: "#F6C9A0", ears: "pointy", muzzle: "#FBE7D3" },
+  fox: { fur: "#E07A3F", inner: "#FFFFFF", ears: "pointy", muzzle: "#FFF7EF" },
+  bear: { fur: "#8B5E3C", inner: "#C89B76", ears: "round", muzzle: "#D9B99B" },
+  bunny: { fur: "#EEE7F3", inner: "#F4B8C8", ears: "long", muzzle: "#FFFFFF" },
+  panda: { fur: "#FFFFFF", inner: "#2E2E33", ears: "round", patches: "#2E2E33" },
+  owl: { fur: "#8A6A4F", inner: "#E9D6BF", ears: "tufts", muzzle: "#F2C14E" },
+  dog: { fur: "#C8955F", inner: "#7A5232", ears: "floppy", muzzle: "#F3E1C9" },
+};
+function PersonArt({ p, uid }: { p: PersonSpec; uid: string }) {
+  return (
+    <G>
+      <Path d="M12 64c0-12 9-19 20-19s20 7 20 19Z" fill={p.shirt} />
+      <Path d="M27 45h10v5a5 5 0 0 1-10 0Z" fill={p.skin} />
+      <Path d="M27 47c2 2 8 2 10 0" stroke="#000" strokeOpacity={0.12} strokeWidth={2} fill="none" />
+      {p.style === "long" && <Path d="M16 30c0-12 7-19 16-19s16 7 16 19v14H16Z" fill={p.hair} />}
+      <Ellipse cx="32" cy="31" rx="11.5" ry="13" fill={p.skin} />
+      <Ellipse cx="20.5" cy="32" rx="2.2" ry="3.2" fill={p.skin} />
+      <Ellipse cx="43.5" cy="32" rx="2.2" ry="3.2" fill={p.skin} />
+      <Ellipse cx="32" cy="38" rx="9" ry="5" fill={`url(#${uid}-shade)`} />
+      {p.style === "short" && <Path d="M20 28c0-9 5-14 12-14s12 5 12 14c-3-4-7-6-12-6s-9 2-12 6Z" fill={p.hair} />}
+      {p.style === "crop" && <Path d="M20.5 27c1-8 5.5-12 11.5-12s10.5 4 11.5 12c-4-3-8-4-11.5-4s-7.5 1-11.5 4Z" fill={p.hair} />}
+      {p.style === "long" && <Path d="M20 29c0-9 5-15 12-15s12 6 12 15c-2-5-6-8-12-8-5 0-9 3-12 8Z" fill={p.hair} />}
+      {p.style === "bun" && (
+        <G fill={p.hair}>
+          <Circle cx="32" cy="12" r="5" />
+          <Path d="M20 29c0-9 5-14 12-14s12 5 12 14c-3-4-7-7-12-7s-9 3-12 7Z" />
+        </G>
+      )}
+      {p.style === "curly" && (
+        <G fill={p.hair}>
+          <Circle cx="23" cy="22" r="5" />
+          <Circle cx="29" cy="18" r="5.5" />
+          <Circle cx="36" cy="18" r="5.5" />
+          <Circle cx="41" cy="22" r="5" />
+        </G>
+      )}
+      <G fill="#2A1F1B">
+        <Ellipse cx="27.5" cy="31.5" rx="1.4" ry="1.7" />
+        <Ellipse cx="36.5" cy="31.5" rx="1.4" ry="1.7" />
+      </G>
+      <Path d="M25.5 28c1.2-.8 2.8-.8 4 0M34.5 28c1.2-.8 2.8-.8 4 0" stroke={p.hair} strokeWidth={1.2} strokeLinecap="round" fill="none" />
+      <Path d="M29 37.5c1.8 1.4 4.2 1.4 6 0" stroke="#7A3E2E" strokeWidth={1.4} strokeLinecap="round" fill="none" />
+      <Circle cx="24.5" cy="35" r="2" fill="#E8838A" opacity={0.25} />
+      <Circle cx="39.5" cy="35" r="2" fill="#E8838A" opacity={0.25} />
+      {p.extra === "glasses" && (
+        <G stroke="#1F2937" strokeWidth={1.2} fill="none">
+          <Circle cx="27.5" cy="31.5" r="3.6" />
+          <Circle cx="36.5" cy="31.5" r="3.6" />
+          <Path d="M31.1 31.5h1.8" />
+        </G>
+      )}
+      {p.extra === "cap" && <Path d="M19.5 25c1-7 6-11 12.5-11s11.5 4 12.5 11Zm12-1h16c0 2-2 3-4 3H31Z" fill="#334155" />}
+      {p.extra === "beret" && <Path d="M18 23c2-6 8-9 15-9s13 3 13 7c0 2-3 3-8 3H22c-3 0-4-.5-4-1Z" fill="#1F2937" />}
+      {p.extra === "helmet" && (
+        <G>
+          <Path d="M18.5 27c0-9 6-14.5 13.5-14.5S45.5 18 45.5 27Z" fill={p.shirt === "#E5E7EB" ? "#F8FAFC" : "#1E3A8A"} />
+          <Path d="M22 22h20" stroke="#fff" strokeOpacity={0.5} strokeWidth={1.4} strokeLinecap="round" />
+        </G>
+      )}
+    </G>
+  );
+}
+function AnimalArt({ a, uid }: { a: AnimalSpec; uid: string }) {
+  const earL =
+    a.ears === "pointy" ? "M16 26 19 9l11 10Z" :
+    a.ears === "long" ? "M20 26c-3-10-3-19 1-21 4-1 6 9 6 19Z" :
+    a.ears === "tufts" ? "M17 22 18 11l8 7Z" :
+    a.ears === "floppy" ? "M17 20c-6 4-7 14-3 18 3-3 5-9 6-15Z" : "";
+  const earR =
+    a.ears === "pointy" ? "M48 26 45 9 34 19Z" :
+    a.ears === "long" ? "M44 26c3-10 3-19-1-21-4-1-6 9-6 19Z" :
+    a.ears === "tufts" ? "M47 22 46 11l-8 7Z" :
+    a.ears === "floppy" ? "M47 20c6 4 7 14 3 18-3-3-5-9-6-15Z" : "";
+  return (
+    <G>
+      {a.ears === "round" ? (
+        <G>
+          <Circle cx="19" cy="19" r="7" fill={a.patches ?? a.fur} />
+          <Circle cx="45" cy="19" r="7" fill={a.patches ?? a.fur} />
+          <Circle cx="19" cy="19" r="3.5" fill={a.patches ? "#4B4B52" : a.inner} />
+          <Circle cx="45" cy="19" r="3.5" fill={a.patches ? "#4B4B52" : a.inner} />
+        </G>
+      ) : (
+        <G>
+          <Path d={earL} fill={a.ears === "floppy" ? a.inner : a.fur} />
+          <Path d={earR} fill={a.ears === "floppy" ? a.inner : a.fur} />
+        </G>
+      )}
+      <Ellipse cx="32" cy="35" rx="17" ry="16" fill={a.fur} stroke={a.fur === "#FFFFFF" ? "#E5E7EB" : "none"} />
+      <Ellipse cx="32" cy="44" rx="15" ry="7" fill={`url(#${uid}-shade)`} />
+      {a.patches && (
+        <G fill={a.patches}>
+          <Ellipse cx="25.5" cy="33" rx="4.5" ry="5.5" transform="rotate(-20 25.5 33)" />
+          <Ellipse cx="38.5" cy="33" rx="4.5" ry="5.5" transform="rotate(20 38.5 33)" />
+        </G>
+      )}
+      {a.muzzle && <Ellipse cx="32" cy="41" rx="8" ry="6" fill={a.muzzle} />}
+      {a.ears === "tufts" && (
+        <G>
+          <Circle cx="25.5" cy="33" r="6" fill={a.inner} />
+          <Circle cx="38.5" cy="33" r="6" fill={a.inner} />
+        </G>
+      )}
+      <G fill="#1F1B24">
+        <Circle cx="25.5" cy="33" r={a.ears === "tufts" ? 2.8 : 2} />
+        <Circle cx="38.5" cy="33" r={a.ears === "tufts" ? 2.8 : 2} />
+      </G>
+      <Circle cx="26.2" cy="32.2" r="0.7" fill="#fff" />
+      <Circle cx="39.2" cy="32.2" r="0.7" fill="#fff" />
+      {a.ears === "tufts" ? (
+        <Path d="M30 39l2 3 2-3Z" fill={a.muzzle} />
+      ) : (
+        <G>
+          <Ellipse cx="32" cy="39" rx="2.2" ry="1.6" fill="#2A2228" />
+          <Path d="M32 40.5v1.5M29.5 43c1.4 1 3.6 1 5 0" stroke="#2A2228" strokeWidth={1.1} strokeLinecap="round" fill="none" />
+        </G>
+      )}
+    </G>
+  );
+}
+function NatureArt({ id }: { id: string }) {
+  switch (id) {
+    case "sun":
+      return (
+        <G>
+          {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+            <Rect key={deg} x="30.5" y="8" width="3" height="8" rx="1.5" fill="#F59E0B" transform={`rotate(${deg} 32 32)`} />
+          ))}
+          <Circle cx="32" cy="32" r="12" fill="#FBBF24" />
+          <Circle cx="28" cy="28" r="4" fill="#FDE68A" opacity={0.8} />
+        </G>
+      );
+    case "moon":
+      return (
+        <G>
+          <Path d="M40 14a18 18 0 1 0 10 31 15 15 0 0 1-10-31Z" fill="#C7D2FE" />
+          <Circle cx="30" cy="36" r="2.5" fill="#A5B4FC" />
+          <Circle cx="25" cy="27" r="1.6" fill="#A5B4FC" />
+          <Circle cx="47" cy="18" r="1.2" fill="#FFFFFF" />
+          <Circle cx="52" cy="28" r="0.9" fill="#FFFFFF" />
+        </G>
+      );
+    case "leaf":
+      return (
+        <G>
+          <Path d="M14 50C14 26 30 14 50 14c0 22-14 36-36 36Z" fill="#4E9A62" />
+          <Path d="M18 46 44 20" stroke="#BBF7D0" strokeWidth={1.6} strokeLinecap="round" />
+          <Path d="M27 37h9M32 32h9M23 41v-8" stroke="#BBF7D0" strokeWidth={1.2} strokeLinecap="round" />
+        </G>
+      );
+    case "cloud":
+      return (
+        <G>
+          <Path d="M18 44a9 9 0 0 1 1-18 12 12 0 0 1 23-2 10 10 0 0 1 4 20Z" fill="#FFFFFF" />
+          <Path d="M18 44h28" stroke="#BAE6FD" strokeWidth={2} strokeLinecap="round" />
+          <Circle cx="44" cy="19" r="5" fill="#FBBF24" opacity={0.9} />
+        </G>
+      );
+    default:
+      return (
+        <G>
+          {[0, 72, 144, 216, 288].map((deg) => (
+            <Ellipse key={deg} cx="32" cy="20" rx="7" ry="10" fill="#F472B6" transform={`rotate(${deg} 32 32)`} />
+          ))}
+          <Circle cx="32" cy="32" r="6" fill="#FCD34D" />
+          <Circle cx="30.5" cy="30.5" r="2" fill="#FEF3C7" />
+        </G>
+      );
+  }
+}
 function SketchAvatar({ preset, size }: { preset: string; size: number }) {
   const id = preset.replace(/^preset:/, "");
   const item =
     avatarPresets.find((entry) => entry.id === id) ?? avatarPresets[0];
-  const stroke = item.ink;
-  const common = {
-    fill: "none",
-    stroke,
-    strokeWidth: 1.8,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-  };
-  const face = (
-    <>
-      <Circle
-        cx="16"
-        cy="17"
-        r="8.4"
-        fill="#FFF9F5"
-        stroke={stroke}
-        strokeWidth="1.8"
-      />
-      <Path d="M13 17h.1 M19 17h.1 M14 21c1.2.8 2.8.8 4 0" {...common} />
-    </>
-  );
-  let drawing: React.ReactNode;
-  if (["cat", "fox", "bear", "bunny", "panda", "owl", "dog"].includes(id)) {
-    drawing = (
-      <>
-        {id === "bunny" ? (
-          <>
-            <Ellipse
-              cx="12"
-              cy="7"
-              rx="3"
-              ry="6"
-              fill="#FFF9F5"
-              stroke={stroke}
-              strokeWidth="1.8"
-            />
-            <Ellipse
-              cx="20"
-              cy="7"
-              rx="3"
-              ry="6"
-              fill="#FFF9F5"
-              stroke={stroke}
-              strokeWidth="1.8"
-            />
-          </>
-        ) : id === "bear" || id === "panda" ? (
-          <>
-            <Circle
-              cx="10"
-              cy="10"
-              r="3.5"
-              fill={id === "panda" ? stroke : "#FFF9F5"}
-              stroke={stroke}
-              strokeWidth="1.8"
-            />
-            <Circle
-              cx="22"
-              cy="10"
-              r="3.5"
-              fill={id === "panda" ? stroke : "#FFF9F5"}
-              stroke={stroke}
-              strokeWidth="1.8"
-            />
-          </>
-        ) : id === "dog" ? (
-          <>
-            <Path
-              d="M9 10 5 8l1 9 4-2"
-              fill="#FFF9F5"
-              stroke={stroke}
-              strokeWidth="1.8"
-            />
-            <Path
-              d="m23 10 4-2-1 9-4-2"
-              fill="#FFF9F5"
-              stroke={stroke}
-              strokeWidth="1.8"
-            />
-          </>
-        ) : (
-          <>
-            <Path
-              d="m9 12 1-7 6 5"
-              fill="#FFF9F5"
-              stroke={stroke}
-              strokeWidth="1.8"
-            />
-            <Path
-              d="m23 12-1-7-6 5"
-              fill="#FFF9F5"
-              stroke={stroke}
-              strokeWidth="1.8"
-            />
-          </>
-        )}
-        <Circle
-          cx="16"
-          cy="17"
-          r="9"
-          fill="#FFF9F5"
-          stroke={stroke}
-          strokeWidth="1.8"
-        />
-        {id === "owl" ? (
-          <>
-            <Circle cx="12.5" cy="16" r="3.3" {...common} />
-            <Circle cx="19.5" cy="16" r="3.3" {...common} />
-            <Path d="m16 17-1 2h2z M11 23c3 2 7 2 10 0" {...common} />
-          </>
-        ) : (
-          <>
-            <Path
-              d="M12.5 16h.1 M19.5 16h.1 M16 18l-1.2 1.2L16 20l1.2-.8z"
-              {...common}
-            />
-            <Path d="M13 22c2 1 4 1 6 0" {...common} />
-          </>
-        )}
-        {id === "panda" && (
-          <>
-            <Ellipse cx="12" cy="16" rx="2.2" ry="3" fill={stroke} />
-            <Ellipse cx="20" cy="16" rx="2.2" ry="3" fill={stroke} />
-          </>
-        )}
-      </>
-    );
-  } else if (
-    [
-      "man",
-      "boy",
-      "lady",
-      "girl",
-      "artist",
-      "reader",
-      "cyclist",
-      "astronaut",
-    ].includes(id)
-  ) {
-    drawing = (
-      <>
-        {id === "astronaut" && (
-          <Circle
-            cx="16"
-            cy="16"
-            r="13"
-            fill="#FFF9F5"
-            stroke={stroke}
-            strokeWidth="1.8"
-          />
-        )}
-        {face}
-        {id === "man" && (
-          <Path
-            d="M8 15c1-7 5-10 11-8 3 1 5 4 5 8-4-2-8-5-11-1z"
-            fill={stroke}
-            opacity=".9"
-          />
-        )}
-        {id === "boy" && (
-          <Path
-            d="M8 14c2-7 11-9 16-3l-6-1-3 3-3-2z"
-            fill={stroke}
-            opacity=".9"
-          />
-        )}
-        {(id === "lady" || id === "girl") && (
-          <Path
-            d="M8 18C6 9 11 5 16 5s10 4 8 13l-4-7-4 2-4-2z"
-            fill={stroke}
-            opacity=".86"
-          />
-        )}
-        {id === "artist" && (
-          <>
-            <Path d="M8 11c2-6 13-8 17 1-6-2-11-2-17-1z" fill={stroke} />
-            <Path d="M10 7c3-3 9-4 12-1" {...common} />
-          </>
-        )}
-        {id === "reader" && (
-          <>
-            <Path
-              d="M8 16h7v6H8z M17 16h7v6h-7z"
-              fill="#FFF9F5"
-              stroke={stroke}
-              strokeWidth="1.6"
-            />
-            <Path d="M15 17h2" {...common} />
-          </>
-        )}
-        {id === "cyclist" && (
-          <Path d="M8 12c3-6 12-7 17 0l-9-2z" fill={stroke} />
-        )}
-        {id === "astronaut" && (
-          <>
-            <Path d="M9 23c4 3 10 3 14 0" {...common} />
-            <Circle cx="23" cy="8" r="1.2" fill={stroke} />
-          </>
-        )}
-        <Path
-          d="M8 30c1-5 5-7 8-7s7 2 8 7"
-          fill="#FFF9F5"
-          stroke={stroke}
-          strokeWidth="1.8"
-        />
-      </>
-    );
-  } else if (id === "flower") {
-    drawing = (
-      <>
-        <Circle
-          cx="16"
-          cy="16"
-          r="4"
-          fill="#FFF9F5"
-          stroke={stroke}
-          strokeWidth="1.8"
-        />
-        {[
-          [16, 8],
-          [24, 16],
-          [16, 24],
-          [8, 16],
-          [10.5, 10.5],
-          [21.5, 10.5],
-          [21.5, 21.5],
-          [10.5, 21.5],
-        ].map(([cx, cy]) => (
-          <Ellipse
-            key={`${cx}-${cy}`}
-            cx={cx}
-            cy={cy}
-            rx="3"
-            ry="5"
-            fill="#FFF9F5"
-            stroke={stroke}
-            strokeWidth="1.4"
-            transform={`rotate(${(Math.atan2(cy - 16, cx - 16) * 180) / Math.PI + 90} ${cx} ${cy})`}
-          />
-        ))}
-      </>
-    );
-  } else if (id === "sun") {
-    drawing = (
-      <>
-        <Circle
-          cx="16"
-          cy="16"
-          r="7"
-          fill="#FFF9F5"
-          stroke={stroke}
-          strokeWidth="1.8"
-        />
-        <Path
-          d="M16 3v4 M16 25v4 M3 16h4 M25 16h4 M7 7l3 3 M22 22l3 3 M25 7l-3 3 M10 22l-3 3 M13 16h.1 M19 16h.1 M13 20c2 1 4 1 6 0"
-          {...common}
-        />
-      </>
-    );
-  } else if (id === "moon") {
-    drawing = (
-      <>
-        <Path
-          d="M22 5c-8 1-12 8-9 15 2 5 7 7 12 5-3 4-9 5-14 2C4 23 3 13 9 7c4-4 9-4 13-2z"
-          fill="#FFF9F5"
-          stroke={stroke}
-          strokeWidth="1.8"
-        />
-        <Path d="M12 16h.1 M16 19c1 .6 2 .6 3 0" {...common} />
-      </>
-    );
-  } else if (id === "leaf") {
-    drawing = (
-      <>
-        <Path
-          d="M25 6C14 6 7 12 8 23c9 2 16-4 17-17z"
-          fill="#FFF9F5"
-          stroke={stroke}
-          strokeWidth="1.8"
-        />
-        <Path d="M7 27c4-7 9-11 15-16 M13 20l-1-6 M17 16l5 1" {...common} />
-      </>
-    );
-  } else {
-    drawing = (
-      <>
-        <Path
-          d="M8 23h16a5 5 0 0 0 0-10 8 8 0 0 0-15-1 5.5 5.5 0 0 0-1 11z"
-          fill="#FFF9F5"
-          stroke={stroke}
-          strokeWidth="1.8"
-        />
-        <Path d="M12 17h.1 M19 17h.1 M13 20c2 1 4 1 6 0" {...common} />
-      </>
-    );
-  }
+  const uid = `av-${item.id}`;
   return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2.6,
-        backgroundColor: item.bg,
-        alignItems: "center",
-        justifyContent: "center",
-        overflow: "hidden",
-      }}
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      accessibilityLabel={`${item.label} avatar`}
     >
-      <Svg width={size * 0.86} height={size * 0.86} viewBox="0 0 32 32">
-        {drawing}
-      </Svg>
-    </View>
+      <Defs>
+        <LinearGradient id={`${uid}-bg`} x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={item.bg} />
+          <Stop offset="1" stopColor={item.ink} stopOpacity={0.28} />
+        </LinearGradient>
+        <LinearGradient id={`${uid}-shade`} x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor="#000" stopOpacity={0} />
+          <Stop offset="1" stopColor="#000" stopOpacity={0.1} />
+        </LinearGradient>
+        <ClipPath id={`${uid}-clip`}>
+          <Circle cx="32" cy="32" r="32" />
+        </ClipPath>
+      </Defs>
+      <G clipPath={`url(#${uid}-clip)`}>
+        <Rect width="64" height="64" fill={`url(#${uid}-bg)`} />
+        {people[item.id] ? (
+          <PersonArt p={people[item.id]} uid={uid} />
+        ) : animals[item.id] ? (
+          <AnimalArt a={animals[item.id]} uid={uid} />
+        ) : (
+          <NatureArt id={item.id} />
+        )}
+      </G>
+    </Svg>
   );
 }
-
 export function AvatarPicker({
   value,
   onChange,
@@ -923,6 +883,19 @@ export function AvatarPicker({
   );
 }
 
+const avatarTints = [
+  { bg: "#EEF2FF", ink: "#4338CA" },
+  { bg: "#ECFDF5", ink: "#047857" },
+  { bg: "#FFF7ED", ink: "#C2410C" },
+  { bg: "#F0F9FF", ink: "#0369A1" },
+  { bg: "#FDF2F8", ink: "#BE185D" },
+  { bg: "#F1F5F9", ink: "#334155" },
+];
+function avatarTint(name: string) {
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return avatarTints[hash % avatarTints.length];
+}
 export function Avatar({
   name,
   size = 36,
@@ -941,23 +914,22 @@ export function Avatar({
       <Image
         source={{ uri: avatar }}
         accessibilityLabel={`${name}'s profile picture`}
-        style={{ width: size, height: size, borderRadius: size / 2.6 }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
       />
     );
+  const tint = avatarTint(name);
   return (
     <View
       style={{
         width: size,
         height: size,
-        backgroundColor: color,
-        borderRadius: size / 2.5,
+        backgroundColor: color === "#EEE8F8" ? tint.bg : color,
+        borderRadius: size / 2,
         alignItems: "center",
         justifyContent: "center",
-        borderWidth: 2,
-        borderColor: "#FFFFFF",
       }}
     >
-      <Label size={size * 0.32} bold color="#493865">
+      <Label size={size * 0.36} bold color={tint.ink}>
         {name
           .split(" ")
           .map((s) => s[0])
@@ -979,16 +951,23 @@ export function Notice({
     <View
       accessibilityRole={error ? "alert" : undefined}
       style={{
-        padding: 15,
-        backgroundColor: error ? "#FFF0F0" : c.soft,
-        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        backgroundColor: error ? c.rose : c.soft,
+        borderRadius: 10,
         flexDirection: "row",
-        alignItems: "center",
+        alignItems: "flex-start",
         gap: 10,
       }}
     >
-      <Mascot size={44} mood={error ? "help" : "wave"} animate={false} />
-      <Label flex={1} size={13} color={error ? "#A12435" : c.text}>
+      <View style={{ paddingTop: 1 }}>
+        <Icon
+          name={error ? "help" : "bell"}
+          size={16}
+          color={error ? c.negative : c.muted}
+        />
+      </View>
+      <Label flex={1} size={13} color={error ? c.negative : c.text}>
         {children}
       </Label>
     </View>
@@ -1005,28 +984,29 @@ export function Empty({
   action?: string;
   onPress?(): void;
 }) {
+  const c = useColors();
   return (
-    <XStack
+    <YStack
       alignItems="center"
-      paddingVertical={12}
-      gap={12}
-      maxWidth={520}
+      paddingVertical={20}
+      gap={10}
+      maxWidth={420}
       width="100%"
       alignSelf="center"
     >
-      <Mascot size={76} />
-      <YStack flex={1} gap={8} alignItems="flex-start">
-        <Heading size={20}>{title}</Heading>
-        <Label muted size={13}>
-          {detail}
-        </Label>
-        {!!action && (
-          <Button compact onPress={onPress}>
-            {action}
-          </Button>
-        )}
-      </YStack>
-    </XStack>
+      <Mascot size={84} mood="wave" animate={false} />
+      <Label bold size={15} textAlign="center">
+        {title}
+      </Label>
+      <Label muted size={13} textAlign="center">
+        {detail}
+      </Label>
+      {!!action && (
+        <Button compact secondary onPress={onPress}>
+          {action}
+        </Button>
+      )}
+    </YStack>
   );
 }
 export type PipMood = "wave" | "reading" | "success" | "help";
@@ -1039,8 +1019,8 @@ export function PipFeedback({
 }) {
   return (
     <XStack gap={10} alignItems="center" accessibilityLiveRegion="polite">
-      <Mascot size={76} mood={mood} />
-      <Label bold size={13} flex={1} lineHeight={20}>
+      <Mascot size={52} mood={mood} animate={mood === "success"} />
+      <Label size={13} flex={1}>
         {message}
       </Label>
     </XStack>
@@ -1055,29 +1035,32 @@ export function Brand({
 }) {
   return (
     <XStack
-      gap={8}
+      gap={9}
       alignItems="center"
       accessible
       accessibilityLabel="SettleUp"
     >
-      <Mascot size={compact ? 32 : 40} mark animate={false} />
+      <LogoMark size={compact ? 28 : 34} />
       {!iconOnly && (
         <Label
           bold
-          size={compact ? 20 : 24}
-          letterSpacing={-1}
+          size={compact ? 17 : 20}
+          letterSpacing={-0.4}
           flexShrink={1}
           numberOfLines={1}
         >
-          settle
-          <Label bold size={compact ? 20 : 24} color="#6652A3">
-            up.
-          </Label>
+          SettleUp
         </Label>
       )}
     </XStack>
   );
 }
+/**
+ * "Pip": a soft, coin-like character in the app palette. Smooth gradients and
+ * a simple face keep it friendly without looking like a game sprite. Moods
+ * only change the eyes, mouth and a small badge. Floats gently unless the
+ * system asks for reduced motion.
+ */
 export const Mascot = React.memo(function Mascot({
   size = 170,
   mood = "wave",
@@ -1089,182 +1072,122 @@ export const Mascot = React.memo(function Mascot({
   mark?: boolean;
   animate?: boolean;
 }) {
+  const dark = useSession((s) => s.dark);
   const motion = useRef(new Animated.Value(0)).current;
   const [reducedMotion, setReducedMotion] = useState(true);
   useEffect(() => {
-    if (!animate || mark) return;
-    let mounted = true;
+    let live = true;
     AccessibilityInfo.isReduceMotionEnabled()
-      .then((value) => {
-        if (mounted) setReducedMotion(value);
-      })
+      .then((value) => live && setReducedMotion(value))
       .catch(() => {});
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      setReducedMotion,
-    );
     return () => {
-      mounted = false;
-      subscription.remove();
+      live = false;
     };
-  }, [animate, mark]);
+  }, []);
   useEffect(() => {
-    motion.setValue(0);
-    if (!animate || mark || reducedMotion) return;
-    const animation = Animated.sequence([
-      Animated.timing(motion, {
-        toValue: 1,
-        duration: 240,
-        useNativeDriver: Platform.OS !== "web",
-      }),
-      Animated.spring(motion, {
-        toValue: 0,
-        friction: 3,
-        tension: 90,
-        useNativeDriver: Platform.OS !== "web",
-      }),
-    ]);
-    animation.start();
-    return () => animation.stop();
-  }, [animate, mark, mood, motion, reducedMotion]);
+    if (mark || !animate || reducedMotion) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(motion, { toValue: 1, duration: 1800, useNativeDriver: true }),
+        Animated.timing(motion, { toValue: 0, duration: 1800, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [animate, mark, reducedMotion, motion]);
+  const id = `pip-${mood}-${dark ? "d" : "l"}`;
+  const eyes =
+    mood === "success" ? (
+      <G stroke="#1E1B4B" strokeWidth={4} strokeLinecap="round" fill="none">
+        <Path d="M68 86 q6 -6 12 0" />
+        <Path d="M108 86 q6 -6 12 0" />
+      </G>
+    ) : mood === "reading" ? (
+      <G fill="#1E1B4B">
+        <Ellipse cx="74" cy="90" rx="5" ry="4" />
+        <Ellipse cx="114" cy="90" rx="5" ry="4" />
+      </G>
+    ) : (
+      <G fill="#1E1B4B">
+        <Ellipse cx="74" cy="86" rx="5.5" ry="7" />
+        <Ellipse cx="114" cy="86" rx="5.5" ry="7" />
+        <Circle cx="76" cy="83" r="1.8" fill="#fff" />
+        <Circle cx="116" cy="83" r="1.8" fill="#fff" />
+      </G>
+    );
+  const mouth =
+    mood === "help" ? (
+      <Path d="M86 108 q8 -5 16 0" stroke="#1E1B4B" strokeWidth={3.5} strokeLinecap="round" fill="none" />
+    ) : mood === "reading" ? (
+      <Path d="M88 106 h12" stroke="#1E1B4B" strokeWidth={3.5} strokeLinecap="round" />
+    ) : (
+      <Path d="M84 102 q10 10 20 0" stroke="#1E1B4B" strokeWidth={3.5} strokeLinecap="round" fill="none" />
+    );
+  const badge =
+    mood === "success" ? (
+      <G>
+        <Circle cx="146" cy="52" r="15" fill="#10B981" />
+        <Path d="m139 52 5 5 9-10" stroke="#fff" strokeWidth={3.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </G>
+    ) : mood === "help" ? (
+      <G>
+        <Circle cx="146" cy="52" r="15" fill="#F59E0B" />
+        <Path d="M146 45v9" stroke="#fff" strokeWidth={3.5} strokeLinecap="round" />
+        <Circle cx="146" cy="60" r="2" fill="#fff" />
+      </G>
+    ) : mood === "reading" ? (
+      <G>
+        <Rect x="128" y="96" width="34" height="42" rx="6" fill="#FFFFFF" stroke="#E0E7FF" strokeWidth={2} />
+        <Path d="M135 108h20M135 116h14M135 124h18" stroke="#A5B4FC" strokeWidth={3} strokeLinecap="round" />
+      </G>
+    ) : null;
+  const translateY = motion.interpolate({ inputRange: [0, 1], outputRange: [0, -size * 0.03] });
   return (
-    <Animated.View
-      accessible={false}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      pointerEvents="none"
-      style={{
-        width: size,
-        height: size,
-        flexShrink: 0,
-        transform: [
-          {
-            translateY: motion.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, mood === "success" ? -10 : -4],
-            }),
-          },
-          {
-            rotate: motion.interpolate({
-              inputRange: [0, 1],
-              outputRange: ["0deg", mood === "help" ? "-5deg" : "5deg"],
-            }),
-          },
-        ],
-      }}
-    >
-      <Svg
-        width={size}
-        height={size}
-        viewBox={mark ? "36 8 134 150" : "0 0 200 200"}
-      >
+    <Animated.View style={{ width: size, height: size, transform: [{ translateY }] }}>
+      <Svg width={size} height={size} viewBox={mark ? "22 20 144 144" : "0 0 188 188"}>
+        <Defs>
+          <RadialGradient id={`${id}-body`} cx="38%" cy="30%" r="75%">
+            <Stop offset="0" stopColor="#A5B4FC" />
+            <Stop offset="0.55" stopColor="#6366F1" />
+            <Stop offset="1" stopColor="#4338CA" />
+          </RadialGradient>
+          <LinearGradient id={`${id}-rim`} x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.55" />
+            <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
         {!mark && (
-          <Ellipse
-            cx="109"
-            cy="175"
-            rx="60"
-            ry="10"
-            fill="#D9CEE8"
-            opacity="0.55"
-          />
+          <Ellipse cx="94" cy="168" rx="46" ry="7" fill={dark ? "#000" : "#1E1B4B"} opacity={dark ? 0.35 : 0.1} />
         )}
-        <G rotation={mark ? 0 : -9} origin="100,100">
-          {!mark && (
-            <Path
-              d="M55 140 41 160M142 140l14 23"
-              stroke="#502A9C"
-              strokeWidth="12"
-              strokeLinecap="round"
-            />
-          )}
-          {!mark && (
-            <Path
-              d={
-                mood === "success"
-                  ? "M50 105 26 63M154 97l20-42"
-                  : mood === "reading"
-                    ? "M50 105 70 135M154 97l-19 38"
-                    : mood === "help"
-                      ? "M50 105 27 105M154 97l19 8"
-                      : "M50 105 27 90M154 97l19-19"
-              }
-              stroke="#7B51D0"
-              strokeWidth="12"
-              strokeLinecap="round"
-            />
-          )}
-          <Rect x="45" y="39" width="113" height="114" rx="36" fill="#9F6DE4" />
-          <Path
-            d="M58 60q30-24 80-4"
-            fill="none"
-            stroke="#C1A0F0"
-            strokeWidth="8"
-            strokeLinecap="round"
-          />
-          <Ellipse cx="83" cy="94" rx="7" ry="10" fill="#38255E" />
-          <Ellipse cx="125" cy="94" rx="7" ry="10" fill="#38255E" />
-          <Circle cx="85" cy="91" r="2" fill="#FFF" />
-          <Circle cx="127" cy="91" r="2" fill="#FFF" />
-          <Path
-            d={
-              mood === "help"
-                ? "M92 117q12-5 24 0"
-                : mood === "success"
-                  ? "M90 112q14 23 28-2"
-                  : "M92 113q12 15 24-1"
-            }
-            stroke="#38255E"
-            strokeWidth="4"
-            strokeLinecap="round"
-            fill="none"
-          />
-          <Ellipse cx="68" cy="111" rx="10" ry="5" fill="#B691EA" />
-          <Ellipse cx="139" cy="111" rx="10" ry="5" fill="#B691EA" />
-          <G rotation="10" origin="111,31">
-            <Rect x="91" y="15" width="40" height="32" rx="11" fill="#F3BC5A" />
-            <Path
-              d="m104 26 5 7 10-8"
-              stroke="#9A651E"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
+        {!mark && (
+          <G fill="#3730A3">
+            <Rect x="58" y="146" width="24" height="14" rx="7" />
+            <Rect x="106" y="146" width="24" height="14" rx="7" />
           </G>
-          {!mark && mood === "reading" && (
-            <G>
-              <Rect
-                x="65"
-                y="125"
-                width="80"
-                height="48"
-                rx="6"
-                fill="#FFF"
-                stroke="#7C52BF"
-                strokeWidth="3"
-              />
-              <Path
-                d="M78 137h52 M78 148h34 M78 159h44"
-                stroke="#A080D0"
-                strokeWidth="3"
-              />
-            </G>
-          )}
-          {!mark && mood === "success" && (
-            <G fill="#A78BFA">
-              <Path d="m18 45 7 5-5 7-7-5Z M164 14l8 5-5 8-8-5Z" />
-              <Circle cx="183" cy="100" r="5" />
-            </G>
-          )}
-        </G>
-        {!mark && (
-          <Path d="m174 32 3 9 9 3-9 3-3 9-3-9-9-3 9-3Z" fill="#B090DE" />
         )}
-        {!mark && <Circle cx="28" cy="44" r="4" fill="#F3BA69" />}
+        <Rect x="30" y="34" width="128" height="120" rx="52" fill={`url(#${id}-body)`} />
+        <Ellipse cx="94" cy="134" rx="50" ry="18" fill="#312E81" opacity={0.16} />
+        <Rect x="44" y="42" width="100" height="44" rx="22" fill={`url(#${id}-rim)`} />
+        <Circle cx="132" cy="52" r="3" fill="#FFFFFF" opacity={0.8} />
+
+        <Circle cx="62" cy="100" r="7" fill="#F9A8D4" opacity={0.45} />
+        <Circle cx="126" cy="100" r="7" fill="#F9A8D4" opacity={0.45} />
+        <G>
+          <Ellipse cx="74" cy="88" rx="13" ry="14" fill="#FFFFFF" opacity={mood === "success" ? 0 : 0.92} />
+          <Ellipse cx="114" cy="88" rx="13" ry="14" fill="#FFFFFF" opacity={mood === "success" ? 0 : 0.92} />
+          {eyes}
+        </G>
+        {mouth}
+        <Path d="M86 30 q8 -12 16 0" stroke="#F59E0B" strokeWidth={6} strokeLinecap="round" fill="none" />
+        {badge}
       </Svg>
     </Animated.View>
   );
 });
+/** The brand mark is Pip, the mascot, without motion. */
+export function LogoMark({ size = 32 }: { size?: number }) {
+  return <Mascot size={size * 1.25} mood="wave" mark />;
+}
 
 const referenceArt = {
   coins: require("../../assets/finance/coins.png"),
@@ -1279,17 +1202,9 @@ export function ReferenceArt({
   size?: number;
 }) {
   return (
-    <Image
-      source={referenceArt[scene]}
-      accessibilityLabel={
-        scene === "coins"
-          ? "Illustrated stack of savings coins"
-          : scene === "wallet"
-            ? "Illustration of a wallet and mobile phone"
-            : "Illustration of private, protected finances"
-      }
-      resizeMode="contain"
-      style={{ width: size, height: size * 0.85 }}
+    <Illustration
+      name={scene === "coins" ? "settled" : scene === "wallet" ? "wallet" : "secure"}
+      size={Math.min(size, 300)}
     />
   );
 }

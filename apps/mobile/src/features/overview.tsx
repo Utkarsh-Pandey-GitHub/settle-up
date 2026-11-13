@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Illustration, HeroBackdrop, PageHero } from "../components/illustrations";
 import { DateTime } from "luxon";
 import {
   View,
@@ -59,6 +60,22 @@ import {
   type IconName,
   Skeleton,
 } from "../components/ui";
+function greeting(at = new Date()) {
+  const hour = Number(
+    at.toLocaleString("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }),
+  );
+  return hour < 5 ? "Working late" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+}
+function balanceInsight(receivable: number, owed: number, currency: string) {
+  const net = receivable - owed;
+  if (!receivable && !owed) return "You’re all settled up";
+  const amount = money(Math.abs(net), currency).replace(/\.00$/, "");
+  return net > 0
+    ? `${amount} net to collect`
+    : net < 0
+      ? `${amount} net to pay back`
+      : "Your balances cancel out";
+}
 export function DataScreen({
   children,
 }: {
@@ -109,17 +126,17 @@ export function SectionTitle({
     <XStack
       justifyContent="space-between"
       alignItems="center"
-      marginBottom={18}
+      marginBottom={4}
     >
-      <Heading size={18}>{title}</Heading>
+      <Heading size={17}>{title}</Heading>
       {!!action && (
         <Pressable
           onPress={onPress}
           accessibilityRole="button"
           style={{ minHeight: 44, justifyContent: "center" }}
         >
-          <Label size={12} color="#59458F" bold>
-            {action} →
+          <Label size={13} color="#4F46E5" bold>
+            {action}
           </Label>
         </Pressable>
       )}
@@ -235,8 +252,8 @@ export function TransactionRow({
               height: 22,
               borderRadius: 7,
               borderWidth: selected ? 0 : 2,
-              borderColor: selected ? "#59458F" : c.muted,
-              backgroundColor: selected ? "#59458F" : "transparent",
+              borderColor: selected ? "#4338CA" : c.muted,
+              backgroundColor: selected ? "#4338CA" : "transparent",
               justifyContent: "center",
               alignItems: "center",
             }}
@@ -269,7 +286,7 @@ export function TransactionRow({
           }}
         >
           {storedIcon ? (
-            <Icon name={storedIcon} color="#211D29" size={21} />
+            <Icon name={storedIcon} color="#0F172A" size={21} />
           ) : t.icon || (!tag && t.type !== "SETTLEMENT") ? (
             <Label bold size={19} color="#7760A5">
               {t.icon || t.title.slice(0, 1).toUpperCase()}
@@ -277,7 +294,7 @@ export function TransactionRow({
           ) : (
             <Icon
               name={t.type === "SETTLEMENT" ? "down" : categoryIcon(tag?.name)}
-              color="#211D29"
+              color="#0F172A"
               size={21}
             />
           )}
@@ -335,7 +352,7 @@ export function TransactionRow({
               justifyContent: "center",
             }}
           >
-            <Icon name="edit" size={15} color="#59458F" />
+            <Icon name="edit" size={15} color="#4338CA" />
           </Pressable>
         )}
         <YStack
@@ -456,14 +473,14 @@ export function SpendingChart({
             {view === "cumulative" && (
               <Path
                 d={`${linePath(currentValues)} L${pointX(currentValues.length - 1)},124 L${pointX(0)},124 Z`}
-                fill="#A990DC"
+                fill="#A5B4FC"
                 opacity={0.12}
               />
             )}
             <Path
               d={linePath(currentValues)}
               fill="none"
-              stroke="#7658B8"
+              stroke="#4F46E5"
               strokeWidth={3.5}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -474,7 +491,7 @@ export function SpendingChart({
                 cx={pointX(index)}
                 cy={pointY(value)}
                 r={index === currentValues.length - 1 ? 5 : 3}
-                fill="#7658B8"
+                fill="#4F46E5"
               />
             ))}
           </>
@@ -507,7 +524,7 @@ export function SpendingChart({
                     width={barWidth}
                     height={h}
                     rx={5}
-                    fill={i === days.length - 1 ? "#6652A3" : "#A990DC"}
+                    fill={i === days.length - 1 ? "#4F46E5" : "#A5B4FC"}
                   />
                   <SvgText
                     x={x + (compare ? barWidth + 3 : 0) + barWidth / 2}
@@ -555,7 +572,7 @@ type AnalyticsChartRange = {
 };
 
 const analyticsSeriesColors = [
-  "#7658B8",
+  "#4F46E5",
   "#218262",
   "#D07A22",
   "#C2546E",
@@ -948,121 +965,143 @@ function HomeContent({ data: d }: { data: Dashboard }) {
     Math.min(4, Math.floor((height - (width >= 1000 ? 500 : 530)) / 70)),
   );
   return (
-    <YStack gap={20} maxWidth={1050} width="100%" alignSelf="center">
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Open profile"
-        onPress={() => router.push("/settings")}
-        style={({ pressed }) => ({
-          opacity: pressed ? 0.78 : 1,
-          flexDirection: "row",
-          gap: 12,
-          alignItems: "center",
-          paddingVertical: 4,
-        })}
-      >
-        <Avatar name={d.account.name} avatar={d.account.avatar} size={40} />
-        <YStack alignItems="flex-start" flex={1}>
-          <Heading size={26}>Hi {d.account.name.split(" ")[0]}</Heading>
-          <Label muted size={12}>
-            Your money at a glance
-          </Label>
-        </YStack>
-        <View style={{ marginLeft: "auto" }}>
-          <Icon name="chevron" size={16} color={c.muted} />
-        </View>
-      </Pressable>
-      <Card
+    <YStack gap={16} maxWidth={1050} width="100%" alignSelf="center">
+      <View
         style={{
-          padding: 18,
-          borderWidth: 0,
-          backgroundColor: c.card,
+          borderRadius: 20,
+          overflow: "hidden",
+          padding: width < 360 ? 18 : 22,
+          backgroundColor: "#4338CA",
         }}
       >
-        <XStack alignItems="center" gap={width > 600 ? 24 : 14}>
-          {!compactSummary && (
-            <Image
-              source={require("../../assets/finance/coins.png")}
-              accessibilityLabel="Illustrated stack of savings coins"
-              resizeMode="contain"
+        <HeroBackdrop />
+        <YStack gap={18}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open profile"
+            onPress={() => router.push("/settings")}
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+              opacity: pressed ? 0.8 : 1,
+            })}
+          >
+            <View
               style={{
-                width: width > 600 ? 140 : 88,
-                height: (width > 600 ? 140 : 88) * 0.85,
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                borderWidth: 1.5,
+                borderColor: "rgba(255,255,255,0.45)",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "rgba(255,255,255,0.12)",
               }}
-            />
-          )}
-          <YStack flex={1} minWidth={0} alignItems="stretch" gap={8}>
-            <YStack alignItems="flex-start" gap={1}>
-              <Label size={14} bold>
-                Monthly spending
+            >
+              <Label bold size={13} color="#FFFFFF">
+                {d.account.name
+                  .split(" ")
+                  .map((part) => part[0])
+                  .slice(0, 2)
+                  .join("")}
               </Label>
-              <Label
-                size={width > 600 ? 38 : compactSummary ? 28 : 32}
-                letterSpacing={-1}
-                maxWidth="100%"
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.75}
-              >
-                {money(stats.spendingMinor, d.account.currency).replace(
-                  /\.00$/,
-                  "",
-                )}
+            </View>
+            <YStack flex={1} minWidth={0}>
+              <Label bold size={15} color="#FFFFFF" numberOfLines={1}>
+                {greeting()}, {d.account.name.split(" ")[0]}
+              </Label>
+              <Label size={12} color="rgba(224,231,255,0.85)" numberOfLines={1}>
+                {balanceInsight(stats.receivableMinor, stats.owedMinor, d.account.currency)}
               </Label>
             </YStack>
-            <XStack
-              borderTopWidth={1}
-              borderColor={c.line}
-              paddingTop={8}
-              gap={12}
-              flexWrap="wrap"
+          </Pressable>
+          <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.14)" }} />
+          <XStack alignItems="center" gap={12}>
+          <YStack gap={4} flex={1} minWidth={0}>
+            <Label size={13} color="rgba(255,255,255,0.75)">
+              Spent this month
+            </Label>
+            <Label
+              bold
+              color="#FFFFFF"
+              size={width > 600 ? 40 : compactSummary ? 30 : 34}
+              letterSpacing={-1}
+              maxWidth="100%"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
             >
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Owed to you: ${money(stats.receivableMinor, d.account.currency)}. View who owes you.`}
-                onPress={() =>
-                  router.push({ pathname: "/settle", params: { view: "owed" } })
-                }
-                style={{ flex: 1, minWidth: 70, minHeight: 44 }}
-              >
-                <XStack alignItems="center" gap={4} flexWrap="wrap">
-                  <Label size={12} color={c.accent}>
-                    Owed to you
-                  </Label>
-                  <Icon name="chevron" size={12} color={c.accent} />
-                </XStack>
-                <Label bold size={width > 600 ? 18 : 14}>
-                  {money(stats.receivableMinor, d.account.currency).replace(
-                    ".00",
-                    "",
-                  )}
-                </Label>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`You owe: ${money(stats.owedMinor, d.account.currency)}. View debts to pay.`}
-                onPress={() =>
-                  router.push({ pathname: "/settle", params: { view: "pay" } })
-                }
-                style={{ flex: 1, minWidth: 70, minHeight: 44 }}
-              >
-                <XStack alignItems="center" gap={4} flexWrap="wrap">
-                  <Label muted size={12}>
-                    You owe
-                  </Label>
-                  <Icon name="chevron" size={12} color={c.muted} />
-                </XStack>
-                <Label bold size={width > 600 ? 18 : 14}>
-                  {money(stats.owedMinor, d.account.currency).replace(
-                    ".00",
-                    "",
-                  )}
-                </Label>
-              </Pressable>
-            </XStack>
+              {money(stats.spendingMinor, d.account.currency).replace(
+                /\.00$/,
+                "",
+              )}
+            </Label>
           </YStack>
-        </XStack>
-      </Card>
+          <Label size={11} bold color="rgba(224,231,255,0.85)">
+            {new Date().toLocaleString("en-IN", { weekday: "short", day: "numeric", month: "short" }).toUpperCase()}
+          </Label>
+          </XStack>
+          <XStack gap={10}>
+            {(
+              [
+                {
+                  key: "owed",
+                  label: "Owed to you",
+                  amount: stats.receivableMinor,
+                  color: "#A7F3D0",
+                  a11y: "View who owes you.",
+                },
+                {
+                  key: "pay",
+                  label: "You owe",
+                  amount: stats.owedMinor,
+                  color: "#FECACA",
+                  a11y: "View debts to pay.",
+                },
+              ] as const
+            ).map((item) => (
+              <Pressable
+                key={item.key}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.label}: ${money(item.amount, d.account.currency)}. ${item.a11y}`}
+                onPress={() =>
+                  router.push({ pathname: "/settle", params: { view: item.key } })
+                }
+                style={({ pressed }) => ({
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 44,
+                  padding: 12,
+                  borderRadius: 12,
+                  backgroundColor: pressed
+                    ? "rgba(255,255,255,0.2)"
+                    : "rgba(255,255,255,0.12)",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.16)",
+                  gap: 2,
+                })}
+              >
+                <XStack alignItems="center" justifyContent="space-between">
+                  <Label size={12} color="rgba(255,255,255,0.75)">
+                    {item.label}
+                  </Label>
+                  <Icon name="chevron" size={12} color="rgba(255,255,255,0.75)" />
+                </XStack>
+                <Label
+                  bold
+                  size={width > 600 ? 20 : 17}
+                  color={item.amount ? item.color : "#FFFFFF"}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {money(item.amount, d.account.currency).replace(".00", "")}
+                </Label>
+              </Pressable>
+            ))}
+          </XStack>
+        </YStack>
+      </View>
       <TourGroup step={2} padding={4}>
         <XStack gap={width < 360 ? 8 : 12} flexWrap="wrap">
           {(
@@ -1072,21 +1111,21 @@ function HomeContent({ data: d }: { data: Dashboard }) {
                 short: "Add expense",
                 icon: "plus",
                 path: "/add",
-                color: "#E7DEF7",
+                color: "accent",
               },
               {
                 label: "Create group",
                 short: "New group",
                 icon: "groups",
                 path: "/groups",
-                color: "#E8F6EF",
+                color: "accent",
               },
               {
                 label: "Scan a bill",
                 short: "Scan bill",
                 icon: "camera",
                 path: "/add?bill=camera",
-                color: "#F2EEF9",
+                color: "accent",
               },
             ] as const
           ).map((tile) => (
@@ -1095,29 +1134,33 @@ function HomeContent({ data: d }: { data: Dashboard }) {
                 accessibilityRole="button"
                 accessibilityLabel={tile.label}
                 onPress={() => go(tile.path)}
-                style={{
+                style={({ pressed }) => ({
                   width: "100%",
-                  minHeight: 104,
-                  paddingVertical: 12,
+                  minHeight: 88,
+                  paddingVertical: 14,
                   alignItems: "center",
-                  gap: 7,
-                  backgroundColor: c.card,
-                  borderRadius: 16,
-                }}
+                  gap: 8,
+                  backgroundColor: pressed ? c.soft : c.card,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: c.line,
+                })}
               >
                 <View
                   style={{
-                    padding: 10,
-                    borderRadius: 30,
-                    backgroundColor: tile.color,
+                    width: 38,
+                    height: 38,
+                    borderRadius: 10,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: c.accentSoft,
                   }}
                 >
-                  <Icon name={tile.icon} color="#191D21" size={27} />
+                  <Icon name={tile.icon} color={c.accent} size={20} />
                 </View>
                 <Label
                   color={c.text}
                   size={width < 360 ? 11 : 13}
-                  bold
                   textAlign="center"
                   numberOfLines={2}
                   width="100%"
@@ -1137,31 +1180,38 @@ function HomeContent({ data: d }: { data: Dashboard }) {
           action="View all"
           onPress={() => go("/activity")}
         />
-        {d.transactions
-          .filter(
-            (transaction) =>
-              transaction.type !== "PERSONAL_EXPENSE" ||
-              transaction.sourceId === d.account.id,
-          )
-          .slice(0, visibleRows)
-          .map((t, index, rows) => (
+        {(() => {
+          const rows = d.transactions
+            .filter(
+              (transaction) =>
+                transaction.type !== "PERSONAL_EXPENSE" ||
+                transaction.sourceId === d.account.id,
+            )
+            .slice(0, visibleRows);
+          return rows.length ? (
             <View
-              key={t.id}
               style={{
                 backgroundColor: c.card,
                 borderRadius: 14,
-                paddingHorizontal: 14,
+                borderWidth: 1,
+                borderColor: c.line,
+                paddingHorizontal: 8,
+                paddingVertical: 4,
               }}
             >
-              <TransactionRow
-                transaction={t}
-                data={d}
-                previousOccurredAt={rows[index - 1]?.occurredAt}
-                last
-                compact
-              />
+              {rows.map((t, index) => (
+                <TransactionRow
+                  key={t.id}
+                  transaction={t}
+                  data={d}
+                  previousOccurredAt={rows[index - 1]?.occurredAt}
+                  last={index === rows.length - 1}
+                  compact
+                />
+              ))}
             </View>
-          ))}
+          ) : null;
+        })()}
         {!d.transactions.some(
           (transaction) =>
             transaction.type !== "PERSONAL_EXPENSE" ||
@@ -1297,7 +1347,7 @@ export function ActivityScreen() {
                         borderRadius: 14,
                       }}
                     >
-                      <Label size={12} color="#59458F" bold>
+                      <Label size={12} color="#4338CA" bold>
                         {allFilteredSelected ? "Deselect All" : "Select All"}
                       </Label>
                     </Pressable>
@@ -1329,7 +1379,7 @@ export function ActivityScreen() {
                       borderRadius: 14,
                     }}
                   >
-                    <Label size={12} color="#59458F" bold>
+                    <Label size={12} color="#4338CA" bold>
                       Select
                     </Label>
                   </Pressable>
@@ -1485,7 +1535,7 @@ export function ActivityScreen() {
             {/* Multi-Select Floating Action Bar */}
             {isSelecting && selectedIds.length > 0 && (
               <XStack
-                backgroundColor="#59458F"
+                backgroundColor="#4338CA"
                 borderRadius={16}
                 paddingHorizontal={16}
                 paddingVertical={12}
@@ -1768,12 +1818,13 @@ export function AnalyticsScreen() {
           return segment;
         });
         return (
-          <YStack gap={22}>
+          <YStack gap={18}>
             <YStack gap={7}>
-              <YStack maxWidth="100%" flexShrink={1}>
-                <Heading>Your spending</Heading>
-                <Label muted>See where your money goes.</Label>
-              </YStack>
+              <PageHero
+                eyebrow="Analytics"
+                title="Your spending"
+                subtitle="See where your money goes."
+              />
               <XStack gap={2} justifyContent="flex-end">
                 <AnalyticsAction
                   icon="goal"

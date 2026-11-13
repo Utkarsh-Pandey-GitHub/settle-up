@@ -53,6 +53,11 @@ export const createTransactionSchema = z
     icon: z.string().max(16).optional(),
     destinationId: z.string().uuid().optional(),
     payerId: z.string().uuid().optional(),
+    /** Several people paid; amounts must add up to the expense. */
+    payers: z
+      .array(z.object({ userId: z.string().uuid(), amountMinor: amountSchema }))
+      .max(20)
+      .optional(),
     ledgerId: z.string().uuid().optional(),
     tagIds: z.array(z.string().uuid()).max(20).default([]),
     paymentReference: z.string().max(128).optional(),
@@ -76,6 +81,24 @@ export const createTransactionSchema = z
       .default([]),
   })
   .superRefine((d, ctx) => {
+    if (d.payers?.length) {
+      if (d.type !== "SHARED_EXPENSE")
+        ctx.addIssue({
+          code: "custom",
+          path: ["payers"],
+          message: "Several payers are only possible on a shared expense.",
+        });
+      if (new Set(d.payers.map((p) => p.userId)).size !== d.payers.length)
+        ctx.addIssue({ code: "custom", path: ["payers"], message: "List each payer once." });
+      if (d.payers.some((p) => p.amountMinor <= 0))
+        ctx.addIssue({ code: "custom", path: ["payers"], message: "Each payer must pay something." });
+      if (d.payers.reduce((sum, p) => sum + p.amountMinor, 0) !== d.amountMinor)
+        ctx.addIssue({
+          code: "custom",
+          path: ["payers"],
+          message: "What each person paid must add up to the expense.",
+        });
+    }
     if (d.payerId && d.type !== "SHARED_EXPENSE")
       ctx.addIssue({
         code: "custom",
@@ -230,6 +253,7 @@ export type TransactionView = {
   allocations: { userId: string; amountMinor: number }[];
   splitMethod?: CreateTransaction["splitMethod"];
   splitWeights?: Record<string, number>;
+  payers?: { userId: string; amountMinor: number }[] | null;
 };
 export type LedgerView = {
   id: string;

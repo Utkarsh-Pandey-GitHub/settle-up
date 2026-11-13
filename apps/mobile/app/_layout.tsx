@@ -10,6 +10,13 @@ import { AppState, Platform } from "react-native";
 import { AndroidSmsProvider } from "../src/services/device";
 import { setWidgetAccount } from "../modules/home-widgets/client";
 import { useAppSync } from "../src/data/hooks";
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from "@expo-google-fonts/inter";
 const query = new QueryClient({
   defaultOptions: {
     queries: {
@@ -28,6 +35,12 @@ function AppSync() {
 }
 export default function Layout() {
   const dark = useSession((s) => s.dark);
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
   useEffect(() => {
     const syncAccount = () => {
       const state = useSession.getState();
@@ -58,6 +71,8 @@ export default function Layout() {
       clearInterval(expiryTimer);
     };
   }, []);
+  // Fonts are bundled, so this is a single frame; on failure use system fonts.
+  if (!fontsLoaded && !fontError) return null;
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={query}>
@@ -68,7 +83,7 @@ export default function Layout() {
             screenOptions={{
               headerShown: false,
               animation: "none",
-              contentStyle: { backgroundColor: dark ? "#1C1922" : "#F5F4F7" },
+              contentStyle: { backgroundColor: dark ? "#0B0D12" : "#F6F7F9" },
             }}
           >
             <Stack.Screen

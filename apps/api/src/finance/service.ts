@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type {
   CreateTransaction,
   CreateSettlement,
@@ -6,6 +7,8 @@ import type {
 import {
   splitExpense,
   obligations,
+  offsettingCycles,
+  multiPayerObligations,
   applyRepayment,
   applySimplifiedRepayment,
   DomainError,
@@ -41,6 +44,20 @@ function expensePayer(
   currentPayer = creatorId,
 ) {
   if (input.type !== "SHARED_EXPENSE") return creatorId;
+  if (input.payers && input.payers.length > 1) {
+    for (const p of input.payers)
+      if (
+        p.userId !== creatorId &&
+        !input.participants.some((person) => person.userId === p.userId)
+      )
+        throw new DomainError(
+          "PAYER",
+          "Every payer must be you or someone in the split.",
+        );
+    // The person who paid most is the transaction's main payer.
+    return [...input.payers].sort((a, b) => b.amountMinor - a.amountMinor)[0]
+      .userId;
+  }
   const payer = input.payerId ?? currentPayer;
   if (
     payer !== creatorId &&
@@ -58,7 +75,9 @@ function transactionDebts(
   splits: ReturnType<typeof splitExpense>,
 ) {
   if (input.type === "SHARED_EXPENSE")
-    return obligations(payerId, splits, input.currency);
+    return input.payers && input.payers.length > 1
+      ? multiPayerObligations(input.payers, splits, input.currency)
+      : obligations(payerId, splits, input.currency);
   if (input.type !== "LOAN") return [];
   if (input.destinationId === payerId)
     throw new DomainError("SELF_LOAN", "Choose another borrower.");
@@ -200,6 +219,8 @@ export class FinanceService {
           notes: input.notes,
           icon: input.icon,
           paymentReference: input.paymentReference,
+          payers:
+            input.payers && input.payers.length > 1 ? input.payers : undefined,
           idempotencyKey: input.idempotencyKey,
           requestDigest: hash,
           participants: {
@@ -478,12 +499,7 @@ export class FinanceService {
         if (membership.ledger.currency !== input.currency)
           throw new DomainError("CURRENCY", "Use the group currency.");
       }
-      if (record.obligations.some((item) => item.settlements.length))
-        throw new DomainError(
-          "REPAID",
-          "A transaction with repayments cannot be edited.",
-          409,
-        );
+      const repaid = record.obligations.some((item) => item.settlements.length);
       if (input.type === "PERSONAL_EXPENSE" && record.createdById !== userId)
         throw new DomainError(
           "PERSONAL_EXPENSE_OWNER_ONLY",
@@ -604,6 +620,56 @@ export class FinanceService {
               Number(prior.weight) === person.value)
           );
         });
+      if (repaid) {
+        // After a repayment, money can't move (the repayment points at these
+        // debts), but details like title, date, notes, tags and items can.
+        const moneyUnchanged =
+          unchangedSplit &&
+          payerId === record.sourceId &&
+          JSON.stringify(input.payers && input.payers.length > 1 ? input.payers : null) ===
+            JSON.stringify(record.payers ?? null) &&
+          input.type === record.type &&
+          input.status === record.status &&
+          input.currency === record.currency &&
+          (input.destinationId ?? null) === (record.destinationId ?? null);
+        if (!moneyUnchanged)
+          throw new DomainError(
+            "REPAID",
+            "Someone has already repaid part of this. You can change its title, date, notes and tags, but to fix the amount or split, add a correcting expense instead.",
+            409,
+          );
+        await tx.transactionTag.deleteMany({
+          where: { transactionId: id, tag: { ownerId: userId } },
+        });
+        await tx.transactionItem.deleteMany({ where: { transactionId: id } });
+        await tx.transaction.update({
+          where: { id },
+          data: {
+            title: input.title,
+            occurredAt: new Date(input.occurredAt),
+            notes: input.notes,
+            icon: input.icon,
+            version: { increment: 1 },
+            tags: { create: input.tagIds.map((tagId) => ({ tagId })) },
+            items: {
+              create: (input.items ?? []).map((item, position) => ({
+                ...item,
+                position,
+              })),
+            },
+          },
+        });
+        await audit(
+          tx,
+          userId,
+          id,
+          "TRANSACTION_EDITED",
+          { previous: { title: record.title }, next: { title: input.title } },
+          ledgerId,
+          `${record.title} was edited`,
+        );
+        return { ok: true };
+      }
       const splits =
         input.type !== "SHARED_EXPENSE"
           ? []
@@ -631,6 +697,10 @@ export class FinanceService {
         where: { id },
         data: {
           sourceId: payerId,
+          payers:
+            input.payers && input.payers.length > 1
+              ? input.payers
+              : Prisma.DbNull,
           title: input.title,
           amountMinor: input.amountMinor,
           currency: input.currency,
@@ -746,6 +816,20 @@ export class FinanceService {
         input.amountMinor,
         input.currency,
       );
+      // Close debts that now cancel each other out so nobody is left with
+      // phantom balances (e.g. A owes B and B owes A after paying the net).
+      if (input.simplified) {
+        const paidNow = new Map(payments.map((p) => [p.obligationId, p.amountMinor]));
+        const after = json(debts).map((d: any) => ({
+          ...d,
+          remainingMinor: d.remainingMinor - (paidNow.get(d.id) ?? 0),
+        }));
+        for (const offset of offsettingCycles(after, input.currency)) {
+          const existing = payments.find((p) => p.obligationId === offset.obligationId);
+          if (existing) existing.amountMinor += offset.amountMinor;
+          else payments.push(offset);
+        }
+      }
       const record = await tx.transaction.create({
         data: {
           sourceId: debtorId,
@@ -892,6 +976,7 @@ export class PrismaDashboardRepository implements DashboardRepository {
               ledgerId: true,
               notes: true,
               icon: true,
+              payers: true,
               version: true,
               participants: { select: { userId: true } },
               splits: {
@@ -1059,6 +1144,7 @@ export class PrismaDashboardRepository implements DashboardRepository {
               userId: s.userId,
               amountMinor: s.amountMinor,
             })),
+            payers: (t.payers as { userId: string; amountMinor: number }[] | null) ?? null,
             splitMethod: t.splits[0]?.method,
             splitWeights: Object.fromEntries(
               t.splits.flatMap((split) =>

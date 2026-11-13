@@ -215,7 +215,7 @@ export function WalkthroughTour({
             borderColor: c.line,
             backgroundColor: c.card,
             elevation: 12,
-            shadowColor: "#25202E",
+            shadowColor: "#151922",
             shadowOpacity: 0.18,
             shadowRadius: 20,
             shadowOffset: { width: 0, height: 8 },

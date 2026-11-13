@@ -1,3 +1,4 @@
+import { PageHero } from "../components/illustrations";
 import React, { useState } from "react";
 import { Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -41,17 +42,12 @@ export function GoalsScreen() {
     <DataScreen>
       {(d) => (
         <YStack gap={18}>
-          <XStack justifyContent="space-between" alignItems="center" gap={12}>
-            <YStack flex={1} gap={3}>
-              <Heading>Spending goals</Heading>
-              <Label muted>
-                Daily, weekly, and monthly limits in one place.
-              </Label>
-            </YStack>
-            <Button icon="plus" compact onPress={() => setCreating(true)}>
-              Add
-            </Button>
-          </XStack>
+          <PageHero
+            eyebrow="Budgets"
+            title="Spending goals"
+            subtitle="Daily, weekly, and monthly limits in one place."
+            action={{ label: "Add goal", onPress: () => setCreating(true) }}
+          />
           {creating && (
             <Card>
               <GoalCreator
@@ -219,31 +215,27 @@ export function GoalsScreen() {
 }
 export function TagsScreen() {
   const [name, setName] = useState(""),
-    [color, setColor] = useState("#8252E3"),
+    [color, setColor] = useState("#4F46E5"),
     [editing, setEditing] = useState(""),
     [creating, setCreating] = useState(false),
     action = useAction();
   return (
     <DataScreen>
       {(d) => (
-        <YStack gap={22} maxWidth={800} width="100%" alignSelf="center">
-          <XStack justifyContent="space-between" alignItems="center" gap={12}>
-            <YStack flex={1} gap={4}>
-              <Heading>A place for every little thing.</Heading>
-              <Label muted>
-                Use a few meaningful tags to see your spending more clearly.
-              </Label>
-            </YStack>
-            <IconButton
-              name="plus"
-              label="Create tag"
-              onPress={() => {
+        <YStack gap={18} maxWidth={800} width="100%" alignSelf="center">
+          <PageHero
+            eyebrow="Tags"
+            title="Organise spending"
+            subtitle="Use a few meaningful tags to see your spending more clearly."
+            action={{
+              label: "New tag",
+              onPress: () => {
                 setEditing("");
                 setName("");
                 setCreating((value) => !value);
-              }}
-            />
-          </XStack>
+              },
+            }}
+          />
           {(creating || !!editing) && (
             <Card>
               <YStack gap={16}>
@@ -253,7 +245,7 @@ export function TagsScreen() {
                   onChangeText={setName}
                 />
                 <XStack gap={8} flexWrap="wrap">
-                  {["#8252E3", "#ECA54C", "#8994D6", "#5EB69B", "#E8898C"].map(
+                  {["#4F46E5", "#ECA54C", "#818CF8", "#5EB69B", "#E8898C"].map(
                     (c) => (
                       <Chip
                         key={c}
@@ -393,12 +385,12 @@ export function ShareScreen() {
   return (
     <DataScreen>
       {(d) => (
-        <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
-          <Heading>Share a trusted monitoring view.</Heading>
-          <Label muted>
-            Give a parent, partner, or guardian a read-only view that refreshes
-            when they open it. You choose the period, records, and expiry.
-          </Label>
+        <YStack gap={18} maxWidth={760} width="100%" alignSelf="center">
+          <PageHero
+            eyebrow="Sharing"
+            title="Trusted monitoring"
+            subtitle="Give a parent, partner, or guardian a read-only view. You choose the period, records, and expiry."
+          />
           {preset && (
             <Notice>
               This snapshot includes {preset.ranges.length} analytics duration
@@ -763,7 +755,7 @@ export function SharedScreen() {
   });
   return (
     <Shell>
-      <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
+      <YStack gap={18} maxWidth={760} width="100%" alignSelf="center">
         <Heading>Trusted spending monitor</Heading>
         {q.isLoading ? (
           <YStack gap={14}>
@@ -878,7 +870,7 @@ export function SharedScreen() {
                                 minWidth: 3,
                                 height: `${Math.max(5, (day.amountMinor / maximum) * 100)}%`,
                                 borderRadius: 3,
-                                backgroundColor: "#7658B8",
+                                backgroundColor: "#4F46E5",
                               }}
                             />
                           );

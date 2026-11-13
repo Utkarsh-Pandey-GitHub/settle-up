@@ -205,7 +205,7 @@ export function BillEditor({
           <View
             style={{ padding: 12, backgroundColor: c.soft, borderRadius: 16 }}
           >
-            <Label color="#6D3CC3" bold size={13}>
+            <Label color="#4338CA" bold size={13}>
               BILL
             </Label>
           </View>
@@ -351,7 +351,7 @@ export function BillEditor({
                       }}
                     >
                       {busy ? (
-                        <ActivityIndicator color="#59458F" />
+                        <ActivityIndicator color="#4338CA" />
                       ) : (
                         <Icon name="camera" color="#25212D" />
                       )}
@@ -629,7 +629,7 @@ export function BillEditor({
               </Notice>
             )}
             {difference === 0 && (
-              <Label color="#6D3CC3" bold size={12}>
+              <Label color="#4338CA" bold size={12}>
                 Everything adds up.
               </Label>
             )}

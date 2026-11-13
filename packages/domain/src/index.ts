@@ -110,7 +110,12 @@ export function splitExpense(
       "Use positive whole share weights or basis points.",
     );
   const denominator = weights.reduce((s, v) => s + v, 0);
-  if (method === "PERCENTAGE" && denominator !== 10_000)
+  // Allow up to 0.01% rounding per person (e.g. 33.33% × 3); shares are
+  // still allocated proportionally and always add up to the total.
+  if (
+    method === "PERCENTAGE" &&
+    Math.abs(denominator - 10_000) > members.length
+  )
     throw new DomainError(
       "PERCENTAGE",
       "Percentages must total 100% (10,000 basis points).",
@@ -156,6 +161,47 @@ export function obligations(
       remainingMinor: s.amountMinor,
       currency,
     }));
+}
+/**
+ * Debts for an expense several people paid. Each person's net is what they
+ * paid minus their share; people who underpaid owe people who overpaid,
+ * largest first, so the number of debts stays small and deterministic.
+ */
+export function multiPayerObligations(
+  payers: Allocation[],
+  splits: Allocation[],
+  currency: string,
+): Omit<Debt, "id">[] {
+  const net = new Map<string, number>();
+  for (const p of payers) net.set(p.userId, (net.get(p.userId) ?? 0) + p.amountMinor);
+  for (const s of splits) net.set(s.userId, (net.get(s.userId) ?? 0) - s.amountMinor);
+  const owe = [...net]
+    .filter(([, v]) => v < 0)
+    .map(([id, v]) => ({ id, left: -v }))
+    .sort((a, b) => b.left - a.left || a.id.localeCompare(b.id));
+  const get = [...net]
+    .filter(([, v]) => v > 0)
+    .map(([id, v]) => ({ id, left: v }))
+    .sort((a, b) => b.left - a.left || a.id.localeCompare(b.id));
+  const debts: Omit<Debt, "id">[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < owe.length && j < get.length) {
+    const amount = Math.min(owe[i].left, get[j].left);
+    if (amount > 0)
+      debts.push({
+        debtorId: owe[i].id,
+        creditorId: get[j].id,
+        amountMinor: amount,
+        remainingMinor: amount,
+        currency,
+      });
+    owe[i].left -= amount;
+    get[j].left -= amount;
+    if (!owe[i].left) i++;
+    if (!get[j].left) j++;
+  }
+  return debts;
 }
 export function applyRepayment(
   debts: Debt[],
@@ -252,6 +298,38 @@ function repaymentPaths(debts: Debt[], currency: string) {
   return paths;
 }
 
+/**
+ * Debts that cancel each other out (A owes B and B owes A, or A→B→C→A).
+ * Nobody's net balance depends on them, so after a repayment they are
+ * closed as offsets instead of lingering forever and blocking members from
+ * leaving. Returns the amount to clear per obligation.
+ */
+export function offsettingCycles(debts: Debt[], currency: string) {
+  const working = debts
+    .filter((d) => d.currency === currency && d.remainingMinor > 0)
+    .map((d) => ({ ...d }));
+  const used = new Map<string, number>();
+  for (const path of repaymentPaths(working, currency)) {
+    // repaymentPaths mutates its own copies; recompute usage from paths.
+    for (const id of path.obligationIds)
+      used.set(id, (used.get(id) ?? 0) + path.amountMinor);
+  }
+  return working
+    .map((d) => ({
+      obligationId: d.id,
+      amountMinor: d.remainingMinor - (used.get(d.id) ?? 0),
+    }))
+    .filter((o) => o.amountMinor > 0);
+}
+/** True when this person still owes or is owed anything net. */
+export function hasNetBalance(debts: Debt[], personId: string) {
+  const currencies = [...new Set(debts.map((d) => d.currency))];
+  return currencies.some((currency) =>
+    simplifyBalances(debts, currency).some(
+      (b) => b.amountMinor > 0 && (b.debtorId === personId || b.creditorId === personId),
+    ),
+  );
+}
 export function simplifyBalances(debts: Debt[], currency: string) {
   const balances = new Map<
     string,

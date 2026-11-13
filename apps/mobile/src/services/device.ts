@@ -11,6 +11,7 @@ import {
   type TransactionImportProvider,
   type ImportSuggestion,
   parseExpenseSms,
+  parseSms,
   smsRange,
   smsDecisionExpiry,
   normalizePhone,
@@ -194,6 +195,18 @@ export class AndroidSmsProvider implements TransactionImportProvider {
           },
         });
         const byId = new Map(batch.map((message) => [message.id, message]));
+        const classified = new Set(result.suggestions.map((item) => item.id));
+        // The AI classifier only returns spending. Incoming money ("credited",
+        // "received") is read on the device so settle-up can match repayments.
+        for (const message of batch) {
+          if (classified.has(message.id)) continue;
+          const parsed = parseSms(message.body, message.timestamp);
+          if (parsed?.direction === "CREDIT")
+            suggestions.push({
+              ...parsed,
+              fingerprint: await this.fingerprint(message),
+            });
+        }
         for (const item of result.suggestions) {
           const message = byId.get(item.id);
           if (!message) continue;
@@ -211,7 +224,11 @@ export class AndroidSmsProvider implements TransactionImportProvider {
         // Free model routing can be rate-limited. Preserve the offline parser
         // as a fallback so SMS review remains usable during provider outages.
         for (const message of batch) {
-          const parsed = parseExpenseSms(message.body, message.timestamp);
+          const parsed =
+            parseExpenseSms(message.body, message.timestamp) ??
+            (parseSms(message.body, message.timestamp)?.direction === "CREDIT"
+              ? parseSms(message.body, message.timestamp)
+              : null);
           if (parsed)
             suggestions.push({
               ...parsed,

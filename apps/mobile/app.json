@@ -31,8 +31,8 @@
       "package": "app.settleup.mobile",
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon-production.png",
-        "backgroundColor": "#F3F0FA"
+        "foregroundImage": "./assets/adaptive-foreground.png",
+        "backgroundColor": "#4F46E5"
       },
       "permissions": [
         "android.permission.READ_SMS",

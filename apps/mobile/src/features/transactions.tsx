@@ -1,3 +1,5 @@
+import { HeroBackdrop } from "../components/illustrations";
+import { PageHero } from "../components/illustrations";
 import { chooseContact, chooseContacts } from "../services/device";
 import { DateTime } from "luxon";
 import React, { useEffect, useRef, useState } from "react";
@@ -37,6 +39,7 @@ import { useAction } from "../data/hooks";
 import {
   IncomingSettlements,
   OutgoingHelper,
+  CrossGroupOffsets,
   consumeSmsMatch,
 } from "./receive";
 import { DataScreen, SectionTitle, TransactionRow } from "./overview";
@@ -141,6 +144,17 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
           .slice(0, 50) ??
           []),
     ),
+    // "Paid for others": the creator can leave themselves out of the split.
+    [includeMe, setIncludeMe] = useState(includeCreator),
+    [multiPay, setMultiPay] = useState(!!editing?.payers?.length),
+    [paidAmounts, setPaidAmounts] = useState<Record<string, string>>(() =>
+      Object.fromEntries(
+        (editing?.payers ?? []).map((p) => [
+          p.userId,
+          String(p.amountMinor / editScale),
+        ]),
+      ),
+    ),
     [chosenPayer, setChosenPayer] = useState(
       editing?.sourceId ?? params.payer ?? creatorId,
     ),
@@ -178,7 +192,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     >(null),
     [tagCreatorOpen, setTagCreatorOpen] = useState(false),
     [newTagName, setNewTagName] = useState(""),
-    [newTagColor, setNewTagColor] = useState("#8252E3"),
+    [newTagColor, setNewTagColor] = useState("#4F46E5"),
     [infoDialog, setInfoDialog] = useState<{
       title: string;
       detail: string;
@@ -221,7 +235,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   });
   const ledger = d.ledgers.find((l) => l.id === ledgerId);
   const amount = watch("amount");
-  const splitMembers = [...(includeCreator ? [creatorId] : []), ...selected];
+  const splitMembers = [...(includeMe ? [creatorId] : []), ...selected];
   const payerOptions = [...new Set([creatorId, ...splitMembers])];
   const payerId = payerOptions.includes(chosenPayer) ? chosenPayer : creatorId;
   const currency = ledger?.currency ?? editing?.currency ?? d.account.currency;
@@ -239,7 +253,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
       setChosenPayer(creatorId);
   }, [chosenPayer, creatorId, selected]);
   const addFriend = (contactId: string) => {
-    if (includeCreator && contactId === creatorId) return;
+    if (includeMe && contactId === creatorId) return;
     if (ledger && !ledger.members.some((member) => member.id === contactId)) {
       setInfoDialog({
         title: "Not in this group",
@@ -308,7 +322,27 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
           notes: values.notes,
           icon: transactionIcon,
           ledgerId: ledgerId || undefined,
-          payerId: type === "SHARED_EXPENSE" ? payerId : undefined,
+          payerId:
+            type !== "SHARED_EXPENSE"
+              ? undefined
+              : !multiPay
+                ? payerId
+                : // One filled-in payer is just a normal single payer.
+                  (payerOptions.filter((userId) => paidAmounts[userId]?.trim() && Number(paidAmounts[userId]) > 0)
+                    .length === 1
+                    ? payerOptions.find((userId) => paidAmounts[userId]?.trim() && Number(paidAmounts[userId]) > 0)
+                    : undefined),
+          payers:
+            type === "SHARED_EXPENSE" && multiPay
+              ? payerOptions
+                  .map((userId) => ({
+                    userId,
+                    amountMinor: paidAmounts[userId]?.trim()
+                      ? parseMoney(paidAmounts[userId].trim(), currency, true)
+                      : 0,
+                  }))
+                  .filter((p) => p.amountMinor > 0)
+              : undefined,
           tagIds,
           items: includeBill
             ? lines.map((line) => ({
@@ -560,7 +594,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   <XStack gap={8} flexDirection={narrow ? "column" : "row"}>
                     <ExpenseOption
                       label="Paid by"
-                      value={memberName(payerId)}
+                      value={multiPay ? "Several people" : memberName(payerId)}
                       icon="wallet"
                       tint={c.mint}
                       onPress={() => setPicker("payer")}
@@ -572,6 +606,52 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                       tint={c.amber}
                       onPress={() => setPicker("method")}
                     />
+                  </XStack>
+                  {multiPay && (
+                    <YStack gap={8}>
+                      {payerOptions.map((id) => (
+                        <Field
+                          key={id}
+                          label={`Paid by ${memberName(id)}`}
+                          value={paidAmounts[id] ?? ""}
+                          onChangeText={(value) =>
+                            setPaidAmounts((current) => ({ ...current, [id]: value }))
+                          }
+                          keyboardType="decimal-pad"
+                          placeholder="0"
+                        />
+                      ))}
+                      <Label muted size={11}>
+                        {(() => {
+                          try {
+                            const paid = payerOptions.reduce(
+                              (sum, id) =>
+                                sum +
+                                (paidAmounts[id]?.trim()
+                                  ? parseMoney(paidAmounts[id].trim(), currency, true)
+                                  : 0),
+                              0,
+                            );
+                            const total = amount ? parseMoney(amount, currency) : 0;
+                            return paid === total
+                              ? "Payments add up to the total."
+                              : `Payments add up to ${money(paid, currency)} of ${money(total, currency)}.`;
+                          } catch {
+                            return "Enter amounts like 1200 or 1200.50.";
+                          }
+                        })()}
+                      </Label>
+                    </YStack>
+                  )}
+                  <XStack gap={8} alignItems="center" flexWrap="wrap">
+                    <Chip selected={includeMe} onPress={() => setIncludeMe(!includeMe)}>
+                      {includeMe ? "Includes my share" : "Not including me"}
+                    </Chip>
+                    <Label muted size={11} flexShrink={1}>
+                      {includeMe
+                        ? "Tap if you paid only for others."
+                        : "Everyone selected owes their share; you have none."}
+                    </Label>
                   </XStack>
                   {method !== "EQUAL" && (
                     <YStack gap={8}>
@@ -779,7 +859,7 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             visible={picker === "participants"}
             title="Add friends"
             options={(ledger ? ledger.members : d.savedContacts)
-              .filter((member) => !includeCreator || member.id !== creatorId)
+              .filter((member) => member.id !== creatorId)
               .map((member) => ({
                 id: member.id,
                 label: memberName(member.id),
@@ -832,14 +912,27 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
           <SearchPicker
             visible={picker === "payer"}
             title="Who paid?"
-            options={payerOptions.map((id) => ({
-              id,
-              label: memberName(id),
-              detail: id === creatorId ? "Transaction creator" : undefined,
-            }))}
-            selected={[payerId]}
+            options={[
+              ...payerOptions.map((id) => ({
+                id,
+                label: memberName(id),
+                detail: id === creatorId ? "Transaction creator" : undefined,
+              })),
+              {
+                id: "__multiple",
+                label: "Several people paid",
+                detail: "Enter how much each person paid",
+              },
+            ]}
+            selected={[multiPay ? "__multiple" : payerId]}
             selectionIcon={null}
-            onSelect={setChosenPayer}
+            onSelect={(id) => {
+              if (id === "__multiple") setMultiPay(true);
+              else {
+                setMultiPay(false);
+                setChosenPayer(id);
+              }
+            }}
             onClose={() => setPicker(null)}
           />
           <SearchPicker
@@ -906,9 +999,9 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                     />
                     <XStack gap={8} flexWrap="wrap">
                       {[
-                        "#8252E3",
+                        "#4F46E5",
                         "#ECA54C",
-                        "#8994D6",
+                        "#818CF8",
                         "#5EB69B",
                         "#E8898C",
                       ].map((color) => (
@@ -1279,7 +1372,7 @@ export function SettlementScreen() {
         const selected = plan.find((o) => o.id === selectedId);
         if (receipt && receipt.accountId === d.account.id)
           return (
-            <YStack gap={22} maxWidth={600} width="100%" alignSelf="center">
+            <YStack gap={18} maxWidth={600} width="100%" alignSelf="center">
               <Card
                 style={{
                   backgroundColor: c.soft,
@@ -1323,8 +1416,12 @@ export function SettlementScreen() {
           );
 
         return (
-          <YStack gap={22} maxWidth={720} width="100%" alignSelf="center">
-            <Heading>Settle debts</Heading>
+          <YStack gap={18} maxWidth={720} width="100%" alignSelf="center">
+            <PageHero
+              eyebrow="Balances"
+              title="Settle up"
+              subtitle="Clear what you owe and collect what’s yours."
+            />
             <XStack gap={8} flexWrap="wrap">
               <Chip
                 selected={!receiving}
@@ -1339,6 +1436,12 @@ export function SettlementScreen() {
                 Owed to you
               </Chip>
             </XStack>
+            <CrossGroupOffsets
+              d={d}
+              incoming={incoming}
+              outgoing={simplifiedOutgoing(activeDebts, d.account.id)}
+              scopeName={scopeName}
+            />
             {receiving ? (
               <IncomingSettlements
                 d={d}
@@ -1397,7 +1500,7 @@ export function SettlementScreen() {
                               borderRadius: 17,
                               borderWidth: 1,
                               borderColor:
-                                selectedId === o.id ? "#AA94D5" : c.line,
+                                selectedId === o.id ? "#A5B4FC" : c.line,
                               backgroundColor:
                                 selectedId === o.id ? c.soft : c.card,
                             }}
@@ -1425,7 +1528,7 @@ export function SettlementScreen() {
                               <Icon
                                 name={selectedId === o.id ? "check" : "chevron"}
                                 size={18}
-                                color="#7B63B0"
+                                color="#4F46E5"
                               />
                             </XStack>
                           </Pressable>
@@ -1518,9 +1621,9 @@ export function SettlementScreen() {
   );
 }
 const groupStyles = [
-  { icon: "plane", accent: "#6652A3", background: "#F0ECF8" },
-  { icon: "home", accent: "#9981BF", background: "#EEE8F8" },
-  { icon: "coffee", accent: "#B9A7D5", background: "#F2EEF9" },
+  { icon: "plane", accent: "#4F46E5", background: "#EEF2FF" },
+  { icon: "home", accent: "#6366F1", background: "#EEF2FF" },
+  { icon: "coffee", accent: "#A5B4FC", background: "#EEF2FF" },
 ] as const;
 function groupStyle(groupId: string) {
   let hash = 0;
@@ -1555,16 +1658,13 @@ export function GroupsScreen() {
   return (
     <DataScreen>
       {(d) => (
-        <YStack gap={22}>
-          <XStack justifyContent="space-between" flexWrap="wrap" gap={12}>
-            <YStack maxWidth="100%" flexShrink={1}>
-              <Heading>Your groups</Heading>
-              <Label muted>Shared spending, all in one place.</Label>
-            </YStack>
-            <Button icon="plus" onPress={() => setCreating(!creating)}>
-              Create a group
-            </Button>
-          </XStack>
+        <YStack gap={18}>
+          <PageHero
+            eyebrow="Groups"
+            title="Your groups"
+            subtitle="Shared spending, all in one place."
+            action={{ label: "New group", onPress: () => setCreating(!creating) }}
+          />
           <Modal
             visible={creating}
             transparent
@@ -1757,7 +1857,7 @@ export function GroupsScreen() {
                           justifyContent: "center",
                         }}
                       >
-                        <Icon name={visual.icon} color="#555269" size={20} />
+                        <Icon name={visual.icon} color="#475569" size={20} />
                       </View>
                       <YStack flex={1} minWidth={0} gap={6}>
                         <XStack
@@ -1895,108 +1995,183 @@ export function GroupScreen() {
         );
         return (
           <YStack gap={16} paddingBottom={88} minHeight={620}>
-            <YStack
-              gap={12}
-              position="relative"
-              marginHorizontal={-shellInset}
-              marginTop={-shellInset}
-              paddingHorizontal={shellInset}
-              paddingTop={16}
-              paddingBottom={14}
-              backgroundColor={visual.background}
+            <View
+              style={{
+                borderRadius: 20,
+                overflow: "hidden",
+                padding: 20,
+                backgroundColor: "#4338CA",
+                gap: 16,
+              }}
             >
-              <XStack gap={12} alignItems="center" paddingRight={68}>
+              <HeroBackdrop animated={false} />
+              <XStack gap={12} alignItems="flex-start">
                 <View
                   style={{
                     width: 44,
                     height: 44,
                     borderRadius: 14,
-                    backgroundColor: `${c.card}A8`,
+                    backgroundColor: "rgba(255,255,255,0.14)",
+                    borderWidth: 1,
+                    borderColor: "rgba(255,255,255,0.2)",
                     alignItems: "center",
                     justifyContent: "center",
                   }}
                 >
-                  <Icon name={visual.icon} size={22} color="#555269" />
+                  <Icon name={visual.icon} size={22} color="#FFFFFF" />
                 </View>
-                <YStack flex={1} minWidth={0} gap={5} alignItems="flex-start">
-                  <Heading size={23}>{l.name}</Heading>
-                  <Label muted size={12}>
-                    {l.description &&
-                    l.description.trim() !== "A little better, together."
-                      ? `${l.description} · `
-                      : ""}
-                    {l.currency}
+                <YStack flex={1} minWidth={0} gap={3}>
+                  <Label size={11} bold color="rgba(224,231,255,0.85)" letterSpacing={1.1}>
+                    {`GROUP · ${l.currency}`}
                   </Label>
+                  <Label bold size={22} color="#FFFFFF" numberOfLines={2}>
+                    {l.name}
+                  </Label>
+                  {!!l.description &&
+                    l.description.trim() !== "A little better, together." && (
+                      <Label size={12} color="rgba(255,255,255,0.78)" numberOfLines={2}>
+                        {l.description}
+                      </Label>
+                    )}
                 </YStack>
+                {!l.deleted && (
+                  <XStack gap={6}>
+                    {(
+                      [
+                        {
+                          icon: "link" as const,
+                          label: "Create group invite link",
+                          onPress: () =>
+                            void action.run(async () => {
+                              const invite = await extra(
+                                d.account.id,
+                                `/groups/${l.groupId}/invites`,
+                                {},
+                              );
+                              const url = `${API_URL}/g/${invite.token}`;
+                              await Share.share({
+                                message: `Join ${l.name} on SettleUp: ${url}`,
+                              });
+                            }, "Invite link ready to share"),
+                        },
+                        {
+                          icon: "settings" as const,
+                          label: "Group settings",
+                          onPress: () => setMembersOpen(true),
+                        },
+                      ]
+                    ).map((b) => (
+                      <Pressable
+                        key={b.icon}
+                        accessibilityRole="button"
+                        accessibilityLabel={b.label}
+                        disabled={action.busy}
+                        onPress={b.onPress}
+                        style={({ pressed }) => ({
+                          width: 36,
+                          height: 36,
+                          borderRadius: 11,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: pressed
+                            ? "rgba(255,255,255,0.24)"
+                            : "rgba(255,255,255,0.12)",
+                        })}
+                      >
+                        <Icon name={b.icon} size={16} color="#FFFFFF" />
+                      </Pressable>
+                    ))}
+                  </XStack>
+                )}
               </XStack>
-              {!l.deleted && (
-                <XStack
-                  gap={2}
-                  alignItems="center"
-                  position="absolute"
-                  top={9}
-                  right={9}
-                >
-                  <IconButton
-                    name="link"
-                    label="Create group invite link"
-                    disabled={action.busy}
-                    borderless
-                    size={32}
-                    iconSize={15}
-                    onPress={() =>
-                      void action.run(async () => {
-                        const invite = await extra(
-                          d.account.id,
-                          `/groups/${l.groupId}/invites`,
-                          {},
-                        );
-                        const url = `${API_URL}/g/${invite.token}`;
-                        await Share.share({
-                          message: `Join ${l.name} on SettleUp: ${url}`,
-                        });
-                      }, "Invite link ready to share")
-                    }
-                  />
-                  <IconButton
-                    name="settings"
-                    label="Group settings"
-                    borderless
-                    size={32}
-                    iconSize={15}
-                    onPress={() => setMembersOpen(true)}
-                  />
+              <XStack gap={10}>
+                {(() => {
+                  const spent = d.transactions
+                    .filter((t) => t.ledgerId === id && t.type === "SHARED_EXPENSE" && t.status === "SETTLED")
+                    .reduce((sum, t) => sum + t.amountMinor, 0);
+                  const net = debts.reduce(
+                    (sum, o) =>
+                      sum +
+                      (o.creditorId === d.account.id ? o.remainingMinor : 0) -
+                      (o.debtorId === d.account.id ? o.remainingMinor : 0),
+                    0,
+                  );
+                  return (
+                    [
+                      { label: "Group spend", value: money(spent, l.currency), color: "#FFFFFF" },
+                      {
+                        label: net > 0 ? "You get back" : net < 0 ? "You owe" : "Your balance",
+                        value: net ? money(Math.abs(net), l.currency) : "Settled",
+                        color: net > 0 ? "#A7F3D0" : net < 0 ? "#FECACA" : "#FFFFFF",
+                      },
+                    ] as const
+                  ).map((tile) => (
+                    <View
+                      key={tile.label}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        padding: 12,
+                        borderRadius: 12,
+                        backgroundColor: "rgba(255,255,255,0.12)",
+                        borderWidth: 1,
+                        borderColor: "rgba(255,255,255,0.16)",
+                        gap: 2,
+                      }}
+                    >
+                      <Label size={12} color="rgba(255,255,255,0.75)">
+                        {tile.label}
+                      </Label>
+                      <Label bold size={17} color={tile.color} numberOfLines={1} adjustsFontSizeToFit>
+                        {tile.value.replace(/\.00$/, "")}
+                      </Label>
+                    </View>
+                  ));
+                })()}
+              </XStack>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="View group members"
+                onPress={() => setMembersOpen(true)}
+                style={({ pressed }) => ({
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                  opacity: pressed ? 0.8 : 1,
+                })}
+              >
+                <XStack>
+                  {l.members.slice(0, 5).map((member, index) => (
+                    <View
+                      key={member.id}
+                      style={{
+                        marginLeft: index ? -10 : 0,
+                        borderRadius: 16,
+                        borderWidth: 2,
+                        borderColor: "#4338CA",
+                      }}
+                    >
+                      <Avatar name={name(member.id)} size={28} />
+                    </View>
+                  ))}
                 </XStack>
-              )}
-              <XStack gap={8} alignItems="center" alignSelf="flex-start">
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="View group members"
-                  onPress={() => setMembersOpen(true)}
-                  style={{
-                    minHeight: 36,
-                    borderRadius: 12,
-                    backgroundColor: `${c.card}B8`,
-                    paddingHorizontal: 10,
-                    paddingVertical: 5,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 7,
-                  }}
-                >
-                  <Icon name="groups" size={15} color={c.primary} />
-                  <Label bold size={11}>
-                    {l.members.length}{" "}
-                    {l.members.length === 1 ? "member" : "members"}
-                  </Label>
-                </Pressable>
-              </XStack>
-            </YStack>
+                <Label bold size={12} color="#FFFFFF">
+                  {l.members.length} {l.members.length === 1 ? "member" : "members"}
+                </Label>
+                <Icon name="chevron" size={14} color="rgba(255,255,255,0.75)" />
+              </Pressable>
+            </View>
             {l.deleted && (
               <Notice>This group is deleted. Its history is read-only.</Notice>
             )}
             {!!action.error && <Notice error>{action.error}</Notice>}
-            <XStack backgroundColor={c.soft} borderRadius={15} padding={4}>
+            <XStack
+              backgroundColor={c.card}
+              borderRadius={12}
+              padding={4}
+              borderWidth={1}
+              borderColor={c.line}
+            >
               {(["records", "balances"] as const).map((item) => (
                 <Pressable
                   key={item}
@@ -2004,17 +2179,17 @@ export function GroupScreen() {
                   style={{
                     flex: 1,
                     alignItems: "center",
-                    paddingVertical: 10,
-                    borderRadius: 12,
-                    backgroundColor: view === item ? c.card : "transparent",
+                    paddingVertical: 9,
+                    borderRadius: 9,
+                    backgroundColor: view === item ? c.accentSoft : "transparent",
                   }}
                 >
                   <Label
                     bold
                     size={12}
-                    color={view === item ? c.text : c.muted}
+                    color={view === item ? c.accent : c.muted}
                   >
-                    {item === "records" ? "All transactions" : "Who owes who"}
+                    {item === "records" ? "Activity" : "Balances"}
                   </Label>
                 </Pressable>
               ))}
@@ -2027,7 +2202,7 @@ export function GroupScreen() {
                   gap={8}
                   flexWrap="wrap"
                 >
-                  <Heading size={19} flexShrink={1}>
+                  <Heading size={17} flexShrink={1}>
                     All activity
                   </Heading>
                   <XStack gap={6} flexWrap="wrap" alignItems="center">
@@ -2051,18 +2226,31 @@ export function GroupScreen() {
                     </Button>
                   </XStack>
                 </XStack>
-                {d.transactions
-                  .filter((t) => t.ledgerId === id)
-                  .map((t, index, rows) => (
-                    <TransactionRow
-                      key={t.id}
-                      data={d}
-                      transaction={t}
-                      showCreator
-                      previousOccurredAt={rows[index - 1]?.occurredAt}
-                      last={index === rows.length - 1}
-                    />
-                  ))}
+                {d.transactions.some((t) => t.ledgerId === id) && (
+                  <View
+                    style={{
+                      backgroundColor: c.card,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: c.line,
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                    }}
+                  >
+                    {d.transactions
+                      .filter((t) => t.ledgerId === id)
+                      .map((t, index, rows) => (
+                        <TransactionRow
+                          key={t.id}
+                          data={d}
+                          transaction={t}
+                          showCreator
+                          previousOccurredAt={rows[index - 1]?.occurredAt}
+                          last={index === rows.length - 1}
+                        />
+                      ))}
+                  </View>
+                )}
                 {!d.transactions.some((t) => t.ledgerId === id) && (
                   <Empty
                     title="No records yet"
@@ -2078,7 +2266,7 @@ export function GroupScreen() {
                   gap={8}
                   flexWrap="wrap"
                 >
-                  <Heading size={19}>Who owes who</Heading>
+                  <Heading size={17}>Who owes who</Heading>
                   <Chip
                     selected={simplified}
                     onPress={() => setSimplified(!simplified)}
@@ -2091,7 +2279,16 @@ export function GroupScreen() {
                     Preview only. Your original records stay unchanged.
                   </Label>
                 )}
-                <ScrollView showsVerticalScrollIndicator={false}>
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  style={{
+                    backgroundColor: c.card,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: c.line,
+                  }}
+                  contentContainerStyle={{ paddingHorizontal: 14 }}
+                >
                   {balances.map((o, i) => (
                     <XStack
                       key={`${o.debtorId}-${o.creditorId}-${i}`}
@@ -2101,9 +2298,16 @@ export function GroupScreen() {
                       borderBottomWidth={i === balances.length - 1 ? 0 : 1}
                       borderBottomColor={c.line}
                     >
+                      <XStack>
+                        <Avatar name={name(o.debtorId)} size={30} />
+                        <View style={{ marginLeft: -8, borderRadius: 17, borderWidth: 2, borderColor: c.card }}>
+                          <Avatar name={name(o.creditorId)} size={30} />
+                        </View>
+                      </XStack>
                       <YStack flex={1} minWidth={0} gap={2}>
                         <Label size={13}>
-                          {name(o.debtorId)} → {name(o.creditorId)}
+                          <Label bold size={13}>{name(o.debtorId)}</Label> owes{" "}
+                          <Label bold size={13}>{name(o.creditorId)}</Label>
                         </Label>
                         {o.debtorId === d.account.id && (
                           <Label muted size={11}>
@@ -2209,7 +2413,7 @@ export function GroupScreen() {
                   maxWidth: narrow ? "85%" : undefined,
                   paddingHorizontal: 18,
                   borderRadius: 18,
-                  backgroundColor: "#59458F",
+                  backgroundColor: "#4338CA",
                   flexDirection: "row",
                   alignItems: "center",
                   gap: 8,
@@ -2586,10 +2790,11 @@ export function GroupChangesScreen() {
             <Button secondary compact icon="back" onPress={() => router.back()}>
               Back to group
             </Button>
-            <YStack gap={4}>
-              <Heading>Group changes</Heading>
-              <Label muted>{group.name} · member and group updates</Label>
-            </YStack>
+            <PageHero
+              eyebrow={group.name}
+              title="Group changes"
+              subtitle="Member and group updates"
+            />
             <XStack gap={10} flexWrap="wrap">
               <YStack flex={1} minWidth={150}>
                 <DatePicker
@@ -2612,7 +2817,7 @@ export function GroupChangesScreen() {
                   borderBottomWidth={index === rows.length - 1 ? 0 : 1}
                   borderBottomColor={c.line}
                 >
-                  <Icon name="activity" size={17} color="#7770A4" />
+                  <Icon name="activity" size={17} color="#64748B" />
                   <YStack flex={1} gap={3}>
                     <Label>{entry.message}</Label>
                     <Label muted size={10}>

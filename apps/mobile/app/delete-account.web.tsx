@@ -32,28 +32,28 @@ export default function DeleteAccountWeb() {
                 width="113"
                 height="114"
                 rx="36"
-                fill="#9F6DE4"
+                fill="#6366F1"
               />
               <path
                 d="M58 60q30-24 80-4"
                 fill="none"
-                stroke="#C1A0F0"
+                stroke="#A5B4FC"
                 strokeWidth="8"
                 strokeLinecap="round"
               />
-              <ellipse cx="83" cy="94" rx="7" ry="10" fill="#38255E" />
-              <ellipse cx="125" cy="94" rx="7" ry="10" fill="#38255E" />
+              <ellipse cx="83" cy="94" rx="7" ry="10" fill="#1E1B4B" />
+              <ellipse cx="125" cy="94" rx="7" ry="10" fill="#1E1B4B" />
               <circle cx="85" cy="91" r="2" fill="#FFF" />
               <circle cx="127" cy="91" r="2" fill="#FFF" />
               <path
                 d="M92 113q12 15 24-1"
-                stroke="#38255E"
+                stroke="#1E1B4B"
                 strokeWidth="4"
                 strokeLinecap="round"
                 fill="none"
               />
-              <ellipse cx="68" cy="111" rx="10" ry="5" fill="#B691EA" />
-              <ellipse cx="139" cy="111" rx="10" ry="5" fill="#B691EA" />
+              <ellipse cx="68" cy="111" rx="10" ry="5" fill="#A5B4FC" />
+              <ellipse cx="139" cy="111" rx="10" ry="5" fill="#A5B4FC" />
               <g transform="rotate(10)" transform-origin="111 31">
                 <rect
                   x="91"
@@ -236,7 +236,7 @@ export default function DeleteAccountWeb() {
             href={MAILTO_HREF}
             style={{
               display: "inline-block",
-              backgroundColor: "#6652A3",
+              backgroundColor: "#4F46E5",
               color: "#FFFFFF",
               textDecoration: "none",
               padding: "12px 24px",
@@ -325,7 +325,7 @@ function Bullet({ text }: { text: string }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F4F7",
+    backgroundColor: "#F6F7F9",
   },
   contentContainer: {
     paddingHorizontal: 20,
@@ -349,30 +349,30 @@ const styles = StyleSheet.create({
     fontFamily: "System",
     fontWeight: "700",
     fontSize: 24,
-    color: "#211D29",
+    color: "#0F172A",
     letterSpacing: -1,
   },
   brandAccent: {
-    color: "#6652A3",
+    color: "#4F46E5",
   },
   title: {
     fontFamily: "System",
     fontWeight: "700",
     fontSize: 26,
-    color: "#211D29",
+    color: "#0F172A",
     textAlign: "center",
     letterSpacing: -0.35,
   },
   eyebrow: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#6652A3",
+    color: "#4F46E5",
     letterSpacing: 1.6,
     marginBottom: 7,
   },
   subtitle: {
     fontSize: 13,
-    color: "#716B7B",
+    color: "#64748B",
     marginTop: 6,
     textAlign: "center",
   },
@@ -388,61 +388,61 @@ const styles = StyleSheet.create({
   sectionHeading: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#211D29",
+    color: "#0F172A",
     marginTop: 24,
     marginBottom: 8,
   },
   subHeading: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#211D29",
+    color: "#0F172A",
     marginTop: 14,
     marginBottom: 6,
   },
   body: {
     fontSize: 14,
-    color: "#211D29",
+    color: "#0F172A",
     lineHeight: 22,
     marginBottom: 10,
   },
   stepBox: {
-    backgroundColor: "#F8F7FA",
+    backgroundColor: "#F8FAFC",
     borderRadius: 12,
     padding: 14,
     marginBottom: 14,
     borderLeftWidth: 3,
-    borderLeftColor: "#6652A3",
+    borderLeftColor: "#4F46E5",
     gap: 6,
   },
   stepItem: {
     fontSize: 13.5,
-    color: "#211D29",
+    color: "#0F172A",
     lineHeight: 20,
   },
   boldText: {
     fontWeight: "700",
-    color: "#6652A3",
+    color: "#4F46E5",
   },
   highlight: {
-    backgroundColor: "#F0ECF8",
+    backgroundColor: "#EEF2FF",
     borderRadius: 12,
     padding: 14,
     marginVertical: 12,
     borderLeftWidth: 3,
-    borderLeftColor: "#6652A3",
+    borderLeftColor: "#4F46E5",
   },
   highlightText: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#6652A3",
+    color: "#4F46E5",
     lineHeight: 20,
   },
   authPanel: {
-    backgroundColor: "#F8F7FA",
+    backgroundColor: "#F8FAFC",
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#E1DDE7",
+    borderColor: "#E4E7EC",
     marginBottom: 12,
   },
   successText: {
@@ -465,13 +465,13 @@ const styles = StyleSheet.create({
   },
   bulletDot: {
     fontSize: 14,
-    color: "#6652A3",
+    color: "#4F46E5",
     marginTop: 2,
   },
   bulletText: {
     flex: 1,
     fontSize: 14,
-    color: "#211D29",
+    color: "#0F172A",
     lineHeight: 22,
   },
   footer: {
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 13,
-    color: "#716B7B",
+    color: "#64748B",
   },
   linksRow: {
     flexDirection: "row",
@@ -492,7 +492,7 @@ const styles = StyleSheet.create({
   navLink: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#6652A3",
+    color: "#4F46E5",
     textDecorationLine: "underline",
   },
 });

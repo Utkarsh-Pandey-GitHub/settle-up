@@ -20,6 +20,8 @@ import {
   obligations,
   applyRepayment,
   applySimplifiedRepayment,
+  offsettingCycles,
+  multiPayerObligations,
   goalCadenceLimits,
   periodRange,
 } from "@settleup/domain";
@@ -399,6 +401,19 @@ function applyDashboardRepayment(
   const payments = (
     input.simplified ? applySimplifiedRepayment : applyRepayment
   )(debts, input.debtorId, input.creditorId, input.amountMinor, input.currency);
+  if (input.simplified) {
+    // Mirror the server: close debts that now cancel each other out.
+    const paidNow = new Map(payments.map((p) => [p.obligationId, p.amountMinor]));
+    const after = debts.map((debt) => ({
+      ...debt,
+      remainingMinor: debt.remainingMinor - (paidNow.get(debt.id) ?? 0),
+    }));
+    for (const offset of offsettingCycles(after, input.currency)) {
+      const existing = payments.find((p) => p.obligationId === offset.obligationId);
+      if (existing) existing.amountMinor += offset.amountMinor;
+      else payments.push(offset);
+    }
+  }
   const paid = new Map(
     payments.map((payment) => [payment.obligationId, payment.amountMinor]),
   );
@@ -458,17 +473,30 @@ function replaceSharedDebts(
   );
   if (transaction.type !== "SHARED_EXPENSE") return;
   dashboard.obligations.push(
-    ...obligations(
-      transaction.sourceId,
-      transaction.allocations,
-      transaction.currency,
+    ...(transaction.payers && transaction.payers.length > 1
+      ? multiPayerObligations(
+          transaction.payers,
+          transaction.allocations,
+          transaction.currency,
+        )
+      : obligations(
+          transaction.sourceId,
+          transaction.allocations,
+          transaction.currency,
+        )
     ).map((debt) => ({
       ...debt,
-      id: `local:${transaction.id}:${debt.debtorId}`,
+      id: `local:${transaction.id}:${debt.debtorId}:${debt.creditorId}`,
       transactionId: transaction.id,
       ledgerId: transaction.ledgerId,
     })),
   );
+}
+/** With several payers, the one who paid most is the main payer. */
+function mainPayer(input: CreateTransaction) {
+  return input.payers && input.payers.length > 1
+    ? [...input.payers].sort((a, b) => b.amountMinor - a.amountMinor)[0].userId
+    : undefined;
 }
 function applyExpenseEdit(
   dashboard: Dashboard,
@@ -481,8 +509,44 @@ function applyExpenseEdit(
         debt.transactionId === transaction.id &&
         debt.remainingMinor < debt.amountMinor,
     )
-  )
-    throw new Error("A transaction with repayments cannot be edited.");
+  ) {
+    // Mirror the server: details can change after a repayment, money can't.
+    const payer =
+      input.type === "SHARED_EXPENSE"
+        ? (mainPayer(input) ?? input.payerId ?? transaction.sourceId)
+        : (transaction.createdById ?? transaction.sourceId);
+    const nextSplit =
+      input.type === "SHARED_EXPENSE"
+        ? splitExpense(input.amountMinor, input.participants, input.splitMethod)
+        : [];
+    const sameSplit =
+      nextSplit.length === transaction.allocations.length &&
+      nextSplit.every((a) =>
+        transaction.allocations.some(
+          (b) => b.userId === a.userId && b.amountMinor === a.amountMinor,
+        ),
+      );
+    if (
+      input.amountMinor !== transaction.amountMinor ||
+      input.type !== transaction.type ||
+      input.currency !== transaction.currency ||
+      payer !== transaction.sourceId ||
+      !sameSplit
+    )
+      throw new Error(
+        "Someone has already repaid part of this. You can change its title, date, notes and tags, but to fix the amount or split, add a correcting expense instead.",
+      );
+    Object.assign(transaction, {
+      title: input.title,
+      occurredAt: input.occurredAt,
+      notes: input.notes,
+      icon: input.icon,
+      tagIds: input.tagIds,
+      items: input.items,
+      version: transaction.version + 1,
+    });
+    return;
+  }
   if (
     transaction.ledgerId &&
     input.ledgerId &&
@@ -493,7 +557,7 @@ function applyExpenseEdit(
   const createdById = transaction.createdById ?? transaction.sourceId;
   const sourceId =
     input.type === "SHARED_EXPENSE"
-      ? (input.payerId ?? transaction.sourceId)
+      ? (mainPayer(input) ?? input.payerId ?? transaction.sourceId)
       : createdById;
   const hasLinkedDebts = dashboard.obligations.some(
     (debt) => debt.transactionId === transaction.id,
@@ -501,6 +565,7 @@ function applyExpenseEdit(
   const wasShared = transaction.type === "SHARED_EXPENSE";
   Object.assign(transaction, {
     ...input,
+    payers: input.payers && input.payers.length > 1 ? input.payers : null,
     ledgerId,
     sourceId,
     createdById,
@@ -620,7 +685,7 @@ export class DemoRepository implements AppRepository {
     d.transactions.unshift({
       ...input,
       id: transactionId,
-      sourceId: input.payerId ?? id,
+      sourceId: mainPayer(input) ?? input.payerId ?? id,
       createdById: id,
       splitWeights: expenseWeights(input),
       destinationId: input.type === "ADJUSTMENT" ? id : input.destinationId,
@@ -629,7 +694,9 @@ export class DemoRepository implements AppRepository {
     });
     const debts =
       input.type === "SHARED_EXPENSE"
-        ? obligations(input.payerId ?? id, splits, input.currency)
+        ? input.payers && input.payers.length > 1
+          ? multiPayerObligations(input.payers, splits, input.currency)
+          : obligations(input.payerId ?? id, splits, input.currency)
         : input.type === "LOAN"
           ? [
               {
@@ -1087,7 +1154,7 @@ class ApiRepository implements AppRepository {
         const transaction = {
           ...body,
           id: body.idempotencyKey,
-          sourceId: body.payerId ?? accountId,
+          sourceId: mainPayer(body) ?? body.payerId ?? accountId,
           createdById: accountId,
           version: 1,
           allocations,

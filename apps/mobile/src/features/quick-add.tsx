@@ -20,6 +20,14 @@ import {
   type QuickAddDraft,
 } from "@settleup/domain";
 import { request } from "../data/repository";
+import {
+  askFallback,
+  isAskQuestion,
+  runAskQuery,
+  type AskContext,
+  type AskQuery,
+  type AskResult,
+} from "@settleup/domain/src/ask";
 import { DEMO } from "../data/session";
 import { personName } from "../data/people";
 import { useDashboard } from "../data/hooks";
@@ -27,23 +35,34 @@ import { useSession } from "../data/session";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect } from "expo-router";
 import { knownPeople } from "./receive";
+import { Illustration } from "../components/illustrations";
 import {
   Button,
   Chip,
   Heading,
   Icon,
   Label,
+  Mascot,
   useColors,
 } from "../components/ui";
 
 type Message =
-  | { id: string; role: "assistant"; text: string; draft?: QuickAddDraft; offline?: boolean }
+  | {
+      id: string;
+      role: "assistant";
+      text: string;
+      draft?: QuickAddDraft;
+      offline?: boolean;
+      result?: AskResult;
+      query?: AskQuery;
+    }
   | { id: string; role: "user"; text: string };
 
 const EXAMPLES = [
   "Dinner 2400 with Rohan and Meera, I paid",
-  "Cab to airport ₹650 yesterday",
-  "Groceries 1.2k split with the flat",
+  "How much did I spend this month?",
+  "Who owes me the most?",
+  "Break down last month by category",
 ];
 
 let nextId = 0;
@@ -105,6 +124,160 @@ async function askAssistant(
   };
 }
 
+function askContext(d: Dashboard): AskContext {
+  return {
+    today: DateTime.now().setZone("Asia/Kolkata").toISODate()!,
+    tags: d.tags.map((t) => ({ id: t.id, name: t.name })),
+    groups: d.ledgers.filter((l) => !l.deleted).map((l) => ({ id: l.id, name: l.name })),
+    people: knownPeople(d),
+  };
+}
+const defaultQuery: AskQuery = {
+  metric: "spend",
+  period: "THIS_MONTH",
+  tagIds: [],
+  ledgerIds: [],
+  personId: null,
+  search: null,
+  groupBy: "none",
+  compare: false,
+};
+/** Follow-ups keep whatever the new question does not change. */
+function mergeQuery(next: AskQuery, previous?: AskQuery): AskQuery {
+  if (!previous) return next;
+  const out = { ...next } as Record<string, unknown>;
+  for (const key of Object.keys(defaultQuery) as (keyof AskQuery)[]) {
+    const isDefault = JSON.stringify(next[key]) === JSON.stringify(defaultQuery[key]);
+    if (isDefault) out[key] = previous[key];
+  }
+  return out as AskQuery;
+}
+async function askData(
+  d: Dashboard,
+  question: string,
+  previous?: AskQuery,
+): Promise<{ query: AskQuery; result: AskResult; offline: boolean }> {
+  const ctx = askContext(d);
+  let query: AskQuery | null = null;
+  let offline = false;
+  if (!DEMO)
+    try {
+      query = await request<AskQuery>("/ai/analytics-query", {
+        accountId: d.account.id,
+        body: { question, ...ctx, ...(previous ? { previous } : {}) },
+      });
+    } catch {
+      query = null;
+    }
+  if (!query) {
+    offline = true;
+    query = mergeQuery(askFallback(question, ctx), previous);
+  }
+  return { query, result: runAskQuery(d, query), offline };
+}
+
+function AnswerCard({
+  d,
+  result,
+  onFollowUp,
+}: {
+  d: Dashboard;
+  result: AskResult;
+  onFollowUp: (text: string) => void;
+}) {
+  const c = useColors();
+  const max = Math.max(1, ...result.rows.map((r) => Math.abs(r.valueMinor)));
+  const fmt = (v: number) => money(v, d.account.currency).replace(/\.00$/, "");
+  return (
+    <View
+      style={{
+        marginTop: 8,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: c.line,
+        backgroundColor: c.card,
+        padding: 14,
+        gap: 10,
+      }}
+    >
+      {result.chart === "line" ? (
+        <View style={{ height: 90, flexDirection: "row", alignItems: "flex-end", gap: 2 }}>
+          {result.rows.map((r) => (
+            <View
+              key={r.label}
+              accessibilityLabel={`${r.label}: ${fmt(r.valueMinor)}`}
+              style={{
+                flex: 1,
+                height: Math.max(3, (Math.abs(r.valueMinor) / max) * 86),
+                borderTopLeftRadius: 4,
+                borderTopRightRadius: 4,
+                backgroundColor: c.accent,
+                opacity: 0.85,
+              }}
+            />
+          ))}
+        </View>
+      ) : result.chart === "bar" ? (
+        <YStack gap={8}>
+          {result.rows.map((r) => (
+            <YStack key={r.label} gap={4}>
+              <XStack justifyContent="space-between" gap={8}>
+                <Label size={12} numberOfLines={1} flexShrink={1}>
+                  {r.label}
+                </Label>
+                <Label
+                  bold
+                  size={12}
+                  color={r.valueMinor < 0 ? c.negative : r.valueMinor > 0 && result.periodLabel === "right now" ? c.positive : c.text}
+                >
+                  {r.valueMinor < 0 ? "−" : ""}
+                  {fmt(Math.abs(r.valueMinor))}
+                </Label>
+              </XStack>
+              <View style={{ height: 6, borderRadius: 3, backgroundColor: c.soft }}>
+                <View
+                  style={{
+                    width: `${(Math.abs(r.valueMinor) / max) * 100}%`,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: r.valueMinor < 0 ? c.negative : c.accent,
+                  }}
+                />
+              </View>
+            </YStack>
+          ))}
+        </YStack>
+      ) : null}
+      {result.transactions.map((t) => (
+        <XStack key={t.id} justifyContent="space-between" gap={8}>
+          <Label size={12} numberOfLines={1} flexShrink={1}>
+            {t.title}
+            <Label muted size={11}>
+              {"  "}
+              {DateTime.fromISO(t.occurredAt).toFormat("d LLL")}
+            </Label>
+          </Label>
+          <Label bold size={12}>
+            {fmt(t.amountMinor)}
+          </Label>
+        </XStack>
+      ))}
+      {result.previousMinor !== null && (
+        <Label muted size={11}>
+          Previous period: {fmt(result.previousMinor)}
+        </Label>
+      )}
+      <XStack gap={6} flexWrap="wrap">
+        {result.followUps.map((f) => (
+          <Chip key={f} onPress={() => onFollowUp(f)}>
+            {f}
+          </Chip>
+        ))}
+      </XStack>
+    </View>
+  );
+}
+
 function DraftCard({
   d,
   draft,
@@ -164,7 +337,7 @@ function QuickAddChat({ d }: { d: Dashboard }) {
     {
       id: id(),
       role: "assistant",
-      text: "Tell me what you spent, like you’d text a friend. I’ll fill in the amount, group and split.",
+      text: "Tell me what you spent and I’ll draft the expense, or ask me anything about your money.",
     },
   ]);
   const [input, setInput] = useState(params.text ?? "");
@@ -183,18 +356,34 @@ function QuickAddChat({ d }: { d: Dashboard }) {
     return () => clearTimeout(t);
   }, [messages, busy]);
 
-  const send = async (raw: string) => {
+  const lastQuery = useMemo(
+    () =>
+      [...messages]
+        .reverse()
+        .find((m): m is Extract<Message, { role: "assistant" }> => m.role === "assistant" && !!m.query)
+        ?.query,
+    [messages],
+  );
+  const send = async (raw: string, forceAsk = false) => {
     const text = raw.trim();
     if (!text || busy) return;
     setInput("");
     setMessages((m) => [...m, { id: id(), role: "user", text }]);
     setBusy(true);
     try {
-      const { draft, offline } = await askAssistant(d, text, lastDraft);
-      setMessages((m) => [
-        ...m,
-        { id: id(), role: "assistant", text: draft.reply, draft, offline },
-      ]);
+      if (isAskQuestion(text) || forceAsk) {
+        const { query, result, offline } = await askData(d, text, lastQuery);
+        setMessages((m) => [
+          ...m,
+          { id: id(), role: "assistant", text: result.answer, result, query, offline },
+        ]);
+      } else {
+        const { draft, offline } = await askAssistant(d, text, lastDraft);
+        setMessages((m) => [
+          ...m,
+          { id: id(), role: "assistant", text: draft.reply, draft, offline },
+        ]);
+      }
     } finally {
       setBusy(false);
     }
@@ -234,12 +423,10 @@ function QuickAddChat({ d }: { d: Dashboard }) {
           >
             <Icon name="back" size={20} />
           </Pressable>
-          <Icon name="bolt" size={22} color="#6652A3" />
+          <Icon name="bolt" size={22} color="#4F46E5" />
           <Heading size={24}>Quick Add</Heading>
         </XStack>
-        <Label muted size={12}>
-          Describe an expense. Nothing is saved until you review it.
-        </Label>
+
       </YStack>
       <ScrollView
         ref={scroll}
@@ -247,14 +434,27 @@ function QuickAddChat({ d }: { d: Dashboard }) {
         contentContainerStyle={{ gap: 10, paddingVertical: 8 }}
         keyboardShouldPersistTaps="handled"
       >
+        {messages.length === 1 && (
+          <View style={{ alignItems: "center", paddingVertical: 8 }}>
+            <Mascot size={96} mood="wave" />
+          </View>
+        )}
         {messages.map((m) => (
           <View
             key={m.id}
             style={{
               alignSelf: m.role === "user" ? "flex-end" : "flex-start",
               maxWidth: "88%",
+              flexDirection: m.role === "assistant" ? "row" : "column",
+              gap: 8,
             }}
           >
+            {m.role === "assistant" && messages.length > 1 && (
+              <View style={{ marginTop: 2 }}>
+                <Mascot size={30} mood={m.draft?.complete ? "success" : "wave"} animate={false} />
+              </View>
+            )}
+            <View style={{ flexShrink: 1 }}>
             <View
               style={{
                 borderRadius: 18,
@@ -270,16 +470,20 @@ function QuickAddChat({ d }: { d: Dashboard }) {
             {m.role === "assistant" && m.draft && (
               <DraftCard d={d} draft={m.draft} onReview={() => review(m.draft!)} />
             )}
+            {m.role === "assistant" && m.result && (
+              <AnswerCard d={d} result={m.result} onFollowUp={(f) => void send(f, true)} />
+            )}
             {m.role === "assistant" && m.offline && (
               <Label muted size={10} marginTop={4}>
-                Read on this phone (AI unavailable)
+                {m.result ? "Understood on this phone (AI unavailable)" : "Read on this phone (AI unavailable)"}
               </Label>
             )}
+            </View>
           </View>
         ))}
         {busy && (
           <XStack gap={8} alignItems="center" paddingLeft={6}>
-            <ActivityIndicator size="small" color="#6652A3" />
+            <ActivityIndicator size="small" color="#4F46E5" />
             <Label muted size={12}>
               Thinking…
             </Label>
@@ -297,7 +501,7 @@ function QuickAddChat({ d }: { d: Dashboard }) {
       </ScrollView>
       <XStack gap={8} flexWrap="wrap" paddingTop={6}>
         <Chip onPress={() => router.push("/add?bill=camera")}>
-          📷 Snap a bill
+          Snap a bill
         </Chip>
         <Chip
           onPress={async () => {
@@ -305,7 +509,7 @@ function QuickAddChat({ d }: { d: Dashboard }) {
             if (text.trim()) setInput(text.slice(0, 1500));
           }}
         >
-          📋 Paste a message
+          Paste a message
         </Chip>
       </XStack>
       <XStack
@@ -320,7 +524,7 @@ function QuickAddChat({ d }: { d: Dashboard }) {
       >
         <TextInput
           accessibilityLabel="Describe an expense"
-          placeholder={lastDraft ? "Change something… (e.g. Kabir paid)" : "Dinner 2400 with Rohan, I paid"}
+          placeholder={lastDraft ? "Change something… (e.g. Kabir paid)" : "Add an expense or ask a question"}
           placeholderTextColor={c.muted}
           value={input}
           onChangeText={setInput}
@@ -385,7 +589,7 @@ export function QuickAddScreen() {
           {query.error ? (
             <Label muted>{(query.error as Error).message}</Label>
           ) : (
-            <ActivityIndicator color="#6652A3" />
+            <ActivityIndicator color="#4F46E5" />
           )}
         </View>
       )}

@@ -1,3 +1,4 @@
+import { PageHero } from "../components/illustrations";
 import React, { useCallback, useMemo, useState, useEffect } from "react";
 import { DatePicker } from "../components/DateTimePicker";
 import {
@@ -139,12 +140,12 @@ export function ScanScreen() {
                 width: 90,
                 height: 90,
                 borderRadius: 28,
-                backgroundColor: "#6652A320",
+                backgroundColor: "#4F46E520",
                 justifyContent: "center",
                 alignItems: "center",
               }}
             >
-              <Icon name="scan" size={44} color="#6652A3" />
+              <Icon name="scan" size={44} color="#4F46E5" />
             </View>
             <Heading size={22}>Scan a UPI QR code</Heading>
             <Label muted style={{ textAlign: "center" }}>
@@ -212,7 +213,7 @@ export function ScanScreen() {
     return (
       <DataScreen>
         {(d) => (
-          <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
+          <YStack gap={18} maxWidth={760} width="100%" alignSelf="center">
             <XStack alignItems="center" gap={12}>
               <Pressable
                 accessibilityRole="button"
@@ -248,12 +249,12 @@ export function ScanScreen() {
                       width: 56,
                       height: 56,
                       borderRadius: 18,
-                      backgroundColor: "#6652A315",
+                      backgroundColor: "#4F46E515",
                       justifyContent: "center",
                       alignItems: "center",
                     }}
                   >
-                    <Label bold size={24} color="#6652A3">
+                    <Label bold size={24} color="#4F46E5">
                       {payment.payeeName?.charAt(0)?.toUpperCase() || "?"}
                     </Label>
                   </View>
@@ -787,8 +788,10 @@ function SmsContent({ accountId }: { accountId: string }) {
   const keys = useMemo(() => new Map<string, string>(), []);
   const filteredSuggestions = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return suggestions;
-    return suggestions.filter((suggestion) =>
+    // Incoming money is kept only for settle-up matching, not expense review.
+    const expenses = suggestions.filter((item) => item.direction !== "CREDIT");
+    if (!query) return expenses;
+    return expenses.filter((suggestion) =>
       [
         suggestion.title,
         suggestion.reference,
@@ -877,11 +880,12 @@ function SmsContent({ accountId }: { accountId: string }) {
         justifyContent="space-between"
         flexWrap={width < 350 ? "wrap" : "nowrap"}
       >
-        <YStack gap={2} flex={1}>
-          <Heading size={24}>Bank SMS review</Heading>
-          <Label muted size={12}>
-            Confirm, correct, or dismiss suggested transactions.
-          </Label>
+        <YStack flex={1}>
+          <PageHero
+            eyebrow="Inbox"
+            title="Bank SMS review"
+            subtitle="Confirm, correct, or dismiss suggested transactions."
+          />
         </YStack>
         <Pressable
           accessibilityRole="button"
@@ -904,12 +908,12 @@ function SmsContent({ accountId }: { accountId: string }) {
               height: 19,
               borderRadius: 10,
               borderWidth: 1.5,
-              borderColor: "#7770A4",
+              borderColor: "#64748B",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Label bold size={11} color="#7770A4">
+            <Label bold size={11} color="#64748B">
               i
             </Label>
           </View>
@@ -942,7 +946,7 @@ function SmsContent({ accountId }: { accountId: string }) {
                     justifyContent: "center",
                   }}
                 >
-                  <Icon name="sms" size={18} color="#626078" />
+                  <Icon name="sms" size={18} color="#64748B" />
                 </View>
                 <Label muted size={11} flex={1} lineHeight={16}>
                   The weekly inbox covers today and the previous six days. SMS
@@ -1035,7 +1039,7 @@ function SmsContent({ accountId }: { accountId: string }) {
             </>
           )}
           {!!action.error && <Notice error>{action.error}</Notice>}
-          {enabled && !suggestions.length && (
+          {enabled && !suggestions.some((item) => item.direction !== "CREDIT") && (
             <Empty
               title="Your inbox is all caught up"
               detail={
@@ -1047,7 +1051,7 @@ function SmsContent({ accountId }: { accountId: string }) {
           )}
         </YStack>
       </Card>
-      {!!suggestions.length && (
+      {suggestions.some((item) => item.direction !== "CREDIT") && (
         <Field
           label="Search messages"
           placeholder="Merchant, amount, reference or account"
@@ -1069,7 +1073,7 @@ function SmsContent({ accountId }: { accountId: string }) {
                   justifyContent: "center",
                 }}
               >
-                <Icon name="up" size={18} color="#626078" />
+                <Icon name="up" size={18} color="#64748B" />
               </View>
               <YStack flex={1} minWidth={0} gap={2}>
                 {editing === s.fingerprint ? (
@@ -1206,7 +1210,7 @@ function SmsContent({ accountId }: { accountId: string }) {
           </YStack>
         </Card>
       ))}
-      {!!suggestions.length && !filteredSuggestions.length && (
+      {suggestions.some((item) => item.direction !== "CREDIT") && !filteredSuggestions.length && (
         <Empty
           title="No matching messages"
           detail="Try a merchant name, amount, reference, or account digits."

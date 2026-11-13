@@ -1,3 +1,4 @@
+import { PageHero } from "../components/illustrations";
 import React, { useEffect, useRef, useState } from "react";
 import { Platform, View, Pressable } from "react-native";
 import * as WebBrowser from "expo-web-browser";
@@ -6,7 +7,7 @@ import {
   GoogleSignin,
   isSuccessResponse,
 } from "@react-native-google-signin/google-signin";
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { XStack, YStack } from "tamagui";
 import Svg, { Circle, Path } from "react-native-svg";
 import { useQueryClient } from "@tanstack/react-query";
@@ -206,7 +207,10 @@ export function OnboardingScreen() {
   const registered = useSession((s) =>
     s.accounts.some((account) => account.name !== "New friend"),
   );
-  if (ready && registered) return <Redirect href="/" />;
+  // Development builds can open /onboarding?preview=1 while signed in.
+  const { preview } = useLocalSearchParams<{ preview?: string }>();
+  if (ready && registered && !(__DEV__ && preview === "1"))
+    return <Redirect href="/" />;
   const slides = [
     {
       mood: "wave" as const,
@@ -241,12 +245,30 @@ export function OnboardingScreen() {
           flex={1}
           alignItems="center"
           justifyContent="center"
-          gap={24}
+          gap={20}
           width="100%"
           paddingHorizontal={16}
         >
-          <ReferenceArt scene={slides[step].scene} size={290} />
+          <View>
+            <ReferenceArt scene={slides[step].scene} size={300} />
+            <View style={{ position: "absolute", left: -8, bottom: -6 }}>
+              <Mascot mood={slides[step].mood} size={78} />
+            </View>
+          </View>
 
+
+
+          <View style={{ maxWidth: 560 }}>
+            <Heading size={32} textAlign="center">
+              {slides[step].title}
+            </Heading>
+          </View>
+
+          <View style={{ maxWidth: 420, paddingHorizontal: 12, marginTop: -8 }}>
+            <Label muted size={16} textAlign="center" lineHeight={24}>
+              {slides[step].text}
+            </Label>
+          </View>
           <XStack gap={8}>
             {slides.map((s, i) => (
               <Pressable
@@ -267,29 +289,11 @@ export function OnboardingScreen() {
                     width: step === i ? 28 : 8,
                     height: 8,
                     borderRadius: 4,
-                    backgroundColor: step === i ? "#6652A3" : c.line,
+                    backgroundColor: step === i ? "#4F46E5" : c.line,
                   }}
                 />
               </Pressable>
             ))}
-          </XStack>
-
-          <View style={{ maxWidth: 560 }}>
-            <Heading size={32} textAlign="center">
-              {slides[step].title}
-            </Heading>
-          </View>
-
-          <XStack
-            alignItems="center"
-            gap={14}
-            maxWidth={540}
-            paddingHorizontal={12}
-          >
-            <Mascot mood={slides[step].mood} size={68} />
-            <Label muted size={16} flex={1}>
-              {slides[step].text}
-            </Label>
           </XStack>
         </YStack>
 
@@ -658,7 +662,7 @@ export function AuthScreen() {
                         backgroundColor: c.soft,
                       }}
                     >
-                      <Icon name={permission.icon} size={20} color="#59458F" />
+                      <Icon name={permission.icon} size={20} color="#4338CA" />
                     </View>
                     <YStack flex={1} gap={2}>
                       <Label bold>{permission.title}</Label>
@@ -742,11 +746,12 @@ export function AccountsScreen() {
     action = useAction();
   return (
     <Shell>
-      <YStack gap={22} maxWidth={700} width="100%" alignSelf="center">
-        <Heading>Your accounts</Heading>
-        <Label muted>
-          Switch accounts while keeping each person's records private.
-        </Label>
+      <YStack gap={18} maxWidth={700} width="100%" alignSelf="center">
+        <PageHero
+          eyebrow="Accounts"
+          title="Your accounts"
+          subtitle="Switch accounts while keeping each person's records private."
+        />
         {accounts.map((a) => (
           <Card key={a.id}>
             <XStack alignItems="center" gap={15}>
@@ -836,11 +841,12 @@ export function SettingsScreen() {
   return (
     <DataScreen>
       {(d) => (
-        <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
-          <YStack gap={4}>
-            <Heading>Settings</Heading>
-            <Label muted>Make SettleUp feel right for you</Label>
-          </YStack>
+        <YStack gap={18} maxWidth={760} width="100%" alignSelf="center">
+          <PageHero
+            eyebrow="Preferences"
+            title="Settings"
+            subtitle="Make SettleUp feel right for you."
+          />
           <Card style={{ borderRadius: 20, padding: 18 }}>
             <YStack gap={17}>
               <SectionTitle title="Profile" />
@@ -1201,7 +1207,11 @@ export function ContactsScreen() {
         );
         return (
           <YStack gap={14} maxWidth={760} width="100%" alignSelf="center">
-            <Heading>Saved contacts</Heading>
+            <PageHero
+              eyebrow="People"
+              title="Saved contacts"
+              subtitle={`${d.savedContacts.length} people you share expenses with`}
+            />
             <Notice>
               These are people who share a group or transaction with you. Add a
               phone contact while creating a group; SettleUp creates an
@@ -1263,9 +1273,12 @@ export function NotificationsScreen() {
   return (
     <DataScreen>
       {(d) => (
-        <YStack gap={22}>
-          <Heading>Recent changes</Heading>
-          <Label muted>Updates to your shared groups.</Label>
+        <YStack gap={18}>
+          <PageHero
+            eyebrow="Activity"
+            title="Recent changes"
+            subtitle="Updates to your shared groups."
+          />
           <Card>
             {d.activity.length ? (
               d.activity.map((a) => (

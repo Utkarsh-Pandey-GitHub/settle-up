@@ -165,7 +165,7 @@ export function SmsMatchNotice({
       }}
     >
       <XStack gap={8} alignItems="center">
-        <Icon name="sms" size={16} color="#6652A3" />
+        <Icon name="sms" size={16} color="#4F46E5" />
         <Label size={12} flex={1}>
           Bank SMS: {money(match.amountMinor)} {verb} on {when}
           {match.suggestion.title ? ` · ${match.suggestion.title}` : ""}
@@ -676,5 +676,125 @@ export function OutgoingHelper({
         />
       )}
     </YStack>
+  );
+}
+
+/**
+ * Cross-group netting: when you owe someone in one group and they owe you in
+ * another, offer to cancel the overlap. It records two cash-free repayments
+ * (yours in one group, theirs in the other) so only the true net is left.
+ */
+export function CrossGroupOffsets({
+  d,
+  incoming,
+  outgoing,
+  scopeName,
+}: {
+  d: Dashboard;
+  incoming: Balance[];
+  outgoing: Balance[];
+  scopeName: (ledgerId?: string) => string;
+}) {
+  const c = useColors();
+  const action = useAction();
+  const [busy, setBusy] = useState("");
+  const people = [...new Set(incoming.map((b) => b.personId))].filter((id) =>
+    outgoing.some((b) => b.personId === id && b.currency === incoming.find((x) => x.personId === id)?.currency),
+  );
+  if (!people.length) return null;
+  return (
+    <Card>
+      <YStack gap={12}>
+        <Heading size={17}>Balances across groups</Heading>
+        <Label muted size={12}>
+          You and these people owe each other in different groups. Offsetting
+          cancels the overlap without any money changing hands.
+        </Label>
+        {people.map((personId) => {
+          const theyOwe = incoming.filter((b) => b.personId === personId);
+          const iOwe = outgoing.filter((b) => b.personId === personId && b.currency === theyOwe[0].currency);
+          const currency = theyOwe[0].currency;
+          const theyTotal = theyOwe.reduce((s, b) => s + b.amountMinor, 0);
+          const iTotal = iOwe.reduce((s, b) => s + b.amountMinor, 0);
+          const overlap = Math.min(theyTotal, iTotal);
+          const net = theyTotal - iTotal;
+          const name = personName(d, personId);
+          return (
+            <YStack key={personId} gap={8} paddingVertical={4}>
+              <XStack gap={10} alignItems="center">
+                <Avatar name={name} size={36} />
+                <YStack flex={1} minWidth={0}>
+                  <Label bold>{name}</Label>
+                  <Label muted size={11}>
+                    {[
+                      ...iOwe.map((b) => `You owe ${money(b.amountMinor, currency)} · ${scopeName(b.ledgerId)}`),
+                      ...theyOwe.map((b) => `Owes you ${money(b.amountMinor, currency)} · ${scopeName(b.ledgerId)}`),
+                    ].join("\n")}
+                  </Label>
+                </YStack>
+              </XStack>
+              <XStack alignItems="center" justifyContent="space-between" gap={8} flexWrap="wrap">
+                <Label size={13} color={net > 0 ? c.positive : net < 0 ? c.negative : c.text}>
+                  {net > 0
+                    ? `Net: ${name.split(" ")[0]} owes you ${money(net, currency)}`
+                    : net < 0
+                      ? `Net: you owe ${money(-net, currency)}`
+                      : "Net: you’re even"}
+                </Label>
+                <Button
+                  compact
+                  secondary
+                  loading={busy === personId}
+                  disabled={!!busy}
+                  onPress={() => {
+                    setBusy(personId);
+                    void action
+                      .run(async () => {
+                        let mine = overlap;
+                        for (const b of iOwe) {
+                          if (!mine) break;
+                          const amount = Math.min(mine, b.amountMinor);
+                          await repository.settle(d.account.id, {
+                            idempotencyKey: uuid(),
+                            ledgerId: b.ledgerId ?? undefined,
+                            simplified: true,
+                            debtorId: d.account.id,
+                            creditorId: personId,
+                            amountMinor: amount,
+                            currency,
+                            reference: "Offset across groups",
+                          });
+                          mine -= amount;
+                        }
+                        let theirs = overlap;
+                        for (const b of theyOwe) {
+                          if (!theirs) break;
+                          const amount = Math.min(theirs, b.amountMinor);
+                          await repository.settle(d.account.id, {
+                            idempotencyKey: uuid(),
+                            ledgerId: b.ledgerId ?? undefined,
+                            simplified: true,
+                            debtorId: personId,
+                            creditorId: d.account.id,
+                            amountMinor: amount,
+                            currency,
+                            reference: "Offset across groups",
+                          });
+                          theirs -= amount;
+                        }
+                      }, `Offset ${money(overlap, currency)} with ${name}.`)
+                      .finally(() => setBusy(""));
+                  }}
+                >
+                  {`Offset ${money(overlap, currency)}`}
+                </Button>
+              </XStack>
+            </YStack>
+          );
+        })}
+        {!!action.error && <Notice error>{action.error}</Notice>}
+        {!!action.success && <Notice>{action.success}</Notice>}
+      </YStack>
+    </Card>
   );
 }

@@ -236,6 +236,8 @@ model Transaction {
   requestDigest    String
   version          Int                      @default(1)
   deletedAt        DateTime?                @db.Timestamptz
+  /// When several people paid one expense: [{ userId, amountMinor }].
+  payers           Json?
   correctsId       String?                  @db.Uuid
   corrects         Transaction?             @relation("Correction", fields: [correctsId], references: [id], onDelete: Restrict)
   corrections      Transaction[]            @relation("Correction")

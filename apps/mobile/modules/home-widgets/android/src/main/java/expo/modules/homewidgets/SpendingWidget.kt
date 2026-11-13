@@ -119,21 +119,21 @@ class SpendingWidget : AppWidgetProvider() {
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     val peak = max(values.maxOrNull() ?: 0.0, 1.0)
     val step = 608f / values.size
-    paint.color = Color.rgb(229, 223, 242); paint.strokeWidth = 1f
+    paint.color = Color.rgb(228, 231, 236); paint.strokeWidth = 1f
     canvas.drawLine(16f, 25f, 624f, 25f, paint)
     canvas.drawLine(16f, 118f, 624f, 118f, paint)
     values.forEachIndexed { index, value ->
-      paint.color = Color.rgb(135, 112, 190)
+      paint.color = Color.rgb(79, 70, 229)
       val left = 16f + index * step + step * 0.15f
       val height = (value / peak * 90).toFloat()
       if (height > 0) canvas.drawRoundRect(left, 118f - height, left + step * 0.7f, 118f, 4f, 4f, paint)
       if (week || index == 0 || index == values.size / 2 || index == values.lastIndex) {
-        paint.color = Color.rgb(118, 108, 131); paint.textSize = 19f; paint.textAlign = Paint.Align.CENTER
+        paint.color = Color.rgb(100, 116, 139); paint.textSize = 19f; paint.textAlign = Paint.Align.CENTER
         canvas.drawText(if (week) listOf("M", "T", "W", "T", "F", "S", "S")[index] else dates[index].takeLast(2).toInt().toString(), 16f + (index + 0.5f) * step, 148f, paint)
       }
     }
     if (values.sum() == 0.0) {
-      paint.color = Color.rgb(118, 108, 131); paint.textSize = 23f; paint.textAlign = Paint.Align.CENTER
+      paint.color = Color.rgb(100, 116, 139); paint.textSize = 23f; paint.textAlign = Paint.Align.CENTER
       canvas.drawText("No spending recorded yet", 320f, 80f, paint)
     }
     return bitmap
