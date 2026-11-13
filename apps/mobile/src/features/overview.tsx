@@ -143,6 +143,16 @@ export function SectionTitle({
     </XStack>
   );
 }
+const titleIcon = (title: string): IconName | null => {
+  const t = title.toLowerCase();
+  if (/uber|ola|rapido|cab|taxi|auto|metro|fuel|petrol|diesel|parking|toll|bus|train/.test(t)) return "car";
+  if (/flight|air|indigo|vistara|hotel|stay|trip|travel|airbnb|booking/.test(t)) return "plane";
+  if (/swiggy|zomato|food|dinner|lunch|breakfast|cafe|coffee|tea|chai|pizza|burger|restaurant|starbucks|snack|drinks?|bar\b/.test(t)) return "coffee";
+  if (/rent|maintenance|society|flat|house|home/.test(t)) return "home";
+  if (/electric|power|bill|wifi|internet|broadband|recharge|mobile|jio|airtel|gas|water/.test(t)) return "bolt";
+  if (/amazon|flipkart|myntra|grocer|blinkit|zepto|bigbasket|shopping|mart|store|clothes/.test(t)) return "bag";
+  return null;
+};
 const categoryIcon = (name?: string): IconName =>
   name?.includes("Food")
     ? "coffee"
@@ -187,15 +197,38 @@ export function TransactionRow({
   const incoming = t.destinationId === data.account.id;
   const cashSign = incoming ? "+" : t.sourceId === data.account.id ? "−" : "";
   const storedIcon = [
-    "bag",
     "coffee",
     "car",
     "plane",
     "bolt",
     "wallet",
+    "home",
   ].includes(t.icon ?? "")
     ? (t.icon as IconName)
     : null;
+  // Real records are often untagged; infer a sensible icon from the title so
+  // they look as clear as categorised ones.
+  const inferredIcon = titleIcon(t.title);
+  const rowIcon: IconName | null =
+    t.type === "SETTLEMENT" || t.type === "LOAN_REPAYMENT"
+      ? "check"
+      : t.type === "LOAN"
+        ? "wallet"
+        : t.type === "ADJUSTMENT"
+          ? "down"
+          : (storedIcon ??
+            (tag ? categoryIcon(tag.name) : null) ??
+            inferredIcon ??
+            (t.icon === "bag" ? "bag" : null));
+  const typeLabel: Record<string, string> = {
+    PERSONAL_EXPENSE: "Personal",
+    SHARED_EXPENSE: "Split",
+    LOAN: "Loan",
+    LOAN_REPAYMENT: "Loan repayment",
+    SETTLEMENT: "Settlement",
+    ADJUSTMENT: "Income",
+    REVERSAL: "Reversal",
+  };
   const occurred = DateTime.fromISO(t.occurredAt).setZone("Asia/Kolkata");
   const previous = previousOccurredAt
     ? DateTime.fromISO(previousOccurredAt).setZone("Asia/Kolkata")
@@ -280,23 +313,29 @@ export function TransactionRow({
             height: narrow ? 34 : 43,
             width: narrow ? 34 : 43,
             borderRadius: 13,
-            backgroundColor: `${tag?.color ?? "#9985C2"}20`,
+            backgroundColor: tag?.color
+              ? `${tag.color}1F`
+              : t.type === "SETTLEMENT" || t.type === "ADJUSTMENT"
+                ? c.mint
+                : c.accentSoft,
             justifyContent: "center",
             alignItems: "center",
           }}
         >
-          {storedIcon ? (
-            <Icon name={storedIcon} color="#0F172A" size={21} />
-          ) : t.icon || (!tag && t.type !== "SETTLEMENT") ? (
-            <Label bold size={19} color="#7760A5">
-              {t.icon || t.title.slice(0, 1).toUpperCase()}
-            </Label>
-          ) : (
+          {rowIcon ? (
             <Icon
-              name={t.type === "SETTLEMENT" ? "down" : categoryIcon(tag?.name)}
-              color="#0F172A"
-              size={21}
+              name={rowIcon}
+              color={
+                t.type === "SETTLEMENT" || t.type === "ADJUSTMENT"
+                  ? c.positive
+                  : tag?.color ?? c.accent
+              }
+              size={20}
             />
+          ) : (
+            <Label bold size={17} color={c.accent}>
+              {(t.icon && t.icon.length <= 2 ? t.icon : t.title.slice(0, 1)).toUpperCase()}
+            </Label>
           )}
         </View>
         <YStack flex={1} gap={2} alignItems="flex-start" minWidth={0}>
@@ -311,7 +350,7 @@ export function TransactionRow({
           </Label>
           <XStack gap={6} alignItems="center" flexWrap="wrap">
             <Label muted size={10}>
-              {tag?.name ?? t.type.toLowerCase().replace(/_/g, " ")}
+              {tag?.name ?? typeLabel[t.type] ?? "Expense"}
             </Label>
             {ledger && (
               <Label size={10} muted maxWidth="100%" numberOfLines={1}>
@@ -365,7 +404,7 @@ export function TransactionRow({
             size={14}
             bold
             textAlign="right"
-            color={incoming ? "#218262" : c.text}
+            color={incoming ? c.positive : c.text}
           >
             {cashSign}
             {money(t.amountMinor, t.currency)}
