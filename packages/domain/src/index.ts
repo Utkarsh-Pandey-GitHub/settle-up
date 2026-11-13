@@ -331,21 +331,7 @@ export function parseUpi(input: string) {
     url.hash
   )
     throw new DomainError("UPI", "Only upi://pay links are supported.");
-  const supportedFields = [
-    "pa",
-    "pn",
-    "mc",
-    "tid",
-    "tr",
-    "tn",
-    "am",
-    "mam",
-    "cu",
-    "mode",
-    "purpose",
-    "orgid",
-    "sign",
-  ] as const;
+  const supportedFields = UPI_FIELDS;
   for (const key of supportedFields)
     if (url.searchParams.getAll(key).length > 1)
       throw new DomainError(
@@ -353,7 +339,7 @@ export function parseUpi(input: string) {
         "Duplicate payment fields are not accepted.",
       );
   const pa = url.searchParams.get("pa") ?? "";
-  if (!/^[a-zA-Z0-9._-]{2,128}@[a-zA-Z0-9.-]{2,64}$/.test(pa))
+  if (!isUpiId(pa))
     throw new DomainError("UPI", "Invalid UPI payee address.");
   const cu = url.searchParams.get("cu") ?? "INR";
   if (cu !== "INR") throw new DomainError("UPI", "UPI payments must use INR.");
@@ -377,24 +363,26 @@ export function parseUpi(input: string) {
     signed &&
     [...url.searchParams.keys()].some(
       (key) =>
-        !supportedFields.includes(key as (typeof supportedFields)[number]),
+        !supportedFields.includes(key as UpiField),
     )
   )
     throw new DomainError(
       "UPI",
       "This signed UPI QR contains unsupported fields. Open it in your UPI app instead.",
     );
-  const safe = new URL("upi://pay");
   // Preserve standard merchant fields from the scanned QR. Dropping fields such
   // as merchant category, transaction ID, mode or signature can make a valid
   // QR behave differently across PSP apps. Unknown fields (especially callback
   // URLs) remain stripped before the URI leaves SettleUp.
+  const fields: Partial<Record<UpiField, string>> = {};
   for (const key of supportedFields) {
     const value = url.searchParams.get(key);
-    if (value) safe.searchParams.set(key, value);
+    if (value) fields[key] = value;
   }
-  if (!safe.searchParams.has("cu")) safe.searchParams.set("cu", cu);
+  fields.cu ??= cu;
   return {
+    fields,
+    signed,
     payeeAddress: pa,
     payeeName: pn,
     amountMinor,
@@ -404,7 +392,247 @@ export function parseUpi(input: string) {
     fixedAmount: amountMinor !== undefined && (!!tr || signed),
     // A signature covers the original QR fields and sometimes their encoding.
     // Rebuilding that URI can make a valid merchant QR fail in stricter PSPs.
-    uri: signed ? input.trim() : safe.toString(),
+    uri: signed ? input.trim() : serializeUpi(fields),
+  };
+}
+const UPI_FIELDS = [
+  "pa",
+  "pn",
+  "mc",
+  "tid",
+  "tr",
+  "tn",
+  "am",
+  "mam",
+  "cu",
+  "mode",
+  "purpose",
+  "orgid",
+  "sign",
+] as const;
+type UpiField = (typeof UPI_FIELDS)[number];
+/**
+ * Serializes UPI fields with RFC 3986 percent-encoding. `URLSearchParams`
+ * writes spaces as `+`, which several PSP apps (Paytm among them) do not
+ * decode, so payee names and notes arrive as "Little+Cafe".
+ */
+export function serializeUpi(fields: Partial<Record<UpiField, string>>) {
+  const query = UPI_FIELDS.filter((key) => fields[key])
+    .map((key) => `${key}=${encodeURIComponent(fields[key]!)}`)
+    .join("&");
+  return `upi://pay?${query}`;
+}
+/** Validates a UPI ID (VPA) such as `name@okaxis`. */
+export function isUpiId(value: string) {
+  return /^[a-zA-Z0-9._-]{2,128}@[a-zA-Z0-9.-]{2,64}$/.test(value.trim());
+}
+/**
+ * Builds the QR payload a person shows so someone else can pay them by
+ * scanning it in their own UPI app. Scans started inside the payer's app are
+ * the P2P route NPCI allows (OC-76A disallows P2P intent launches).
+ */
+export function receiveUpiUri(input: {
+  payeeAddress: string;
+  payeeName: string;
+  amountMinor?: number;
+  note?: string;
+}) {
+  const pa = input.payeeAddress.trim();
+  if (!isUpiId(pa)) throw new DomainError("UPI", "Enter a valid UPI ID, like name@okaxis.");
+  return serializeUpi({
+    pa,
+    pn: input.payeeName.trim().slice(0, 50) || pa,
+    am:
+      input.amountMinor && input.amountMinor > 0
+        ? (input.amountMinor / 100).toFixed(2)
+        : undefined,
+    tn: input.note?.trim().slice(0, 50) || undefined,
+    cu: "INR",
+  });
+}
+const nameTokens = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 3);
+/** Overlap between a person's name and the counterparty named in an SMS. */
+export function smsNameScore(personName: string, smsTitle: string) {
+  const person = nameTokens(personName);
+  const sms = new Set(nameTokens(smsTitle));
+  if (!person.length || !sms.size) return 0;
+  return person.filter((token) => sms.has(token)).length / person.length;
+}
+export type SettlementCandidate = {
+  id: string;
+  personId: string;
+  personName: string;
+  amountMinor: number;
+  /** CREDIT: they owe you, so money arrives. DEBIT: you owe them. */
+  direction: "CREDIT" | "DEBIT";
+};
+export type SettlementMatch = {
+  candidateId: string;
+  suggestion: ImportSuggestion;
+  amountMinor: number;
+  confidence: "HIGH" | "MEDIUM";
+};
+/**
+ * Pairs bank SMS suggestions with open balances so a repayment can be
+ * confirmed in one tap. A match needs the same direction and an amount no
+ * larger than the balance, plus either the person's name in the SMS or an
+ * exact amount that no other balance shares. Each SMS is used at most once.
+ */
+export function matchSettlementSms(
+  suggestions: ImportSuggestion[],
+  candidates: SettlementCandidate[],
+): SettlementMatch[] {
+  const scored: (SettlementMatch & { score: number })[] = [];
+  for (const candidate of candidates)
+    for (const suggestion of suggestions) {
+      if (suggestion.direction !== candidate.direction) continue;
+      if (suggestion.amountMinor <= 0 || suggestion.amountMinor > candidate.amountMinor)
+        continue;
+      const exact = suggestion.amountMinor === candidate.amountMinor;
+      const name = smsNameScore(candidate.personName, suggestion.title);
+      const uniqueAmount =
+        exact &&
+        candidates.filter(
+          (other) =>
+            other.direction === candidate.direction &&
+            other.amountMinor === candidate.amountMinor,
+        ).length === 1;
+      if (name < 0.5 && !uniqueAmount) continue;
+      scored.push({
+        candidateId: candidate.id,
+        suggestion,
+        amountMinor: suggestion.amountMinor,
+        confidence: name >= 0.5 && exact ? "HIGH" : "MEDIUM",
+        score: name * 2 + (exact ? 1 : 0),
+      });
+    }
+  scored.sort(
+    (a, b) =>
+      b.score - a.score ||
+      Date.parse(b.suggestion.occurredAt) - Date.parse(a.suggestion.occurredAt),
+  );
+  const usedCandidates = new Set<string>();
+  const usedSms = new Set<string>();
+  const matches: SettlementMatch[] = [];
+  for (const { score: _score, ...match } of scored) {
+    if (usedCandidates.has(match.candidateId)) continue;
+    if (usedSms.has(match.suggestion.fingerprint)) continue;
+    usedCandidates.add(match.candidateId);
+    usedSms.add(match.suggestion.fingerprint);
+    matches.push(match);
+  }
+  return matches;
+}
+export type QuickAddContext = {
+  today: string;
+  people: { id: string; name: string }[];
+  groups: { id: string; name: string; memberIds: string[] }[];
+};
+export type QuickAddDraft = {
+  title: string;
+  amountMinor: number | null;
+  ledgerId: string | null;
+  participantIds: string[];
+  payerId: string | null;
+  date: string | null;
+  notes: string;
+  reply: string;
+  complete: boolean;
+};
+const QUICK_STOP = new Set([
+  "with", "and", "for", "the", "paid", "pay", "split", "between", "among",
+  "spent", "on", "at", "to", "in", "me", "i", "my", "we", "our", "of", "a",
+  "an", "rs", "inr", "rupees", "yesterday", "today", "equally", "group",
+  "trip", "by", "was", "were", "it", "all",
+]);
+/**
+ * Offline Quick Add: a rule-based reading of the note, used when the AI
+ * service is unavailable (or in demo mode). It understands amounts like
+ * "2.4k" or "₹1,200", people and groups by name, "X paid", and "yesterday".
+ */
+export function quickAddFallback(
+  message: string,
+  ctx: QuickAddContext,
+): QuickAddDraft {
+  const text = message.trim();
+  const lower = text.toLowerCase();
+  const amountMatch =
+    lower.match(/(?:₹|rs\.?|inr)\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(k)?\b/) ??
+    lower.match(/\b(\d[\d,]*(?:\.\d{1,2})?)\s*(k)?\b/);
+  let amountMinor: number | null = null;
+  if (amountMatch) {
+    const value =
+      Number(amountMatch[1].replace(/,/g, "")) * (amountMatch[2] ? 1000 : 1);
+    if (Number.isFinite(value) && value > 0) amountMinor = Math.round(value * 100);
+  }
+  const words = new Set(lower.match(/[a-z]+/g) ?? []);
+  const nameHit = (name: string) =>
+    name
+      .toLowerCase()
+      .split(/\s+/)
+      .some((token) => token.length >= 3 && words.has(token));
+  // Only use a group when the note names it; expenses can be outside groups.
+  const groupName = (name: string) =>
+    name.toLowerCase().replace(/^the\s+/, "").trim();
+  const group =
+    ctx.groups.find(
+      (g) => groupName(g.name).length >= 3 && lower.includes(groupName(g.name)),
+    ) ?? null;
+  const pool = group
+    ? ctx.people.filter((p) => group.memberIds.includes(p.id))
+    : ctx.people;
+  const participantIds = pool.filter((p) => nameHit(p.name)).map((p) => p.id);
+  const payer = ctx.people.find((p) =>
+    p.name
+      .toLowerCase()
+      .split(/\s+/)
+      .some(
+        (t) =>
+          t.length >= 3 &&
+          new RegExp(
+            `\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+(paid|pays|covered)\\b`,
+          ).test(lower),
+      ),
+  );
+  let date: string | null = null;
+  if (/\byesterday\b/.test(lower)) {
+    const d = new Date(`${ctx.today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    date = d.toISOString().slice(0, 10);
+  }
+  const nameTokens = new Set(
+    ctx.people.flatMap((p) => p.name.toLowerCase().split(/\s+/)),
+  );
+  const titleWords = (text.match(/[A-Za-z][A-Za-z'&-]*/g) ?? [])
+    .filter((w) => {
+      const t = w.toLowerCase();
+      return !QUICK_STOP.has(t) && !nameTokens.has(t) && t !== "k";
+    })
+    .slice(0, 4);
+  const title = titleWords.length
+    ? titleWords
+        .join(" ")
+        .replace(/^./, (c) => c.toUpperCase())
+        .slice(0, 120)
+    : "";
+  const complete = !!(amountMinor && title);
+  return {
+    title: title || "Expense",
+    amountMinor,
+    ledgerId: group?.id ?? null,
+    participantIds: [...new Set(participantIds)],
+    payerId: payer && participantIds.includes(payer.id) ? payer.id : null,
+    date,
+    notes: "",
+    reply: amountMinor
+      ? "Here’s a draft from your note. Check it and save."
+      : "How much was it?",
+    complete: complete || !!amountMinor,
   };
 }
 export const SMS_TTL_MS = 7 * 24 * 60 * 60 * 1000;

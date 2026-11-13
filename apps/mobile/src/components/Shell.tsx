@@ -286,7 +286,8 @@ export function Shell({
                 QUICK TOOLS
               </Label>
               {[
-                { label: "Scan & pay", path: "/scan", icon: "scan" as const },
+                { label: "Quick Add", path: "/quick-add", icon: "bolt" as const },
+                { label: "Scan UPI QR", path: "/scan", icon: "scan" as const },
                 { label: "SMS inbox", path: "/sms", icon: "sms" as const },
                 { label: "Tags", path: "/tags", icon: "bag" as const },
               ].map(navItem)}
@@ -518,7 +519,7 @@ export function Shell({
                     path: "/activity",
                     icon: "transactions",
                   },
-                  { label: "Pay", path: "/scan", icon: "scan" },
+                  { label: "Quick Add", path: "/quick-add", icon: "bolt" },
                   { label: "Analytics", path: "/analytics", icon: "chart" },
                   { label: "Groups", path: "/groups", icon: "groups" },
                 ].map((n) => (
@@ -539,24 +540,24 @@ export function Shell({
                   >
                     <View
                       style={{
-                        width: n.path === "/scan" ? 58 : 39,
-                        height: n.path === "/scan" ? 58 : 39,
-                        marginTop: n.path === "/scan" ? -26 : 0,
-                        marginBottom: n.path === "/scan" ? -7 : 0,
+                        width: n.path === "/quick-add" ? 58 : 39,
+                        height: n.path === "/quick-add" ? 58 : 39,
+                        marginTop: n.path === "/quick-add" ? -26 : 0,
+                        marginBottom: n.path === "/quick-add" ? -7 : 0,
                         alignItems: "center",
                         justifyContent: "center",
                         backgroundColor:
-                          n.path === "/scan" ? c.primary : "transparent",
-                        borderRadius: n.path === "/scan" ? 22 : 14,
-                        borderWidth: n.path === "/scan" ? 4 : 0,
+                          n.path === "/quick-add" ? c.primary : "transparent",
+                        borderRadius: n.path === "/quick-add" ? 22 : 14,
+                        borderWidth: n.path === "/quick-add" ? 4 : 0,
                         borderColor: c.card,
                       }}
                     >
                       <Icon
                         name={n.icon as IconName}
-                        size={n.path === "/scan" ? 32 : 25}
+                        size={n.path === "/quick-add" ? 32 : 25}
                         color={
-                          n.path === "/scan"
+                          n.path === "/quick-add"
                             ? c.onPrimary
                             : path === n.path
                               ? c.accent

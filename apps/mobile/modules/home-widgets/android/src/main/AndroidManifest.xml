@@ -4,6 +4,10 @@
       <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_quick_compact" />
     </receiver>
+    <receiver android:name=".QuickAddWidget" android:exported="false" android:label="@string/widget_quick_add_name">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_quick_add" />
+    </receiver>
     <receiver android:name=".SpendingWidget" android:exported="false" android:label="@string/widget_spending_name">
       <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_spending" />

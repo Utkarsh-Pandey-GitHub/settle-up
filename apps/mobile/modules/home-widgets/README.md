@@ -1,10 +1,10 @@
 # Android home-screen widgets
 
-Two Android widgets are available: a **4×2 Quick actions** widget for Scan QR, Scan bill, Expense, and Groups, plus **Spending & goals**. Add them with the launcher’s Widgets picker. Android native build required; these are not available in Expo Go, on web, or on iOS.
+Three Android widgets are available: a **4×1 Quick Add · AI** bar that opens the AI Quick Add chat, a **4×2 Quick actions** widget for Quick Add, Scan bill, Expense, and Groups, plus **Spending & goals**. Add them with the launcher’s Widgets picker. Android native build required; these are not available in Expo Go, on web, or on iOS.
 
 Uses Android AppWidgetProvider/RemoteViews, with no extra runtime library, API key, permissions, database table, or background network requests. The native module is auto-linked by Expo. Run `npm run apk:android` after native changes and install the resulting APK. The debug APK still needs Metro.
 
-Quick actions open `/scan`, `/add`, and `/add?capture=bill`. The bill action opens the existing camera with its normal permission handling; it never captures or submits without a tap. Authentication is still required by the existing screens.
+Quick actions open `/quick-add`, `/add`, and `/add?bill=camera`. The bill action opens the existing camera with its normal permission handling; it never captures or submits without a tap. Authentication is still required by the existing screens.
 
 The summary has an independent Week/Month selector for each placed widget, daily spending bars, and up to two active budgets (matching the selected period first). Tapping the graph opens analytics for that period; tapping goals opens Goals. Weeks start Monday, and periods use Asia/Kolkata, matching the app. Amounts use the account currency and personal share of settled expenses.
 

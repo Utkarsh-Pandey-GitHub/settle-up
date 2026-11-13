@@ -114,6 +114,8 @@ export const useSession = create<State>((set, get) => ({
       `settleup.sms.${id}`,
       `settleup.sms.salt.${id}`,
       `settleup.upi.${id}`,
+      `settleup.myupi.${id}`,
+      `settleup.contactupi.${id}`,
       `settleup.notifications.${id}`,
     ])
       await storage.remove(key);

@@ -624,6 +624,40 @@ function MiniPill({
   );
 }
 
+function AnalyticsAction({
+  icon,
+  label,
+  accessibilityLabel = label,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  accessibilityLabel?: string;
+  onPress(): void;
+}) {
+  const c = useColors();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        minHeight: 34,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 5,
+        paddingHorizontal: 7,
+        borderRadius: 8,
+        backgroundColor: pressed ? c.soft : "transparent",
+      })}
+    >
+      <Icon name={icon} size={15} color={c.primary} />
+      <Label size={11}>{label}</Label>
+    </Pressable>
+  );
+}
+
 function ComparisonSpendingChart({
   data,
   ranges,
@@ -1709,7 +1743,7 @@ export function AnalyticsScreen() {
                     label: comparison.label,
                     filter: {
                       start: comparisonStart.toUTC().toISO()!,
-                      end: comparisonEnd.plus({ days: 1 }).toUTC().toISO()!,
+                      end: comparisonEnd.toUTC().toISO()!,
                       currency: d.account.currency,
                       tagIds,
                       ledgerIds,
@@ -1735,22 +1769,21 @@ export function AnalyticsScreen() {
         });
         return (
           <YStack gap={22}>
-            <XStack justifyContent="space-between" gap={12} flexWrap="wrap">
+            <YStack gap={7}>
               <YStack maxWidth="100%" flexShrink={1}>
                 <Heading>Your spending</Heading>
                 <Label muted>See where your money goes.</Label>
               </YStack>
-              <XStack gap={8} flexWrap="wrap">
-                <Button
-                  secondary
+              <XStack gap={2} justifyContent="flex-end">
+                <AnalyticsAction
                   icon="goal"
+                  label="Goals"
                   onPress={() => router.push("/goals")}
-                >
-                  Goals
-                </Button>
-                <Button
-                  secondary
+                />
+                <AnalyticsAction
                   icon="link"
+                  label="Snapshot"
+                  accessibilityLabel="Share a snapshot"
                   onPress={() =>
                     router.push({
                       pathname: "/share",
@@ -1768,18 +1801,14 @@ export function AnalyticsScreen() {
                       },
                     })
                   }
-                >
-                  Share a snapshot
-                </Button>
-                <Button
-                  secondary
+                />
+                <AnalyticsAction
                   icon="filter"
+                  label="Filters"
                   onPress={() => setFiltersOpen(true)}
-                >
-                  Filters
-                </Button>
+                />
               </XStack>
-            </XStack>
+            </YStack>
 
             <Modal
               visible={filtersOpen}

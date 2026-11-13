@@ -23,6 +23,7 @@ import {
   splitExpense,
   simplifyBalances,
   type SplitMethod,
+  type SettlementMatch,
 } from "@settleup/domain";
 import { BillEditor, type BillPhoto, type BillLine } from "./bill";
 import { API_URL, repository, uuid, extra } from "../data/repository";
@@ -33,6 +34,11 @@ import {
   simplifiedOutgoing,
 } from "../data/balances";
 import { useAction } from "../data/hooks";
+import {
+  IncomingSettlements,
+  OutgoingHelper,
+  consumeSmsMatch,
+} from "./receive";
 import { DataScreen, SectionTitle, TransactionRow } from "./overview";
 import { KeyboardAwareScreen } from "../components/KeyboardAwareScreen";
 import { DatePicker, DateTimePicker } from "../components/DateTimePicker";
@@ -99,6 +105,9 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
       capture?: string;
       bill?: string;
       edit?: string;
+      members?: string;
+      payer?: string;
+      date?: string;
     }>(),
     router = useRouter(),
     action = useAction();
@@ -124,9 +133,17 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
     [selected, setSelected] = useState<string[]>(
       editing?.allocations
         .map((allocation) => allocation.userId)
-        .filter((id) => !includeCreator || id !== creatorId) ?? [],
+        .filter((id) => !includeCreator || id !== creatorId) ??
+        // AI Quick Add hands over the people to split with.
+        (params.members
+          ?.split(",")
+          .filter((id) => !!id && id !== creatorId)
+          .slice(0, 50) ??
+          []),
     ),
-    [chosenPayer, setChosenPayer] = useState(editing?.sourceId ?? creatorId),
+    [chosenPayer, setChosenPayer] = useState(
+      editing?.sourceId ?? params.payer ?? creatorId,
+    ),
     [method, setMethod] = useState<SplitMethod>(
       editing?.splitMethod ?? "EQUAL",
     ),
@@ -197,7 +214,9 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
         ? DateTime.fromISO(editing.occurredAt)
             .setZone("Asia/Kolkata")
             .toFormat("yyyy-MM-dd HH:mm")
-        : DateTime.now().setZone("Asia/Kolkata").toFormat("yyyy-MM-dd HH:mm"),
+        : params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date)
+          ? `${params.date} ${DateTime.now().setZone("Asia/Kolkata").toFormat("HH:mm")}`
+          : DateTime.now().setZone("Asia/Kolkata").toFormat("yyyy-MM-dd HH:mm"),
     },
   });
   const ledger = d.ledgers.find((l) => l.id === ledgerId);
@@ -1223,7 +1242,8 @@ export function SettlementScreen() {
   const action = useAction(),
     [debtId, setDebtId] = useState(""),
     [amount, setAmount] = useState(requestedAmount ?? ""),
-    [key, setKey] = useState(uuid());
+    [key, setKey] = useState(uuid()),
+    [smsMatch, setSmsMatch] = useState<SettlementMatch | null>(null);
   return (
     <DataScreen>
       {(d) => {
@@ -1320,39 +1340,11 @@ export function SettlementScreen() {
               </Chip>
             </XStack>
             {receiving ? (
-              <Card>
-                <YStack gap={12}>
-                  <Heading size={19}>Who owes you</Heading>
-                  <Label muted size={12}>
-                    Each group or loan is netted so a person appears in one
-                    direction only.
-                  </Label>
-                  {incoming.map((balance) => (
-                    <XStack key={balance.id} gap={10} alignItems="center">
-                      <YStack flex={1} minWidth={0}>
-                        <Label bold>{personName(d, balance.personId)}</Label>
-                        <Label muted size={11}>
-                          {scopeName(balance.ledgerId)}
-                        </Label>
-                      </YStack>
-                      <Label
-                        bold
-                        flexShrink={1}
-                        maxWidth="48%"
-                        textAlign="right"
-                      >
-                        {money(balance.amountMinor, balance.currency)}
-                      </Label>
-                    </XStack>
-                  ))}
-                  {!incoming.length && (
-                    <Empty
-                      title="No one owes you"
-                      detail="There are no outstanding balances to receive."
-                    />
-                  )}
-                </YStack>
-              </Card>
+              <IncomingSettlements
+                d={d}
+                incoming={incoming}
+                scopeName={scopeName}
+              />
             ) : (
               <Card>
                 <YStack gap={18}>
@@ -1386,6 +1378,7 @@ export function SettlementScreen() {
                             }}
                             onPress={() => {
                               setDebtId(o.id);
+                              setSmsMatch(null);
                               setAmount(
                                 String(
                                   o.amountMinor /
@@ -1439,6 +1432,16 @@ export function SettlementScreen() {
                         );
                       })}
                       {selected && (
+                        <OutgoingHelper
+                          d={d}
+                          selected={selected}
+                          onUseSms={(match) => {
+                            setSmsMatch(match);
+                            setAmount((match.amountMinor / 100).toFixed(2));
+                          }}
+                        />
+                      )}
+                      {selected && (
                         <Field
                           label={`Amount paid · ${scopeName(selected.ledgerId)}`}
                           value={amount}
@@ -1472,8 +1475,13 @@ export function SettlementScreen() {
                                 creditorId: selected.personId,
                                 amountMinor,
                                 currency: selected.currency,
+                                reference: smsMatch?.suggestion.reference,
                               },
                             );
+                            if (smsMatch) {
+                              await consumeSmsMatch(d.account.id, smsMatch);
+                              setSmsMatch(null);
+                            }
                             if (!(
                               result &&
                               typeof result === "object" &&

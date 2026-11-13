@@ -79,6 +79,10 @@ export default function Layout() {
                 animation: "slide_from_right",
               }}
             />
+            <Stack.Screen
+              name="quick-add"
+              options={{ animation: "slide_from_bottom", gestureEnabled: true }}
+            />
             <Stack.Screen name="+not-found" />
           </Stack>
         </TamaguiProvider>

@@ -1,4 +1,4 @@
-import { AppState, Platform, PermissionsAndroid, Linking } from "react-native";
+import { AppState, Platform, PermissionsAndroid } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   requireOptionalNativeModule,
@@ -14,7 +14,6 @@ import {
   smsRange,
   smsDecisionExpiry,
   normalizePhone,
-  parseUpi,
 } from "@settleup/domain";
 import { request } from "../data/repository";
 export type SmsDecision = {
@@ -453,37 +452,6 @@ export async function chooseContacts() {
   }
   return [...unique.values()];
 }
-export type UpiLaunchResult = {
-  status: "SUCCESS" | "SUBMITTED" | "FAILURE" | "CANCELLED" | "UNKNOWN";
-  transactionId?: string;
-  response?: string;
-};
-type UpiPaymentNative = {
-  open(uri: string): Promise<UpiLaunchResult>;
-};
-const upiBridge =
-  Platform.OS === "android"
-    ? requireOptionalNativeModule<UpiPaymentNative>("UpiPayment")
-    : null;
-export const paymentLauncher = {
-  async ensureAvailable(uri: string) {
-    const safe = parseUpi(uri);
-    if (Platform.OS === "web")
-      throw new Error("Open a UPI app from an Android or iOS device.");
-    // Android package visibility can make canOpenURL return false even when the
-    // system chooser can hand the intent to an installed payment app.
-    if (Platform.OS === "android" && upiBridge) return safe.uri;
-    if (!(await Linking.canOpenURL(safe.uri)))
-      throw new Error("No UPI payment app is available on this phone.");
-    return safe.uri;
-  },
-  async open(uri: string): Promise<UpiLaunchResult> {
-    const safeUri = await this.ensureAvailable(uri);
-    if (upiBridge) return upiBridge.open(safeUri);
-    await Linking.openURL(safeUri);
-    return { status: "UNKNOWN" };
-  },
-};
 export async function enableNotifications(accountId: string) {
   if (Platform.OS === "web")
     throw new Error("Notifications are available in the native app.");
@@ -565,38 +533,50 @@ export async function syncGoalNotifications(
   await SecureStore.setItemAsync(key, JSON.stringify(records));
 }
 
-// Repeated scans of the same confirmed QR reuse a request for two minutes.
-// Only request metadata is retained; no SMS or token data is stored here.
-const browserPaymentRequests = new Map<
-  string,
-  Record<string, { key: string; occurredAt: string; until: number }>
->();
-export async function paymentRequest(accountId: string, canonicalUri: string) {
-  const storageKey = `settleup.upi.${accountId}`;
-  const raw =
-    Platform.OS === "web" ? null : await SecureStore.getItemAsync(storageKey);
-  const entries: Record<
-    string,
-    { key: string; occurredAt: string; until: number }
-  > =
-    Platform.OS === "web"
-      ? (browserPaymentRequests.get(accountId) ?? {})
-      : raw
-        ? JSON.parse(raw)
-        : {};
-  for (const [hash, entry] of Object.entries(entries))
-    if (entry.until <= Date.now()) delete entries[hash];
-  const fingerprint = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    canonicalUri,
-  );
-  if (!entries[fingerprint])
-    entries[fingerprint] = {
-      key: Crypto.randomUUID(),
-      occurredAt: new Date().toISOString(),
-      until: Date.now() + 120000,
+// UPI IDs stay on this device: yours (to show a receive QR) and the ones you
+// saved for people by scanning their QR. Nothing here is sent to the server.
+export type SavedUpi = { upiId: string; name: string; savedAt: string };
+const webUpi = new Map<string, string>();
+const upiStore = {
+  async get(key: string) {
+    return Platform.OS === "web"
+      ? (webUpi.get(key) ?? null)
+      : SecureStore.getItemAsync(key);
+  },
+  async set(key: string, value: string) {
+    if (Platform.OS === "web") webUpi.set(key, value);
+    else await SecureStore.setItemAsync(key, value);
+  },
+};
+export const myUpiKey = (accountId: string) => `settleup.myupi.${accountId}`;
+export const contactUpiKey = (accountId: string) =>
+  `settleup.contactupi.${accountId}`;
+export const upiDirectory = {
+  async mine(accountId: string) {
+    return (await upiStore.get(myUpiKey(accountId))) ?? "";
+  },
+  async setMine(accountId: string, upiId: string) {
+    await upiStore.set(myUpiKey(accountId), upiId.trim());
+  },
+  async contacts(accountId: string): Promise<Record<string, SavedUpi>> {
+    try {
+      return JSON.parse((await upiStore.get(contactUpiKey(accountId))) ?? "{}");
+    } catch {
+      return {};
+    }
+  },
+  async saveContact(
+    accountId: string,
+    personId: string,
+    upiId: string,
+    name: string,
+  ) {
+    const all = await this.contacts(accountId);
+    all[personId] = {
+      upiId: upiId.trim(),
+      name: name.slice(0, 120),
+      savedAt: new Date().toISOString(),
     };
-  if (Platform.OS === "web") browserPaymentRequests.set(accountId, entries);
-  else await SecureStore.setItemAsync(storageKey, JSON.stringify(entries));
-  return entries[fingerprint];
-}
+    await upiStore.set(contactUpiKey(accountId), JSON.stringify(all));
+  },
+};

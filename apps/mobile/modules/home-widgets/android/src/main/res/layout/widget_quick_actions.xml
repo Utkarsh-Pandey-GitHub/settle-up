@@ -35,9 +35,9 @@
     android:orientation="horizontal"
     android:weightSum="4">
 
-    <LinearLayout android:id="@+id/action_qr" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:contentDescription="Scan QR">
+    <LinearLayout android:id="@+id/action_qr" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:contentDescription="Quick Add with AI">
       <ImageView android:layout_width="46dp" android:layout_height="46dp" android:padding="3dp" android:background="@drawable/widget_icon_circle" android:backgroundTint="#E8E1F6" android:src="@drawable/widget_mascot_qr" android:contentDescription="@null" />
-      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Scan QR" android:textColor="#211D29" android:textSize="10sp" android:textStyle="bold" />
+      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Quick Add" android:textColor="#211D29" android:textSize="10sp" android:textStyle="bold" />
     </LinearLayout>
 
     <LinearLayout android:id="@+id/action_bill" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:contentDescription="Scan bill">

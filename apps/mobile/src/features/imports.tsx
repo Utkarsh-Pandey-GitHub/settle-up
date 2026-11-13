@@ -15,11 +15,17 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { YStack, XStack } from "tamagui";
 import { useFocusEffect, useRouter } from "expo-router";
-import { parseUpi, money, type ImportSuggestion } from "@settleup/domain";
+import {
+  isUpiId,
+  parseUpi,
+  money,
+  type ImportSuggestion,
+} from "@settleup/domain";
+import * as Clipboard from "expo-clipboard";
+import { SaveUpiToPerson } from "./receive";
 import {
   AndroidSmsProvider,
   type SmsDecision,
-  paymentLauncher,
 } from "../services/device";
 import { repository } from "../data/repository";
 import { useAction } from "../data/hooks";
@@ -42,9 +48,7 @@ export function ScanScreen() {
     [uri, setUri] = useState(""),
     [payment, setPayment] = useState<ReturnType<typeof parseUpi> | null>(null),
     [payeeAddress, setPayeeAddress] = useState(""),
-    [processed, setProcessed] = useState(false),
     [paymentSource, setPaymentSource] = useState<"scan" | "manual">("scan"),
-    [paymentOutcome, setPaymentOutcome] = useState(""),
     [pasteMode, setPasteMode] = useState(false);
   const action = useAction();
   const router = useRouter();
@@ -74,11 +78,9 @@ export function ScanScreen() {
   );
   const inspect = (value: string, source: "scan" | "manual" = "scan") => {
     try {
-      if (processed) return;
       const result = parseUpi(value);
       setPayment(result);
       setPaymentSource(source);
-      setPaymentOutcome("");
       setPayeeAddress(result.payeeAddress);
       setUri(result.uri);
       action.setError("");
@@ -117,43 +119,6 @@ export function ScanScreen() {
       action.setError((e as Error).message);
     }
   };
-
-  const launchPayment = () =>
-    action.run(async () => {
-      if (!payment) return;
-      const activeAddress = payeeAddress || payment.payeeAddress;
-      const confirmed = new URL(payment.uri);
-      confirmed.searchParams.set("pa", activeAddress);
-      // The payer always enters the final amount in their UPI app. A QR
-      // signature covers the original amount, so it cannot be forwarded after
-      // removing `am`; the UPI app still confirms the payee before payment.
-      confirmed.searchParams.delete("am");
-      confirmed.searchParams.delete("sign");
-      const launchUri = parseUpi(confirmed.toString()).uri;
-      await paymentLauncher.ensureAvailable(launchUri);
-      setProcessed(true);
-      let result;
-      try {
-        result = await paymentLauncher.open(launchUri);
-      } catch (error) {
-        setProcessed(false);
-        throw error;
-      }
-      if (result.status === "SUCCESS") {
-        setPaymentOutcome("The UPI app reported a successful payment.");
-      } else if (result.status === "FAILURE" || result.status === "CANCELLED") {
-        setProcessed(false);
-        setPaymentOutcome(
-          result.status === "FAILURE"
-            ? "The UPI app reported a failed payment."
-            : "Payment was cancelled.",
-        );
-      } else {
-        setPaymentOutcome(
-          "The UPI app did not confirm the outcome. Check its receipt for the final status.",
-        );
-      }
-    }, "Returned from the UPI app.");
 
   // Permission request screen
   if (!permission?.granted) {
@@ -228,7 +193,7 @@ export function ScanScreen() {
                   onChangeText={setUri}
                 />
                 <Button secondary onPress={() => inspectEntry(uri)}>
-                  Review payment
+                  Review UPI ID
                 </Button>
               </YStack>
             )}
@@ -239,11 +204,14 @@ export function ScanScreen() {
     );
   }
 
-  // Payment review screen
+  // Scan result screen
   if (payment) {
+    // Merchant QRs carry a real merchant category code. Personal QRs either
+    // omit `mc` or use 0000.
+    const merchant = !!payment.fields.mc && payment.fields.mc !== "0000";
     return (
       <DataScreen>
-        {() => (
+        {(d) => (
           <YStack gap={22} maxWidth={760} width="100%" alignSelf="center">
             <XStack alignItems="center" gap={12}>
               <Pressable
@@ -251,8 +219,6 @@ export function ScanScreen() {
                 accessibilityLabel="Back to scanner"
                 onPress={() => {
                   setPayment(null);
-                  setProcessed(false);
-                  setPaymentOutcome("");
                   action.setError("");
                 }}
                 style={{
@@ -263,7 +229,9 @@ export function ScanScreen() {
               >
                 <Icon name="back" size={20} />
               </Pressable>
-              <Heading size={20}>Review Payment</Heading>
+              <Heading size={20}>
+                {merchant ? "Shop QR" : "Save UPI ID"}
+              </Heading>
             </XStack>
 
             <Card style={{ padding: 20 }}>
@@ -332,11 +300,6 @@ export function ScanScreen() {
                   )}
                 </YStack>
 
-                <Notice>
-                  Enter and confirm the amount in your UPI app. SettleUp does
-                  not pass an amount from the QR.
-                </Notice>
-
                 {!!payment.note && (
                   <YStack gap={4}>
                     <Label muted size={11}>
@@ -346,23 +309,60 @@ export function ScanScreen() {
                   </YStack>
                 )}
 
-                {!!action.error && <Notice error>{action.error}</Notice>}
-
-                {!!paymentOutcome && <Notice>{paymentOutcome}</Notice>}
-
-                <Button
-                  loading={action.busy}
-                  disabled={action.busy || processed}
-                  onPress={launchPayment}
-                >
-                  Open UPI app
-                </Button>
-
-                {processed && (
-                  <Notice>
-                    This QR is locked for this review session to prevent
-                    duplicate payments. Scan again for another payment.
-                  </Notice>
+                {merchant ? (
+                  <>
+                    <Notice>
+                      To pay this shop, scan the QR with your UPI app’s own
+                      scanner. SettleUp doesn’t start UPI payments.
+                    </Notice>
+                    <Button
+                      icon="plus"
+                      onPress={() =>
+                        router.push({
+                          pathname: "/add",
+                          params: {
+                            title: payment.payeeName,
+                            ...(payment.amountMinor !== undefined
+                              ? {
+                                  amount: (payment.amountMinor / 100).toFixed(2),
+                                }
+                              : {}),
+                          },
+                        })
+                      }
+                    >
+                      Add as expense
+                    </Button>
+                    <Label muted size={11}>
+                      Split it with a group after you pay.
+                    </Label>
+                    {isUpiId(payeeAddress) && (
+                      <Chip
+                        onPress={() =>
+                          void Clipboard.setStringAsync(payeeAddress.trim())
+                        }
+                      >
+                        Copy UPI ID
+                      </Chip>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Notice>
+                      To pay {payment.payeeName}, scan their QR inside your
+                      UPI app. Save their UPI ID here so it’s ready when you
+                      settle up.
+                    </Notice>
+                    {isUpiId(payeeAddress) ? (
+                      <SaveUpiToPerson
+                        d={d}
+                        upiId={payeeAddress.trim()}
+                        payeeName={payment.payeeName}
+                      />
+                    ) : (
+                      <Notice error>Enter a valid UPI ID to save it.</Notice>
+                    )}
+                  </>
                 )}
               </YStack>
             </Card>
@@ -524,7 +524,7 @@ export function ScanScreen() {
           <Icon name="back" size={18} color="#FFF" />
         </Pressable>
         <Label bold size={16} color="#FFF">
-          Scan & Pay
+          Scan UPI QR
         </Label>
         <View style={{ width: 40 }} />
       </View>
@@ -575,7 +575,7 @@ export function ScanScreen() {
         )}
 
         <Label size={12} color="rgba(255,255,255,0.82)" textAlign="center">
-          You will enter the amount in your UPI app.
+          Scan a friend’s QR to save their UPI ID, or a shop QR to log an expense.
         </Label>
 
         <Pressable

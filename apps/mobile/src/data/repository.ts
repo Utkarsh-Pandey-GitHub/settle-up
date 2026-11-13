@@ -665,8 +665,8 @@ export class DemoRepository implements AppRepository {
   }
   async settle(id: string, raw: CreateSettlement) {
     const input = settlementSchema.parse(raw);
-    if (input.debtorId !== id)
-      throw new Error("Switch to the paying account to record a repayment.");
+    if (input.debtorId !== id && input.creditorId !== id)
+      throw new Error("Only the payer or the receiver can record a repayment.");
     const key = `${id}:${input.idempotencyKey}`,
       hash = JSON.stringify(input);
     if (requestKeys.has(key)) {
@@ -692,7 +692,7 @@ export class DemoRepository implements AppRepository {
       type: "SETTLEMENT",
       status: "SETTLED",
       occurredAt: new Date().toISOString(),
-      sourceId: id,
+      sourceId: input.debtorId,
       destinationId: input.creditorId,
       ledgerId: input.ledgerId,
       tagIds: [],
@@ -702,7 +702,10 @@ export class DemoRepository implements AppRepository {
     requestKeys.set(key, hash);
     d.activity.unshift({
       id: uuid(),
-      message: "You recorded a repayment",
+      message:
+        input.creditorId === id
+          ? "You confirmed a repayment you received"
+          : "You recorded a repayment",
       createdAt: new Date().toISOString(),
       ledgerId: input.ledgerId,
     });

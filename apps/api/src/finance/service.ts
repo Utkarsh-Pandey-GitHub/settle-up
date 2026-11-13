@@ -695,18 +695,23 @@ export class FinanceService {
   }
   async settle(userId: string, input: CreateSettlement) {
     return atomic(async (tx) => {
-      if (userId !== input.debtorId)
+      // Either side may record a repayment: the payer after paying, or the
+      // receiver confirming money that arrived (for example from a bank SMS).
+      if (userId !== input.debtorId && userId !== input.creditorId)
         throw new DomainError(
           "FORBIDDEN",
-          "Only the paying account can record this repayment.",
+          "Only the payer or the receiver can record this repayment.",
           403,
         );
+      const debtorId = input.debtorId;
+      const counterpartyId =
+        userId === debtorId ? input.creditorId : input.debtorId;
       const hash = digest(JSON.stringify(input));
       const existing = await idempotent(tx, userId, input.idempotencyKey, hash);
       if (existing) return json(existing);
       if (input.ledgerId) {
         const member = await requireMember(tx, input.ledgerId, userId, true);
-        await requireMember(tx, input.ledgerId, input.creditorId, true);
+        await requireMember(tx, input.ledgerId, counterpartyId, true);
         if (member.ledger.currency !== input.currency)
           throw new DomainError("CURRENCY", "Use the ledger currency.");
       }
@@ -714,12 +719,12 @@ export class FinanceService {
         where: {
           ledgerId: input.ledgerId ?? null,
           ...(!input.simplified
-            ? { debtorId: userId, creditorId: input.creditorId }
+            ? { debtorId, creditorId: input.creditorId }
             : !input.ledgerId
               ? {
                   OR: [
-                    { debtorId: userId, creditorId: input.creditorId },
-                    { debtorId: input.creditorId, creditorId: userId },
+                    { debtorId, creditorId: input.creditorId },
+                    { debtorId: input.creditorId, creditorId: debtorId },
                   ],
                 }
               : {}),
@@ -736,14 +741,14 @@ export class FinanceService {
         input.simplified ? applySimplifiedRepayment : applyRepayment
       )(
         json(debts),
-        userId,
+        debtorId,
         input.creditorId,
         input.amountMinor,
         input.currency,
       );
       const record = await tx.transaction.create({
         data: {
-          sourceId: userId,
+          sourceId: debtorId,
           createdById: userId,
           destinationId: input.creditorId,
           ledgerId: input.ledgerId,
@@ -757,7 +762,9 @@ export class FinanceService {
           requestDigest: hash,
           paymentReference: input.reference,
           settlements: { create: payments },
-          participants: { create: [{ userId }, { userId: input.creditorId }] },
+          participants: {
+            create: [{ userId: debtorId }, { userId: input.creditorId }],
+          },
         },
       });
       for (const p of payments)

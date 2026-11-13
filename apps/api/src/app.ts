@@ -31,6 +31,13 @@ import {
   parseBillVisionResponse,
 } from "./bill/extraction";
 import {
+  QUICK_ADD_SYSTEM_PROMPT,
+  normalizeQuickAddDraft,
+  parseQuickAddResponse,
+  quickAddRequestSchema,
+  quickAddUserMessage,
+} from "./ai/quick-add";
+import {
   db,
   atomic,
   audit,
@@ -395,6 +402,75 @@ export function createApp() {
         );
       const parsed = parseBillVisionResponse(await response.text());
       return normalizeBillExtraction(parsed, body.currency);
+    },
+  );
+  app.post(
+    "/ai/quick-add",
+    { config: { rateLimit: { max: 40, timeWindow: "15 minutes" } } },
+    async (req) => {
+      await actor(req);
+      const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+      if (!apiKey)
+        throw new DomainError(
+          "AI_QUICK_ADD_DISABLED",
+          "AI Quick Add is not configured yet.",
+          503,
+        );
+      const body = quickAddRequestSchema.parse(req.body);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20_000);
+      let response: Response;
+      try {
+        response = await fetch(
+          "https://openrouter.ai/api/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${apiKey}`,
+              "content-type": "application/json",
+              "http-referer":
+                process.env.PUBLIC_APP_URL || "https://settleup.tinkrs.space",
+              "x-title": "SettleUp AI Quick Add",
+            },
+            body: JSON.stringify({
+              model:
+                process.env.QUICK_ADD_MODEL ||
+                process.env.SMS_CLASSIFIER_MODEL ||
+                process.env.BILL_VISION_MODEL ||
+                "openai/gpt-6-luna-pro",
+              messages: [
+                { role: "system", content: QUICK_ADD_SYSTEM_PROMPT },
+                { role: "user", content: quickAddUserMessage(body) },
+              ],
+              response_format: { type: "json_object" },
+              provider: { data_collection: "deny" },
+              temperature: 0,
+              max_tokens: 800,
+            }),
+            signal: controller.signal,
+          },
+        );
+      } catch (error) {
+        throw new DomainError(
+          "AI_QUICK_ADD_UNAVAILABLE",
+          error instanceof Error && error.name === "AbortError"
+            ? "The assistant took too long. Please try again."
+            : "The assistant is unavailable right now.",
+          503,
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!response.ok)
+        throw new DomainError(
+          "AI_QUICK_ADD_UNAVAILABLE",
+          "The assistant is unavailable right now.",
+          503,
+        );
+      return normalizeQuickAddDraft(
+        parseQuickAddResponse(await response.text()),
+        body,
+      );
     },
   );
   app.post(
