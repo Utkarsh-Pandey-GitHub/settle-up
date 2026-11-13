@@ -39,9 +39,13 @@ export function TourGroup({
     const frame = requestAnimationFrame(() => {
       secondFrame = requestAnimationFrame(measure);
     });
+    // Content above can still settle (fonts, cards, images) and push this
+    // group down without changing its own size, which onLayout would miss.
+    const timer = active ? setInterval(measure, 250) : undefined;
     return () => {
       cancelAnimationFrame(frame);
       if (secondFrame) cancelAnimationFrame(secondFrame);
+      if (timer) clearInterval(timer);
     };
   }, [active, width, height, padding]);
   return (
@@ -60,7 +64,7 @@ const steps = [
   {
     title: "Your five main destinations",
     detail:
-      "Home shows spending and balances. Transactions lists your records. Scan QR opens the payment scanner. Analytics shows spending trends. Groups opens shared ledgers and members.",
+      "Home shows spending and balances. Transactions lists your records. Quick Add lets you log an expense or ask about your money. Analytics shows spending trends. Groups opens shared ledgers and members.",
   },
   {
     title: "Quick actions from Home",
@@ -70,7 +74,7 @@ const steps = [
   {
     title: "Widgets for quick access",
     detail:
-      "Add SettleUp widgets from your phone’s home-screen widget picker. Quick actions opens QR scan, bill scan, expense, and groups. Spending shows progress and goals at a glance.",
+      "Add SettleUp widgets from your phone’s home-screen widget picker. Quick Add opens the assistant, Quick actions opens bill scan, expense, and groups, and Spending shows progress and goals at a glance.",
   },
 ];
 
@@ -83,7 +87,7 @@ const pointers: { icon: IconName; text: string }[][] = [
   [
     { icon: "home", text: "Home — spending and balances." },
     { icon: "activity", text: "Transactions — your money records." },
-    { icon: "scan", text: "Scan QR — scan a payment code." },
+    { icon: "bolt", text: "Quick Add — log an expense or ask a question." },
     { icon: "chart", text: "Analytics — spending trends." },
     { icon: "groups", text: "Groups — shared ledgers and members." },
   ],
@@ -101,7 +105,7 @@ const pointers: { icon: IconName; text: string }[][] = [
   [
     {
       icon: "wallet",
-      text: "Quick actions — QR, bill, expense, and groups.",
+      text: "Quick Add and Quick actions — assistant, bill, expense, and groups.",
     },
     { icon: "chart", text: "Spending — weekly or monthly progress and goals." },
   ],

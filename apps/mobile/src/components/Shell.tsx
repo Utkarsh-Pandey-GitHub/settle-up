@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   Keyboard,
   View,
@@ -69,7 +69,20 @@ export function Shell({
   const feedback = useSession((s) => s.feedback);
   const tourAccountId = useSession((s) => s.tourAccountId);
   const [tourStep, setTourStep] = useState(0);
-  const [tourRect, setTourRect] = useState<TourRect | null>(null);
+  const [tourRect, setRawTourRect] = useState<TourRect | null>(null);
+  // Re-measuring is frequent; only re-render when the outline actually moved.
+  const setTourRect = useCallback((next: TourRect | null) => {
+    setRawTourRect((prev) =>
+      prev &&
+      next &&
+      Math.abs(prev.x - next.x) < 1 &&
+      Math.abs(prev.y - next.y) < 1 &&
+      Math.abs(prev.width - next.width) < 1 &&
+      Math.abs(prev.height - next.height) < 1
+        ? prev
+        : next,
+    );
+  }, []);
   const headerRef = useRef<View>(null);
   const navigationRef = useRef<View>(null);
   const tourActive = path === "/" && tourReady && !!tourAccountId;
@@ -77,8 +90,7 @@ export function Shell({
     if (!tourActive) return;
     setTourRect(null);
     let secondFrame = 0;
-    const frame = requestAnimationFrame(() => {
-      secondFrame = requestAnimationFrame(() => {
+    const measureTarget = () => {
         const target =
           tourStep === 0
             ? headerRef
@@ -87,7 +99,8 @@ export function Shell({
               : null;
         target?.current?.measureInWindow(
           (x, y, measuredWidth, measuredHeight) => {
-            const scanOverflow = tourStep === 1 && !desktop ? 28 : 0;
+            // The raised centre Quick Add button sits above the bar.
+            const scanOverflow = tourStep === 1 && !desktop ? 40 : 0;
             setTourRect({
               x,
               y: Math.max(0, y - scanOverflow),
@@ -96,11 +109,16 @@ export function Shell({
             });
           },
         );
-      });
+    };
+    const frame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(measureTarget);
     });
+    const timer =
+      tourStep <= 1 ? setInterval(measureTarget, 250) : undefined;
     return () => {
       cancelAnimationFrame(frame);
       if (secondFrame) cancelAnimationFrame(secondFrame);
+      if (timer) clearInterval(timer);
     };
   }, [tourActive, tourStep, width, desktop]);
   useEffect(() => {
