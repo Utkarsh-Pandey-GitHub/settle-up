@@ -220,6 +220,26 @@ export function TransactionRow({
             (tag ? categoryIcon(tag.name) : null) ??
             inferredIcon ??
             (t.icon === "bag" ? "bag" : null));
+  // Without a tag colour, tint by the kind of expense so the list isn't one
+  // flat shade (demo data has coloured tags; real data often has none).
+  const iconTints: Partial<Record<IconName, string>> = {
+    car: "#2563EB",
+    plane: "#0891B2",
+    coffee: "#EA580C",
+    home: "#059669",
+    bolt: "#D97706",
+    bag: "#DB2777",
+    wallet: "#7C3AED",
+    check: "#047857",
+    down: "#047857",
+  };
+  const fallbackTints = ["#4F46E5", "#0EA5E9", "#F97316", "#10B981", "#E11D48", "#8B5CF6"];
+  let titleHash = 0;
+  for (const ch of t.title) titleHash = (titleHash * 31 + ch.charCodeAt(0)) >>> 0;
+  const tint =
+    tag?.color ??
+    (rowIcon ? iconTints[rowIcon] : undefined) ??
+    fallbackTints[titleHash % fallbackTints.length];
   const typeLabel: Record<string, string> = {
     PERSONAL_EXPENSE: "Personal",
     SHARED_EXPENSE: "Split",
@@ -313,11 +333,7 @@ export function TransactionRow({
             height: narrow ? 34 : 43,
             width: narrow ? 34 : 43,
             borderRadius: 13,
-            backgroundColor: tag?.color
-              ? `${tag.color}1F`
-              : t.type === "SETTLEMENT" || t.type === "ADJUSTMENT"
-                ? c.mint
-                : c.accentSoft,
+            backgroundColor: `${tint}1F`,
             justifyContent: "center",
             alignItems: "center",
           }}
@@ -325,15 +341,11 @@ export function TransactionRow({
           {rowIcon ? (
             <Icon
               name={rowIcon}
-              color={
-                t.type === "SETTLEMENT" || t.type === "ADJUSTMENT"
-                  ? c.positive
-                  : tag?.color ?? c.accent
-              }
+              color={tint}
               size={20}
             />
           ) : (
-            <Label bold size={17} color={c.accent}>
+            <Label bold size={17} color={tint}>
               {(t.icon && t.icon.length <= 2 ? t.icon : t.title.slice(0, 1)).toUpperCase()}
             </Label>
           )}

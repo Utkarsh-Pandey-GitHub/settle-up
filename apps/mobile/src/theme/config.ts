@@ -10,11 +10,20 @@ export const fonts = {
 };
 export const bodyFont = fonts.regular;
 export const headingFont = fonts.semibold;
+// Android picks a separate font file per weight; tell Tamagui which one so
+// release builds (where its optimiser resolves fonts) match development.
+const face = {
+  400: { normal: fonts.regular },
+  500: { normal: fonts.medium },
+  600: { normal: fonts.semibold },
+  700: { normal: fonts.bold },
+};
 const font = createFont({
   family: bodyFont,
+  face,
   size: { 1: 12, 2: 13, 3: 14, 4: 16, 5: 18, 6: 22, 7: 28, 8: 36, 9: 48 },
   lineHeight: { 1: 18, 2: 20, 3: 22, 4: 25, 5: 28, 6: 30, 7: 36, 8: 44, 9: 56 },
-  weight: { 4: "400", 6: "600", 7: "700" },
+  weight: { 4: "400", 5: "500", 6: "600", 7: "700" },
   letterSpacing: { 4: 0 },
 });
 export const config = createTamagui({
@@ -24,7 +33,10 @@ export const config = createTamagui({
     onlyAllowShorthands: false,
     allowedStyleValues: false,
   },
-  fonts: { heading: createFont({ ...font, family: headingFont }), body: font },
+  fonts: {
+    heading: createFont({ ...font, family: headingFont, face }),
+    body: font,
+  },
   themes: {
     light: {
       ...defaultConfig.themes.light,

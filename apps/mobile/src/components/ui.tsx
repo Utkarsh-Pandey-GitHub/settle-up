@@ -245,6 +245,12 @@ export function Label({
       lineHeight={size * 1.45}
       color={color ?? (muted ? c.muted : c.text)}
       {...props}
+      // Set the family on the native style too, so Tamagui's production
+      // optimiser can't swap it for the theme font.
+      style={[
+        { fontFamily: (props as any).fontFamily ?? (bold ? fonts.semibold : fonts.regular) },
+        (props as any).style,
+      ]}
     >
       {children}
     </Text>
