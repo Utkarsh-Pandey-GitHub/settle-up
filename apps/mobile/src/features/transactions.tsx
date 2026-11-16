@@ -1,3 +1,4 @@
+import { DEMO, useSession } from "../data/session";
 import { HeroBackdrop } from "../components/illustrations";
 import { PageHero } from "../components/illustrations";
 import { chooseContact, chooseContacts } from "../services/device";
@@ -5,6 +6,7 @@ import { DateTime } from "luxon";
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -24,11 +26,12 @@ import {
   parseMoney,
   splitExpense,
   simplifyBalances,
+  whatsappGroupInvite,
   type SplitMethod,
   type SettlementMatch,
 } from "@settleup/domain";
 import { BillEditor, type BillPhoto, type BillLine } from "./bill";
-import { API_URL, repository, uuid, extra } from "../data/repository";
+import { API_URL, repository, uuid, extra, request } from "../data/repository";
 import { personName } from "../data/people";
 import {
   outstandingByPerson,
@@ -208,6 +211,10 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
   );
   const [includeBill, setIncludeBill] = useState(true);
   const [showShares, setShowShares] = useState(false);
+  const [recurring, setRecurring] = useState<
+    { frequency: "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" } | null
+  >(editing?.recurring ? { frequency: (editing.recurring as any).frequency } : null);
+  const [tripCurrency, setTripCurrency] = useState(editing?.tripCurrency ?? "");
   const [scanning, setScanning] = useState(false);
   const saving = useRef(false);
   const {
@@ -355,6 +362,8 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
             : [],
           splitMethod: method,
           participants: type === "SHARED_EXPENSE" ? participants() : [],
+          recurring: recurring ?? undefined,
+          tripCurrency: tripCurrency || undefined,
         };
         if (editing)
           await extra(
@@ -802,6 +811,47 @@ function ExpenseForm({ data: d }: { data: Dashboard }) {
                   )}
                 />
               </YStack>
+              <YStack gap={10}>
+                <Label bold size={13}>Recurring</Label>
+                <XStack gap={8} flexWrap="wrap">
+                  {(["MONTHLY", "WEEKLY", "YEARLY"] as const).map((freq) => (
+                    <Chip
+                      key={freq}
+                      selected={recurring?.frequency === freq}
+                      onPress={() =>
+                        setRecurring(
+                          recurring?.frequency === freq
+                            ? null
+                            : { frequency: freq },
+                        )
+                      }
+                    >
+                      {freq[0] + freq.slice(1).toLowerCase()}
+                    </Chip>
+                  ))}
+                </XStack>
+                {!!recurring && (
+                  <Label muted size={11}>
+                    This expense will repeat {recurring.frequency.toLowerCase()}.
+                  </Label>
+                )}
+              </YStack>
+              {type === "SHARED_EXPENSE" && (
+                <YStack gap={8}>
+                  <Label bold size={13}>Trip currency</Label>
+                  <Label muted size={11}>
+                    If this expense was in a different currency (e.g. THB, USD), enter it here.
+                  </Label>
+                  <Field
+                    label="Currency code"
+                    placeholder="e.g. THB, USD"
+                    autoCapitalize="characters"
+                    maxLength={3}
+                    value={tripCurrency}
+                    onChangeText={setTripCurrency}
+                  />
+                </YStack>
+              )}
               {!!action.error && (
                 <>
                   <PipFeedback
@@ -1621,10 +1671,15 @@ export function SettlementScreen() {
   );
 }
 const groupStyles = [
-  { icon: "plane", accent: "#4F46E5", background: "#EEF2FF" },
-  { icon: "home", accent: "#6366F1", background: "#EEF2FF" },
-  { icon: "coffee", accent: "#A5B4FC", background: "#EEF2FF" },
-] as const;
+  { icon: "plane" as const, accent: "#4A93A3", background: "#F2FAFB" },
+  { icon: "home" as const, accent: "#6A9479", background: "#F3F9F5" },
+  { icon: "coffee" as const, accent: "#C07A5A", background: "#FDF7F4" },
+  { icon: "groups" as const, accent: "#7C72B4", background: "#F5F4FA" },
+  { icon: "bag" as const, accent: "#A97492", background: "#FAF4F8" },
+  { icon: "bolt" as const, accent: "#C29A4E", background: "#FDFAF2" },
+  { icon: "car" as const, accent: "#5B7DB1", background: "#F4F7FB" },
+  { icon: "goal" as const, accent: "#5C9A82", background: "#F2FAF7" },
+];
 function groupStyle(groupId: string) {
   let hash = 0;
   for (const character of groupId)
@@ -1857,7 +1912,7 @@ export function GroupsScreen() {
                           justifyContent: "center",
                         }}
                       >
-                        <Icon name={visual.icon} color="#475569" size={20} />
+                        <Icon name={visual.icon} color="#1E293B" size={20} />
                       </View>
                       <YStack flex={1} minWidth={0} gap={6}>
                         <XStack
@@ -2000,7 +2055,7 @@ export function GroupScreen() {
                 borderRadius: 20,
                 overflow: "hidden",
                 padding: 20,
-                backgroundColor: "#4338CA",
+                backgroundColor: visual.accent,
                 gap: 16,
               }}
             >
@@ -2049,9 +2104,14 @@ export function GroupScreen() {
                                 {},
                               );
                               const url = `${API_URL}/g/${invite.token}`;
-                              await Share.share({
-                                message: `Join ${l.name} on SettleUp: ${url}`,
+                              const wa = whatsappGroupInvite({
+                                groupName: l.name,
+                                inviterName: d.account.name,
+                                joinLink: url,
                               });
+                              const canWa = await Linking.canOpenURL("whatsapp://send");
+                              if (canWa) await Linking.openURL(wa.url);
+                              else await Share.share({ message: wa.message });
                             }, "Invite link ready to share"),
                         },
                         {
@@ -2516,9 +2576,14 @@ export function GroupScreen() {
                                 `/groups/${l.groupId}/invites`,
                                 {},
                               );
-                              await Share.share({
-                                message: `Join ${l.name} on SettleUp: ${API_URL}/g/${invite.token}`,
+                              const wa = whatsappGroupInvite({
+                                groupName: l.name,
+                                inviterName: d.account.name,
+                                joinLink: `${API_URL}/g/${invite.token}`,
                               });
+                              const canWa = await Linking.canOpenURL("whatsapp://send");
+                              if (canWa) await Linking.openURL(wa.url);
+                              else await Share.share({ message: wa.message });
                             }, "Invite link ready to share")
                           }
                         >
@@ -2763,12 +2828,51 @@ export function GroupScreen() {
   );
 }
 
+/** Old server versions wrote raw ids and paise into edit messages. */
+function readableChange(message: string, d: Dashboard) {
+  const legacy = message.match(
+    /^(.*): amount (\d+) → (\d+); group (\S+) → (\S+)$/,
+  );
+  if (!legacy) return message;
+  const [, title, before, after, fromGroup, toGroup] = legacy;
+  const name = (gid: string) =>
+    gid === "none" ? "no group" : (d.ledgers.find((l) => l.id === gid)?.name ?? "another group");
+  const parts = [] as string[];
+  if (before !== after)
+    parts.push(`amount ${money(Number(before))} → ${money(Number(after))}`);
+  if (fromGroup !== toGroup) parts.push(`moved from ${name(fromGroup)} to ${name(toGroup)}`);
+  return parts.length ? `${title} edited · ${parts.join(" · ")}` : `${title} was edited`;
+}
+type ChangeRow = Dashboard["activity"][number] & {
+  actorName?: string;
+  event?: string;
+};
 export function GroupChangesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const c = useColors();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const accountId = useSession((s) => s.activeId);
+  const [remote, setRemote] = useState<{ key: string; items: ChangeRow[] } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const rangeKey = `${id}|${from}|${to}`;
+  useEffect(() => {
+    if (DEMO || !accountId || !id) return;
+    let live = true;
+    const zone = "Asia/Kolkata";
+    const params = new URLSearchParams();
+    if (from) params.set("from", DateTime.fromISO(from, { zone }).startOf("day").toUTC().toISO()!);
+    if (to) params.set("to", DateTime.fromISO(to, { zone }).plus({ days: 1 }).startOf("day").toUTC().toISO()!);
+    setLoading(true);
+    request<{ items: ChangeRow[] }>(`/ledgers/${id}/changes?${params}`, { accountId })
+      .then((r) => live && setRemote({ key: rangeKey, items: r.items }))
+      .catch(() => live && setRemote(null))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+  }, [rangeKey, accountId]);
   return (
     <DataScreen>
       {(d) => {
@@ -2780,11 +2884,17 @@ export function GroupChangesScreen() {
               detail="You may no longer have access."
             />
           );
-        const rows = d.activity.filter((entry) => {
-          if (entry.ledgerId !== id) return false;
-          const day = entry.createdAt.slice(0, 10);
-          return (!from || day >= from) && (!to || day <= to);
-        });
+        const istDay = (iso: string) =>
+          DateTime.fromISO(iso).setZone("Asia/Kolkata").toISODate()!;
+        const rows: ChangeRow[] =
+          remote && remote.key === rangeKey
+            ? remote.items
+            : d.activity.filter((entry) => {
+                if (entry.ledgerId !== id) return false;
+                const day = istDay(entry.createdAt);
+                return (!from || day >= from) && (!to || day <= to);
+              });
+        const invalidRange = !!from && !!to && from > to;
         return (
           <YStack gap={16} maxWidth={720} width="100%" alignSelf="center">
             <Button secondary compact icon="back" onPress={() => router.back()}>
@@ -2819,7 +2929,7 @@ export function GroupChangesScreen() {
                 >
                   <Icon name="activity" size={17} color="#64748B" />
                   <YStack flex={1} gap={3}>
-                    <Label>{entry.message}</Label>
+                    <Label>{readableChange(entry.message, d)}</Label>
                     <Label muted size={10}>
                       {entry.actorName ?? "A member"} ·{" "}
                       {entry.event?.toLowerCase().replace(/_/g, " ")}
@@ -2833,10 +2943,14 @@ export function GroupChangesScreen() {
                   </Label>
                 </XStack>
               ))}
-              {!rows.length && (
+              {invalidRange && (
+                <Notice error>The start date is after the end date.</Notice>
+              )}
+              {loading && !rows.length && <Label muted>Loading changes…</Label>}
+              {!rows.length && !loading && !invalidRange && (
                 <Empty
                   title="No changes found"
-                  detail="Try a wider date range."
+                  detail={from || to ? "Try a wider date range." : "Nothing has changed in this group yet."}
                 />
               )}
             </YStack>

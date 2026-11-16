@@ -1,5 +1,7 @@
+import { fonts } from "../theme/config";
 import React, { useEffect, useState } from "react";
-import { Illustration, HeroBackdrop, PageHero } from "../components/illustrations";
+import { Illustration, PageHero } from "../components/illustrations";
+import { HeroDunes } from "../components/HeroDunes";
 import { DateTime } from "luxon";
 import {
   View,
@@ -143,7 +145,7 @@ export function SectionTitle({
     </XStack>
   );
 }
-const titleIcon = (title: string): IconName | null => {
+export const titleIcon = (title: string): IconName | null => {
   const t = title.toLowerCase();
   if (/uber|ola|rapido|cab|taxi|auto|metro|fuel|petrol|diesel|parking|toll|bus|train/.test(t)) return "car";
   if (/flight|air|indigo|vistara|hotel|stay|trip|travel|airbnb|booking/.test(t)) return "plane";
@@ -220,26 +222,25 @@ export function TransactionRow({
             (tag ? categoryIcon(tag.name) : null) ??
             inferredIcon ??
             (t.icon === "bag" ? "bag" : null));
-  // Without a tag colour, tint by the kind of expense so the list isn't one
-  // flat shade (demo data has coloured tags; real data often has none).
-  const iconTints: Partial<Record<IconName, string>> = {
-    car: "#2563EB",
-    plane: "#0891B2",
-    coffee: "#EA580C",
-    home: "#059669",
-    bolt: "#D97706",
-    bag: "#DB2777",
-    wallet: "#7C3AED",
-    check: "#047857",
-    down: "#047857",
+  // Muted, desaturated hues per kind of expense; white icon on top.
+  const hues: Partial<Record<IconName, string>> = {
+    car: "#5B7DB1",
+    plane: "#4A93A3",
+    coffee: "#C07A5A",
+    home: "#6A9479",
+    bolt: "#C29A4E",
+    bag: "#A97492",
+    wallet: "#7C72B4",
+    check: "#5C9A82",
+    down: "#5C9A82",
   };
-  const fallbackTints = ["#4F46E5", "#0EA5E9", "#F97316", "#10B981", "#E11D48", "#8B5CF6"];
+  const fallbackHues = ["#6E7FB8", "#5E9AA6", "#B88466", "#76987F", "#9C7AA6", "#8A8FA3"];
   let titleHash = 0;
   for (const ch of t.title) titleHash = (titleHash * 31 + ch.charCodeAt(0)) >>> 0;
-  const tint =
+  const hue =
     tag?.color ??
-    (rowIcon ? iconTints[rowIcon] : undefined) ??
-    fallbackTints[titleHash % fallbackTints.length];
+    (rowIcon ? hues[rowIcon] : undefined) ??
+    fallbackHues[titleHash % fallbackHues.length];
   const typeLabel: Record<string, string> = {
     PERSONAL_EXPENSE: "Personal",
     SHARED_EXPENSE: "Split",
@@ -265,7 +266,7 @@ export function TransactionRow({
           paddingTop={8}
           paddingBottom={3}
         >
-          <Label muted size={10} bold>
+          <Label muted size={11} fontFamily={fonts.medium as any} letterSpacing={0.6}>
             {occurred.toFormat("LLLL yyyy").toUpperCase()}
           </Label>
           <View style={{ flex: 1, height: 1, backgroundColor: c.line }} />
@@ -285,8 +286,8 @@ export function TransactionRow({
         style={({ pressed }) => ({
           flexDirection: "row",
           alignItems: "center",
-          paddingVertical: compact ? 9 : 14,
-          gap: narrow ? 7 : 12,
+          paddingVertical: compact ? 10 : 13,
+          gap: 12,
           borderBottomWidth: last ? 0 : 1,
           borderBottomColor: c.line,
           backgroundColor: selected
@@ -314,63 +315,86 @@ export function TransactionRow({
             {selected && <Icon name="check" size={14} color="#FFFFFF" />}
           </View>
         )}
-        <YStack
-          width={28}
-          alignItems="center"
-          gap={0}
-          flexShrink={0}
-          marginRight={narrow ? -3 : -7}
-        >
-          <Label muted size={9} bold>
+
+        <YStack width={30} alignItems="center" flexShrink={0}>
+          <Label muted size={9} fontFamily={fonts.medium as any} letterSpacing={0.6}>
             {occurred.toFormat("LLL").toUpperCase()}
           </Label>
-          <Label size={14} bold>
+          <Label size={16} fontFamily={fonts.semibold as any} lineHeight={20}>
             {occurred.toFormat("dd")}
           </Label>
         </YStack>
         <View
           style={{
-            height: narrow ? 34 : 43,
-            width: narrow ? 34 : 43,
-            borderRadius: 13,
-            backgroundColor: `${tint}1F`,
+            height: narrow ? 36 : 40,
+            width: narrow ? 36 : 40,
+            borderRadius: 12,
+            backgroundColor: `${hue}26`,
+            overflow: "hidden",
             justifyContent: "center",
             alignItems: "center",
           }}
         >
+          {/* faint top sheen for a soft, faded look */}
+          <View
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: "50%",
+              backgroundColor: "rgba(255,255,255,0.35)",
+            }}
+          />
           {rowIcon ? (
-            <Icon
-              name={rowIcon}
-              color={tint}
-              size={20}
-            />
+            <Icon name={rowIcon} color={c.text} size={18} />
           ) : (
-            <Label bold size={17} color={tint}>
+            <Label size={15} color={c.text} fontFamily={fonts.semibold as any}>
               {(t.icon && t.icon.length <= 2 ? t.icon : t.title.slice(0, 1)).toUpperCase()}
             </Label>
           )}
         </View>
         <YStack flex={1} gap={2} alignItems="flex-start" minWidth={0}>
-          <Label
-            size={13}
-            bold
-            numberOfLines={1}
-            textAlign="left"
-            alignSelf="stretch"
-          >
-            {t.title}
-          </Label>
-          <XStack gap={6} alignItems="center" flexWrap="wrap">
-            <Label muted size={10}>
-              {tag?.name ?? typeLabel[t.type] ?? "Expense"}
+          <XStack alignItems="center" gap={4} alignSelf="stretch">
+            <Label
+              size={14}
+              fontFamily={fonts.medium as any}
+              numberOfLines={1}
+              textAlign="left"
+              flexShrink={1}
+            >
+              {t.title}
             </Label>
-            {ledger && (
-              <Label size={10} muted maxWidth="100%" numberOfLines={1}>
-                · {ledger.name}
-              </Label>
+            {!!onAssignGroup && !selectable && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${t.title}`}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  onAssignGroup();
+                }}
+                hitSlop={10}
+                style={({ pressed }) => ({
+                  width: 20,
+                  height: 20,
+                  borderRadius: 6,
+                  backgroundColor: pressed ? c.soft : "transparent",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                })}
+              >
+                <Icon name="edit" size={12} color={c.muted} />
+              </Pressable>
             )}
+          </XStack>
+          <XStack gap={6} alignItems="center" flexWrap="wrap">
+            <Label muted size={12} numberOfLines={1}>
+              {tag?.name ?? typeLabel[t.type] ?? "Expense"}
+              {ledger ? ` · ${ledger.name}` : ""}
+            </Label>
             {t.status !== "SETTLED" && (
-              <Label size={9} color="#A26D20">
+              <Label size={11} color="#B45309">
                 · {t.status.toLowerCase().replace(/_/g, " ")}
               </Label>
             )}
@@ -386,26 +410,6 @@ export function TransactionRow({
             </Label>
           )}
         </YStack>
-        {!!onAssignGroup && !selectable && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Edit ${t.title}`}
-            onPress={(event) => {
-              event.stopPropagation();
-              onAssignGroup();
-            }}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 10,
-              backgroundColor: c.soft,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Icon name="edit" size={15} color="#4338CA" />
-          </Pressable>
-        )}
         <YStack
           alignItems="flex-end"
           gap={3}
@@ -414,9 +418,10 @@ export function TransactionRow({
         >
           <Label
             size={14}
-            bold
+            fontFamily={fonts.semibold as any}
             textAlign="right"
             color={incoming ? c.positive : c.text}
+            style={{ fontVariant: ["tabular-nums"] }}
           >
             {cashSign}
             {money(t.amountMinor, t.currency)}
@@ -1021,12 +1026,12 @@ function HomeContent({ data: d }: { data: Dashboard }) {
         style={{
           borderRadius: 20,
           overflow: "hidden",
-          padding: width < 360 ? 18 : 22,
+          padding: width < 360 ? 14 : 16,
           backgroundColor: "#4338CA",
         }}
       >
-        <HeroBackdrop />
-        <YStack gap={18}>
+        <HeroDunes />
+        <YStack gap={12}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Open profile"
@@ -1038,29 +1043,34 @@ function HomeContent({ data: d }: { data: Dashboard }) {
               opacity: pressed ? 0.8 : 1,
             })}
           >
-            <View
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                borderWidth: 1.5,
-                borderColor: "rgba(255,255,255,0.45)",
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "rgba(255,255,255,0.12)",
-              }}
-            >
-              <Label bold size={13} color="#FFFFFF">
-                {d.account.name
-                  .split(" ")
-                  .map((part) => part[0])
-                  .slice(0, 2)
-                  .join("")}
-              </Label>
-            </View>
+            {d.account.avatar ? (
+              <View style={{ borderRadius: 22, backgroundColor: "#FFFFFF", padding: 2 }}>
+                <Avatar name={d.account.name} avatar={d.account.avatar} size={40} />
+              </View>
+            ) : (
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: "#FFFFFF",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Label size={14} color="#4338CA" fontFamily={fonts.semibold as any}>
+                  {d.account.name
+                    .split(" ")
+                    .map((part) => part[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase()}
+                </Label>
+              </View>
+            )}
             <YStack flex={1} minWidth={0}>
               <Label bold size={15} color="#FFFFFF" numberOfLines={1}>
-                {greeting()}, {d.account.name.split(" ")[0]}
+                Hi, {d.account.name.split(" ")[0]}
               </Label>
               <Label size={12} color="rgba(224,231,255,0.85)" numberOfLines={1}>
                 {balanceInsight(stats.receivableMinor, stats.owedMinor, d.account.currency)}
@@ -1281,12 +1291,21 @@ function HomeContent({ data: d }: { data: Dashboard }) {
 }
 export function ActivityScreen() {
   const [search, setSearch] = useState(""),
+    [debouncedSearch, setDebouncedSearch] = useState(""),
     [tag, setTag] = useState(""),
     [status, setStatus] = useState(""),
     [ledgerFilter, setLedgerFilter] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
   const [isSelecting, setIsSelecting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // A bulk action must never touch rows hidden by the current filters.
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [search, tag, status, ledgerFilter]);
   const [assignIds, setAssignIds] = useState<string[]>([]);
   const [openDropdown, setOpenDropdown] = useState<
     "tag" | "status" | "ledger" | null
@@ -1312,10 +1331,17 @@ export function ActivityScreen() {
   return (
     <DataScreen>
       {(d) => {
+        const q = debouncedSearch.toLowerCase();
         const filtered = d.transactions.filter(
           (t) =>
             (t.type !== "PERSONAL_EXPENSE" || t.sourceId === d.account.id) &&
-            t.title.toLowerCase().includes(search.toLowerCase()) &&
+            (!q ||
+              t.title.toLowerCase().includes(q) ||
+              (t.notes && t.notes.toLowerCase().includes(q)) ||
+              String(t.amountMinor / 100).includes(q) ||
+              money(t.amountMinor, t.currency).toLowerCase().includes(q) ||
+              t.allocations.some((a) => personName(d, a.userId).toLowerCase().includes(q)) ||
+              personName(d, t.sourceId).toLowerCase().includes(q)) &&
             (!tag || t.tagIds.includes(tag)) &&
             (!status || t.status === status) &&
             (!ledgerFilter || t.ledgerId === ledgerFilter),
@@ -2277,7 +2303,7 @@ export function AnalyticsScreen() {
                       textAnchor="middle"
                       fill={c.text}
                       fontSize={14}
-                      fontWeight="700"
+                      fontFamily={fonts.semibold}
                     >
                       Categories
                     </SvgText>
@@ -2287,8 +2313,9 @@ export function AnalyticsScreen() {
                       textAnchor="middle"
                       fill={c.muted}
                       fontSize={11}
+                      fontFamily={fonts.regular}
                     >
-                      {a.byTag.length} shown
+                      {`${a.byTag.length} ${a.byTag.length === 1 ? "category" : "categories"}`}
                     </SvgText>
                   </Svg>
                 </View>

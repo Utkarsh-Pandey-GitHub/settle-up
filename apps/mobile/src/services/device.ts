@@ -23,6 +23,8 @@ export type SmsDecision = {
   expiresAt: number;
   title?: string;
   amountMinor?: number;
+  reference?: string;
+  direction?: "DEBIT" | "CREDIT";
 };
 export type DeviceSmsMessage = {
   id: string;
@@ -293,7 +295,7 @@ export class AndroidSmsProvider implements TransactionImportProvider {
     fingerprint: string,
     decision: "ACCEPTED" | "REJECTED" = "REJECTED",
     occurredAt = new Date().toISOString(),
-    details?: { title: string; amountMinor: number },
+    details?: Pick<SmsDecision, "title" | "amountMinor" | "reference" | "direction">,
   ) {
     const expiresAt = smsDecisionExpiry(occurredAt);
     await this.records((records) => {

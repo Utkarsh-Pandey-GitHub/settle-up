@@ -87,14 +87,6 @@ export default function Layout() {
             }}
           >
             <Stack.Screen
-              name="scan"
-              options={{
-                gestureEnabled: true,
-                fullScreenGestureEnabled: true,
-                animation: "slide_from_right",
-              }}
-            />
-            <Stack.Screen
               name="quick-add"
               options={{ animation: "slide_from_bottom", gestureEnabled: true }}
             />

@@ -62,6 +62,16 @@ export const createTransactionSchema = z
     tagIds: z.array(z.string().uuid()).max(20).default([]),
     paymentReference: z.string().max(128).optional(),
     items: z.array(transactionItemSchema).max(100).optional(),
+    recurring: z
+      .object({
+        frequency: z.enum(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]),
+        dayOfWeek: z.number().int().min(1).max(7).optional(),
+        dayOfMonth: z.number().int().min(1).max(31).optional(),
+        monthOfYear: z.number().int().min(1).max(12).optional(),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      })
+      .optional(),
+    tripCurrency: currencySchema.optional(),
     splitMethod: z
       .enum(["EQUAL", "EXACT", "PERCENTAGE", "SHARES"])
       .default("EQUAL"),
@@ -254,6 +264,8 @@ export type TransactionView = {
   splitMethod?: CreateTransaction["splitMethod"];
   splitWeights?: Record<string, number>;
   payers?: { userId: string; amountMinor: number }[] | null;
+  recurring?: { frequency: string; dayOfWeek?: number; dayOfMonth?: number; monthOfYear?: number; endDate?: string } | null;
+  tripCurrency?: string | null;
 };
 export type LedgerView = {
   id: string;

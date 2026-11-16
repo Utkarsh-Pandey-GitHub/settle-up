@@ -49,7 +49,13 @@ export function subscribeCachedDashboard(listener: DashboardListener) {
     dashboardListeners.delete(listener);
   };
 }
+// New and demo entries are inserted at either end, so restore newest-first here.
+function sortTransactions(dashboard: Dashboard) {
+  dashboard.transactions.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+  return dashboard;
+}
 async function writeCachedDashboard(accountId: string, dashboard: Dashboard) {
+  sortTransactions(dashboard);
   dashboardMemory.set(accountId, dashboard);
   dashboardRevisions.set(
     accountId,
@@ -81,7 +87,7 @@ export async function readCachedDashboard(accountId: string) {
     .then(async (value) => {
       if (!value) return undefined;
       try {
-        const dashboard = JSON.parse(value) as Dashboard;
+        const dashboard = sortTransactions(JSON.parse(value) as Dashboard);
         dashboardMemory.set(accountId, dashboard);
         return dashboard;
       } catch {
@@ -261,8 +267,10 @@ export async function request<T>(
   const controller = new AbortController();
   // A sleeping hosted API can need a minute to start, before provider verification.
   const timeoutMs =
-    path === "/bill/extract"
+    path === "/bill/extract" || path === "/ai/chat" || path === "/ai/demo-chat"
       ? 65000
+      : path.startsWith("/ai/")
+        ? 30000
       : path === "/sms/classify"
         ? 30000
         : path === "/auth/truecaller"

@@ -7,6 +7,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useRouter, usePathname } from "expo-router";
+import { tap, select } from "../services/haptics";
 import { XStack, YStack } from "tamagui";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -195,7 +196,11 @@ export function Shell({
     "/sms",
     "/settings",
   ]);
-  const go = (p: string) =>
+  const go = (p: string) => {
+    select();
+    navigateTo(p);
+  };
+  const navigateTo = (p: string) =>
     tabPaths.has(p) ? router.replace(p as any) : router.push(p as any);
   const navItem = (item: (typeof navigation)[number]) => {
     const active =
@@ -305,7 +310,6 @@ export function Shell({
               </Label>
               {[
                 { label: "Quick Add", path: "/quick-add", icon: "bolt" as const },
-                { label: "Scan UPI QR", path: "/scan", icon: "scan" as const },
                 { label: "SMS inbox", path: "/sms", icon: "sms" as const },
                 { label: "Tags", path: "/tags", icon: "bag" as const },
               ].map(navItem)}
@@ -402,7 +406,17 @@ export function Shell({
                       "Your space"}
                   </Label>
                 ) : (
-                  <Brand compact iconOnly={compactHeader} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Go to Home"
+                    onPress={() => {
+                      tap();
+                      if (path !== "/") router.replace("/");
+                    }}
+                    hitSlop={8}
+                  >
+                    <Brand compact iconOnly={compactHeader} />
+                  </Pressable>
                 )}
                 {DEMO && (
                   <View
@@ -565,10 +579,10 @@ export function Shell({
                         alignItems: "center",
                         justifyContent: "center",
                         backgroundColor:
-                          n.path === "/quick-add" ? c.accentSoft : "transparent",
+                          n.path === "/quick-add" ? c.card : "transparent",
                         borderRadius: n.path === "/quick-add" ? 29 : 14,
-                        borderWidth: n.path === "/quick-add" ? 3 : 0,
-                        borderColor: n.path === "/quick-add" ? c.card : "transparent",
+                        borderWidth: n.path === "/quick-add" ? 1 : 0,
+                        borderColor: n.path === "/quick-add" ? c.line : "transparent",
                         shadowColor: "#312E81",
                         shadowOpacity: n.path === "/quick-add" ? 0.18 : 0,
                         shadowRadius: 10,

@@ -33,6 +33,7 @@ import * as L from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { Illustration } from "./illustrations";
 import { useSession } from "../data/session";
+import { tap, select } from "../services/haptics";
 import { useKeyboardAwareField } from "./KeyboardAwareScreen";
 import { bodyFont, fonts } from "../theme/config";
 // Calm, neutral surfaces with a single indigo accent. Green/red are reserved
@@ -382,7 +383,13 @@ export function Button({
       accessibilityState={{ disabled: !!unavailable, busy: !!loading }}
       aria-disabled={!!unavailable}
       disabled={unavailable}
-      onPress={onPress}
+      onPress={
+        onPress &&
+        (() => {
+          tap();
+          onPress();
+        })
+      }
       style={({ pressed }) => [
         {
           minHeight: compact ? 40 : 48,
@@ -454,7 +461,10 @@ export function IconButton({
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
       disabled={disabled}
-      onPress={onPress}
+      onPress={() => {
+        tap();
+        onPress();
+      }}
       style={({ pressed }) => ({
         width: size,
         opacity: disabled ? 0.5 : 1,
@@ -535,7 +545,13 @@ export function Chip({
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
       aria-pressed={!!selected}
-      onPress={onPress}
+      onPress={
+        onPress &&
+        (() => {
+          select();
+          onPress();
+        })
+      }
       style={{
         maxWidth: "100%",
         flexShrink: 1,

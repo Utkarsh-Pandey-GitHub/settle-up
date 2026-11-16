@@ -6,7 +6,7 @@
       "settleup",
       "app.settleup.mobile"
     ],
-    "version": "1.0.22",
+    "version": "1.0.23",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -32,7 +32,7 @@
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-foreground.png",
-        "backgroundColor": "#4F46E5"
+        "backgroundColor": "#FFFFFF"
       },
       "permissions": [
         "android.permission.READ_SMS",

@@ -10,6 +10,7 @@ import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
 import compress from "@fastify/compress";
 import { z, ZodError } from "zod";
+import type { Dashboard } from "@settleup/contracts";
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import {
@@ -48,6 +49,13 @@ import {
   askUserMessage,
   parseAskResponse,
 } from "./ai/ask";
+import {
+  CHAT_SYSTEM_PROMPT,
+  CHAT_TOOLS,
+  chatRequestSchema,
+  runChatTool,
+  type ChatReply,
+} from "./ai/chat";
 import {
   db,
   atomic,
@@ -415,6 +423,117 @@ export function createApp() {
       return normalizeBillExtraction(parsed, body.currency);
     },
   );
+  app.post(
+    "/ai/chat",
+    { config: { rateLimit: { max: 60, timeWindow: "15 minutes" } } },
+    async (req): Promise<ChatReply> => {
+      const { userId } = await actor(req);
+      const body = chatRequestSchema.parse(req.body);
+      return runChat(body, await dashboard.get(userId));
+    },
+  );
+  // Demo mode has no account: the app sends its sample data, nothing is stored.
+  app.post(
+    "/ai/demo-chat",
+    { bodyLimit: 512_000, config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } },
+    async (req): Promise<ChatReply> => {
+      const raw = req.body as { dashboard?: Dashboard } | undefined;
+      const body = chatRequestSchema.parse(req.body);
+      const data = raw?.dashboard;
+      if (
+        !data?.account?.id ||
+        !Array.isArray(data.transactions) ||
+        !Array.isArray(data.ledgers) ||
+        !Array.isArray(data.obligations) ||
+        !Array.isArray(data.savedContacts) ||
+        !Array.isArray(data.tags)
+      )
+        throw new DomainError("VALIDATION", "Send the demo data with the message.", 400);
+      return runChat(body, data);
+    },
+  );
+  async function runChat(
+    body: z.infer<typeof chatRequestSchema>,
+    data: Dashboard,
+  ): Promise<ChatReply> {
+    {
+      const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+      if (!apiKey)
+        throw new DomainError("AI_CHAT_DISABLED", "The assistant is not configured yet.", 503);
+      const out: Omit<ChatReply, "reply"> = {};
+      const messages: any[] = [
+        {
+          role: "system",
+          content: `${CHAT_SYSTEM_PROMPT}\nToday is ${body.today}. The user's name is ${data.account.name.split(" ")[0]}.`,
+        },
+        ...body.messages,
+      ];
+      const model =
+        process.env.CHAT_MODEL ||
+        process.env.QUICK_ADD_MODEL ||
+        process.env.SMS_CLASSIFIER_MODEL ||
+        "openai/gpt-6-luna-pro";
+      // Up to 4 rounds: the model may call tools, see results, then answer.
+      for (let round = 0; round < 4; round++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 25_000);
+        let response: Response;
+        try {
+          response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${apiKey}`,
+              "content-type": "application/json",
+              "http-referer": process.env.PUBLIC_APP_URL || "https://settleup.tinkrs.space",
+              "x-title": "SettleUp assistant",
+            },
+            body: JSON.stringify({
+              model,
+              messages,
+              tools: CHAT_TOOLS,
+              tool_choice: round === 3 ? "none" : "auto",
+              provider: { data_collection: "deny" },
+              temperature: 0.4,
+              max_tokens: 600,
+            }),
+            signal: controller.signal,
+          });
+        } catch {
+          throw new DomainError("AI_CHAT_UNAVAILABLE", "The assistant is unavailable right now.", 503);
+        } finally {
+          clearTimeout(timer);
+        }
+        if (!response.ok)
+          throw new DomainError("AI_CHAT_UNAVAILABLE", "The assistant is unavailable right now.", 503);
+        const message = ((await response.json()) as any)?.choices?.[0]?.message;
+        const calls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+        if (!calls.length)
+          return {
+            reply:
+              typeof message?.content === "string" && message.content.trim()
+                ? message.content.trim().slice(0, 1500)
+                : "Sorry, I didn’t catch that. Could you say it another way?",
+            ...out,
+          };
+        messages.push({ role: "assistant", content: message.content ?? "", tool_calls: calls });
+        for (const call of calls.slice(0, 4)) {
+          let args: Record<string, unknown> = {};
+          try {
+            args = JSON.parse(call.function?.arguments || "{}");
+          } catch {
+            args = {};
+          }
+          const result = runChatTool(String(call.function?.name), args, data, body.today, out);
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify(result).slice(0, 4000),
+          });
+        }
+      }
+      return { reply: "Here’s what I found.", ...out };
+    }
+  }
   app.post(
     "/ai/analytics-query",
     { config: { rateLimit: { max: 60, timeWindow: "15 minutes" } } },
@@ -1068,6 +1187,58 @@ export function createApp() {
         }
       }
       return { added: memberIds.size, members: addedMembers };
+    });
+  });
+  // Full, date-filtered history for one group's ledger (the dashboard feed
+  // only carries the latest 50 changes across all groups).
+  app.get("/ledgers/:id/changes", async (req) => {
+    const { userId } = await actor(req);
+    const ledgerId = pathId(req);
+    const q = z
+      .object({
+        from: z.string().datetime().optional(),
+        to: z.string().datetime().optional(),
+        before: z.string().datetime().optional(),
+      })
+      .parse(req.query ?? {});
+    return atomic(async (tx) => {
+      await requireMember(tx, ledgerId, userId);
+      const rows = await tx.ledgerActivity.findMany({
+        where: {
+          ledgerId,
+          createdAt: {
+            ...(q.from ? { gte: new Date(q.from) } : {}),
+            ...(q.to || q.before
+              ? { lt: new Date(q.before && (!q.to || q.before < q.to) ? q.before : q.to!) }
+              : {}),
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        include: { actor: { include: { profile: true } } },
+      });
+      const subjects = await tx.user.findMany({
+        where: { id: { in: rows.flatMap((r) => (r.subjectId ? [r.subjectId] : [])) } },
+        include: { profile: true },
+      });
+      const nameOf = (id: string) =>
+        id === userId ? "You" : subjects.find((u) => u.id === id)?.profile?.name ?? "A member";
+      return {
+        items: rows.map((entry) => ({
+          id: entry.id,
+          ledgerId: entry.ledgerId,
+          event: entry.event,
+          message:
+            entry.subjectId &&
+            (entry.event === "GROUP_MEMBER_ADDED" || entry.event === "GROUP_MEMBER_REMOVED")
+              ? `${nameOf(entry.subjectId)} ${entry.event === "GROUP_MEMBER_ADDED" ? "joined the group" : entry.subjectId === userId ? "were removed from the group" : "was removed from the group"}`
+              : entry.message,
+          actorId: entry.actorId,
+          actorName: entry.actorId === userId ? "You" : entry.actor.profile?.name ?? "A member",
+          createdAt: entry.createdAt.toISOString(),
+        })),
+        hasMore: rows.length === 100,
+      };
     });
   });
   app.post("/groups/:id/invites", async (req) => {

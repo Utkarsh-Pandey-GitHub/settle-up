@@ -1,3 +1,4 @@
+import { success as hapticSuccess, warn as hapticWarn } from "../services/haptics";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
@@ -286,12 +287,14 @@ export function useAction() {
           queueAccountRefresh(query, id);
         }
         setSuccess(feedback);
+        hapticSuccess();
         if (id && useSession.getState().activeId === id)
           useSession.setState({
             feedback: { id: Date.now(), accountId: id, message: feedback },
           });
         return true;
       } catch (e) {
+        hapticWarn();
         setError(
           e instanceof Error
             ? e.message

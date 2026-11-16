@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, Share, View } from "react-native";
+import { Linking, Modal, Pressable, ScrollView, Share, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-svg";
 import { XStack, YStack } from "tamagui";
@@ -10,6 +10,8 @@ import {
   matchSettlementSms,
   money,
   receiveUpiUri,
+  whatsappReminder,
+  whatsappGroupInvite,
   type ImportSuggestion,
   type SettlementCandidate,
   type SettlementMatch,
@@ -552,6 +554,24 @@ export function IncomingSettlements({
                     onPress={() => setQrFor(balance)}
                   >
                     Show my QR
+                  </Button>
+                  <Button
+                    compact
+                    secondary
+                    icon="arrow"
+                    onPress={() => {
+                      const myUpiId = undefined;
+                      const { url } = whatsappReminder({
+                        personName: name,
+                        amountMinor: balance.amountMinor,
+                        currency: balance.currency,
+                        upiId: myUpiId,
+                        phone: contact?.phone,
+                      });
+                      void Linking.openURL(url);
+                    }}
+                  >
+                    WhatsApp
                   </Button>
                 </XStack>
               )}

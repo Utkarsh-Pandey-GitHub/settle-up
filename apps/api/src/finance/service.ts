@@ -11,6 +11,7 @@ import {
   multiPayerObligations,
   applyRepayment,
   applySimplifiedRepayment,
+  autoTag,
   DomainError,
 } from "@settleup/domain";
 import {
@@ -178,12 +179,28 @@ export class FinanceService {
       }
       if (input.type === "LOAN" && input.destinationId === userId)
         throw new DomainError("SELF_LOAN", "Choose another borrower.");
+      let tagIds = input.tagIds;
+      if (!tagIds.length) {
+        const inferred = autoTag(input.title);
+        if (inferred) {
+          const existing = await tx.tag.findFirst({
+            where: { ownerId: userId, name: inferred, archivedAt: null },
+          });
+          if (existing) tagIds = [existing.id];
+          else {
+            const created = await tx.tag.create({
+              data: { ownerId: userId, name: inferred, color: "#6E7FB8" },
+            });
+            tagIds = [created.id];
+          }
+        }
+      }
       const validTags = await tx.tag.count({
-        where: { id: { in: input.tagIds }, ownerId: userId, archivedAt: null },
+        where: { id: { in: tagIds }, ownerId: userId, archivedAt: null },
       });
       if (
-        validTags !== new Set(input.tagIds).size ||
-        new Set(input.tagIds).size !== input.tagIds.length
+        validTags !== new Set(tagIds).size ||
+        new Set(tagIds).size !== tagIds.length
       )
         throw new DomainError("TAG", "Select your own active tags.");
       if (
@@ -221,6 +238,8 @@ export class FinanceService {
           paymentReference: input.paymentReference,
           payers:
             input.payers && input.payers.length > 1 ? input.payers : undefined,
+          recurring: input.recurring ?? undefined,
+          tripCurrency: input.tripCurrency ?? undefined,
           idempotencyKey: input.idempotencyKey,
           requestDigest: hash,
           participants: {
@@ -239,7 +258,7 @@ export class FinanceService {
           obligations: {
             create: debts.map((d) => ({ ...d, ledgerId: input.ledgerId })),
           },
-          tags: { create: input.tagIds.map((tagId) => ({ tagId })) },
+          tags: { create: tagIds.map((tagId) => ({ tagId })) },
           items: {
             create: (input.items ?? []).map((item, position) => ({
               ...item,
@@ -758,7 +777,11 @@ export class FinanceService {
           },
         },
         ledgerId,
-        `${record.title} was edited`,
+        Number(record.amountMinor) !== input.amountMinor
+          ? `${input.title} edited · amount ${(Number(record.amountMinor) / 100).toLocaleString("en-IN")} → ${(input.amountMinor / 100).toLocaleString("en-IN")} ${input.currency}`
+          : record.title !== input.title
+            ? `${record.title} renamed to ${input.title}`
+            : `${record.title} was edited`,
       );
       return { ok: true };
     });
@@ -977,6 +1000,8 @@ export class PrismaDashboardRepository implements DashboardRepository {
               notes: true,
               icon: true,
               payers: true,
+              recurring: true,
+              tripCurrency: true,
               version: true,
               participants: { select: { userId: true } },
               splits: {
@@ -1145,6 +1170,8 @@ export class PrismaDashboardRepository implements DashboardRepository {
               amountMinor: s.amountMinor,
             })),
             payers: (t.payers as { userId: string; amountMinor: number }[] | null) ?? null,
+            recurring: (t.recurring as any) ?? null,
+            tripCurrency: t.tripCurrency ?? null,
             splitMethod: t.splits[0]?.method,
             splitWeights: Object.fromEntries(
               t.splits.flatMap((split) =>

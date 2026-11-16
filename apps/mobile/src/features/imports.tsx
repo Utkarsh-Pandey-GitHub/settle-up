@@ -1,29 +1,22 @@
 import { PageHero } from "../components/illustrations";
-import React, { useCallback, useMemo, useState, useEffect } from "react";
+import { titleIcon } from "./overview";
+import React, { useMemo, useState, useEffect } from "react";
 import { DatePicker } from "../components/DateTimePicker";
 import {
-  BackHandler,
-  KeyboardAvoidingView,
   Platform,
   View,
   Pressable,
-  StyleSheet,
-  Modal,
   Animated,
   useWindowDimensions,
 } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import * as ImagePicker from "expo-image-picker";
 import { YStack, XStack } from "tamagui";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import {
-  isUpiId,
-  parseUpi,
   money,
+  dedupeSmsSuggestions,
   type ImportSuggestion,
+  type SmsGroup,
 } from "@settleup/domain";
-import * as Clipboard from "expo-clipboard";
-import { SaveUpiToPerson } from "./receive";
 import {
   AndroidSmsProvider,
   type SmsDecision,
@@ -38,611 +31,11 @@ import {
   Button,
   Notice,
   Field,
-  Chip,
   Icon,
   Empty,
   Mascot,
   useColors,
 } from "../components/ui";
-export function ScanScreen() {
-  const [permission, requestPermission] = useCameraPermissions(),
-    [uri, setUri] = useState(""),
-    [payment, setPayment] = useState<ReturnType<typeof parseUpi> | null>(null),
-    [payeeAddress, setPayeeAddress] = useState(""),
-    [paymentSource, setPaymentSource] = useState<"scan" | "manual">("scan"),
-    [pasteMode, setPasteMode] = useState(false);
-  const action = useAction();
-  const router = useRouter();
-  const c = useColors();
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const scannerTopInset = Platform.OS === "ios" ? 110 : 96;
-  const scannerBottomInset = pasteMode ? 250 : 174;
-  const scannerSpace = Math.max(
-    170,
-    screenHeight - scannerTopInset - scannerBottomInset,
-  );
-  const scanSize = Math.min(300, screenWidth * 0.76, scannerSpace);
-  const scanLeft = (screenWidth - scanSize) / 2;
-  const scanTop = scannerTopInset + Math.max(0, (scannerSpace - scanSize) / 2);
-  const closeScanner = useCallback(() => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/");
-  }, [router]);
-  useFocusEffect(
-    useCallback(() => {
-      const listener = BackHandler.addEventListener("hardwareBackPress", () => {
-        closeScanner();
-        return true;
-      });
-      return () => listener.remove();
-    }, [closeScanner]),
-  );
-  const inspect = (value: string, source: "scan" | "manual" = "scan") => {
-    try {
-      const result = parseUpi(value);
-      setPayment(result);
-      setPaymentSource(source);
-      setPayeeAddress(result.payeeAddress);
-      setUri(result.uri);
-      action.setError("");
-    } catch (e) {
-      action.setError((e as Error).message);
-    }
-  };
-  const inspectEntry = (value: string) => {
-    const entered = value.trim();
-    const paymentUri = entered.toLowerCase().startsWith("upi:")
-      ? entered
-      : `upi://pay?pa=${encodeURIComponent(entered)}&pn=${encodeURIComponent(entered)}&cu=INR`;
-    inspect(paymentUri, "manual");
-  };
-
-  const pickImage = async () => {
-    try {
-      const picked = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        quality: 0.85,
-      });
-      if (picked.canceled || !picked.assets.length) return;
-      const uri = picked.assets[0].uri;
-      if (typeof (CameraView as any).scanFromURLAsync === "function") {
-        const results = await (CameraView as any).scanFromURLAsync(uri, ["qr"]);
-        if (results && results.length > 0 && results[0].data) {
-          inspect(results[0].data);
-          return;
-        }
-      }
-      action.setError(
-        "No valid QR code detected in this photo. Try pasting the UPI link below.",
-      );
-      setPasteMode(true);
-    } catch (e) {
-      action.setError((e as Error).message);
-    }
-  };
-
-  // Permission request screen
-  if (!permission?.granted) {
-    return (
-      <DataScreen>
-        {() => (
-          <YStack
-            gap={28}
-            alignItems="center"
-            justifyContent="center"
-            paddingTop={80}
-            maxWidth={400}
-            alignSelf="center"
-            width="100%"
-          >
-            <View
-              style={{
-                width: 90,
-                height: 90,
-                borderRadius: 28,
-                backgroundColor: "#4F46E520",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <Icon name="scan" size={44} color="#4F46E5" />
-            </View>
-            <Heading size={22}>Scan a UPI QR code</Heading>
-            <Label muted style={{ textAlign: "center" }}>
-              SettleUp needs camera access to read QR codes. Your camera feed is
-              never stored or transmitted.
-            </Label>
-            <YStack gap={10} width="100%">
-              <Button
-                icon="camera"
-                style={{ width: "100%", minHeight: 50 }}
-                onPress={() =>
-                  action.run(async () => {
-                    const p = await requestPermission();
-                    if (!p.granted)
-                      throw new Error(
-                        "Camera permission was declined. You can enable it in Settings.",
-                      );
-                  }, "Camera enabled")
-                }
-              >
-                Allow camera access
-              </Button>
-              <Button
-                secondary
-                icon="image"
-                style={{ width: "100%", minHeight: 50 }}
-                onPress={pickImage}
-              >
-                Choose QR photo from gallery
-              </Button>
-              <Button
-                secondary
-                icon="edit"
-                style={{ width: "100%", minHeight: 50 }}
-                onPress={() => setPasteMode(true)}
-              >
-                Enter UPI ID instead
-              </Button>
-            </YStack>
-            {pasteMode && (
-              <YStack gap={12} width="100%">
-                <Field
-                  label="UPI ID or UPI URI"
-                  placeholder="merchant@upi"
-                  value={uri}
-                  onChangeText={setUri}
-                />
-                <Button secondary onPress={() => inspectEntry(uri)}>
-                  Review UPI ID
-                </Button>
-              </YStack>
-            )}
-            {!!action.error && <Notice error>{action.error}</Notice>}
-          </YStack>
-        )}
-      </DataScreen>
-    );
-  }
-
-  // Scan result screen
-  if (payment) {
-    // Merchant QRs carry a real merchant category code. Personal QRs either
-    // omit `mc` or use 0000.
-    const merchant = !!payment.fields.mc && payment.fields.mc !== "0000";
-    return (
-      <DataScreen>
-        {(d) => (
-          <YStack gap={18} maxWidth={760} width="100%" alignSelf="center">
-            <XStack alignItems="center" gap={12}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Back to scanner"
-                onPress={() => {
-                  setPayment(null);
-                  action.setError("");
-                }}
-                style={{
-                  minHeight: 44,
-                  minWidth: 44,
-                  justifyContent: "center",
-                }}
-              >
-                <Icon name="back" size={20} />
-              </Pressable>
-              <Heading size={20}>
-                {merchant ? "Shop QR" : "Save UPI ID"}
-              </Heading>
-            </XStack>
-
-            <Card style={{ padding: 20 }}>
-              <YStack gap={18}>
-                <YStack
-                  alignItems="center"
-                  gap={10}
-                  paddingVertical={12}
-                  borderBottomWidth={1}
-                  borderColor={c.line}
-                >
-                  <View
-                    style={{
-                      width: 56,
-                      height: 56,
-                      borderRadius: 18,
-                      backgroundColor: "#4F46E515",
-                      justifyContent: "center",
-                      alignItems: "center",
-                    }}
-                  >
-                    <Label bold size={24} color="#4F46E5">
-                      {payment.payeeName?.charAt(0)?.toUpperCase() || "?"}
-                    </Label>
-                  </View>
-                  <Heading size={20}>{payment.payeeName}</Heading>
-                </YStack>
-
-                <YStack gap={6}>
-                  <Field
-                    label="Payee UPI ID"
-                    value={payeeAddress}
-                    onChangeText={setPayeeAddress}
-                    editable={paymentSource === "manual"}
-                    placeholder="e.g. merchant@upi or 9876543210@paytm"
-                  />
-                  {paymentSource === "manual" && (
-                    <XStack flexWrap="wrap" gap={6}>
-                      {[
-                        "@paytm",
-                        "@ybl",
-                        "@okicici",
-                        "@oksbi",
-                        "@upi",
-                        "@axl",
-                      ].map((ext) => (
-                        <Chip
-                          key={ext}
-                          selected={payeeAddress.endsWith(ext)}
-                          onPress={() => {
-                            const base = payeeAddress.includes("@")
-                              ? payeeAddress.split("@")[0]
-                              : payeeAddress;
-                            setPayeeAddress(`${base}${ext}`);
-                          }}
-                        >
-                          {ext}
-                        </Chip>
-                      ))}
-                    </XStack>
-                  )}
-                  {paymentSource === "scan" && (
-                    <Label muted size={11}>
-                      Locked to the payee encoded in the scanned QR.
-                    </Label>
-                  )}
-                </YStack>
-
-                {!!payment.note && (
-                  <YStack gap={4}>
-                    <Label muted size={11}>
-                      Payment note
-                    </Label>
-                    <Label size={13}>{payment.note}</Label>
-                  </YStack>
-                )}
-
-                {merchant ? (
-                  <>
-                    <Notice>
-                      To pay this shop, scan the QR with your UPI app’s own
-                      scanner. SettleUp doesn’t start UPI payments.
-                    </Notice>
-                    <Button
-                      icon="plus"
-                      onPress={() =>
-                        router.push({
-                          pathname: "/add",
-                          params: {
-                            title: payment.payeeName,
-                            ...(payment.amountMinor !== undefined
-                              ? {
-                                  amount: (payment.amountMinor / 100).toFixed(2),
-                                }
-                              : {}),
-                          },
-                        })
-                      }
-                    >
-                      Add as expense
-                    </Button>
-                    <Label muted size={11}>
-                      Split it with a group after you pay.
-                    </Label>
-                    {isUpiId(payeeAddress) && (
-                      <Chip
-                        onPress={() =>
-                          void Clipboard.setStringAsync(payeeAddress.trim())
-                        }
-                      >
-                        Copy UPI ID
-                      </Chip>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <Notice>
-                      To pay {payment.payeeName}, scan their QR inside your
-                      UPI app. Save their UPI ID here so it’s ready when you
-                      settle up.
-                    </Notice>
-                    {isUpiId(payeeAddress) ? (
-                      <SaveUpiToPerson
-                        d={d}
-                        upiId={payeeAddress.trim()}
-                        payeeName={payment.payeeName}
-                      />
-                    ) : (
-                      <Notice error>Enter a valid UPI ID to save it.</Notice>
-                    )}
-                  </>
-                )}
-              </YStack>
-            </Card>
-          </YStack>
-        )}
-      </DataScreen>
-    );
-  }
-
-  // Full-screen camera scanner
-  return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1, backgroundColor: "#000" }}
-    >
-      <CameraView
-        style={StyleSheet.absoluteFill}
-        facing="back"
-        barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-        onBarcodeScanned={({ data }) => inspect(data)}
-      />
-
-      {/* Dark overlay with transparent cutout */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: scanTop,
-            backgroundColor: "rgba(0,0,0,0.55)",
-          }}
-        />
-        <View
-          style={{
-            position: "absolute",
-            top: scanTop + scanSize,
-            bottom: 0,
-            left: 0,
-            right: 0,
-            backgroundColor: "rgba(0,0,0,0.55)",
-          }}
-        />
-        <View
-          style={{
-            position: "absolute",
-            top: scanTop,
-            left: 0,
-            width: scanLeft,
-            height: scanSize,
-            backgroundColor: "rgba(0,0,0,0.55)",
-          }}
-        />
-        <View
-          style={{
-            position: "absolute",
-            top: scanTop,
-            right: 0,
-            width: scanLeft,
-            height: scanSize,
-            backgroundColor: "rgba(0,0,0,0.55)",
-          }}
-        />
-
-        {/* Scan frame corners */}
-        <View
-          style={{
-            position: "absolute",
-            top: scanTop,
-            left: scanLeft,
-            width: scanSize,
-            height: scanSize,
-          }}
-        >
-          <View
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: 30,
-              height: 30,
-              borderTopWidth: 3,
-              borderLeftWidth: 3,
-              borderColor: "#FFF",
-              borderTopLeftRadius: 8,
-            }}
-          />
-          <View
-            style={{
-              position: "absolute",
-              top: 0,
-              right: 0,
-              width: 30,
-              height: 30,
-              borderTopWidth: 3,
-              borderRightWidth: 3,
-              borderColor: "#FFF",
-              borderTopRightRadius: 8,
-            }}
-          />
-          <View
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              width: 30,
-              height: 30,
-              borderBottomWidth: 3,
-              borderLeftWidth: 3,
-              borderColor: "#FFF",
-              borderBottomLeftRadius: 8,
-            }}
-          />
-          <View
-            style={{
-              position: "absolute",
-              bottom: 0,
-              right: 0,
-              width: 30,
-              height: 30,
-              borderBottomWidth: 3,
-              borderRightWidth: 3,
-              borderColor: "#FFF",
-              borderBottomRightRadius: 8,
-            }}
-          />
-        </View>
-      </View>
-
-      {/* Top bar */}
-      <View
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          paddingTop: Platform.OS === "ios" ? 54 : 40,
-          paddingHorizontal: screenWidth < 360 ? 14 : 20,
-          paddingBottom: 16,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-          onPress={closeScanner}
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 20,
-            backgroundColor: "rgba(0,0,0,0.4)",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <Icon name="back" size={18} color="#FFF" />
-        </Pressable>
-        <Label bold size={16} color="#FFF">
-          Scan UPI QR
-        </Label>
-        <View style={{ width: 40 }} />
-      </View>
-
-      {/* Instruction text */}
-      <View
-        style={{
-          position: "absolute",
-          top: Math.max(96, scanTop - 38),
-          left: 0,
-          right: 0,
-          alignItems: "center",
-        }}
-      >
-        <Label size={13} color="rgba(255,255,255,0.85)">
-          Place QR code inside the frame
-        </Label>
-      </View>
-
-      {/* Bottom bar */}
-      <View
-        style={{
-          position: "absolute",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          paddingBottom: Platform.OS === "ios" ? 36 : 24,
-          paddingTop: 16,
-          paddingHorizontal: screenWidth < 360 ? 14 : 24,
-          backgroundColor: "rgba(0,0,0,0.65)",
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-          gap: 10,
-        }}
-      >
-        {!!action.error && (
-          <View
-            style={{
-              backgroundColor: "rgba(255,60,60,0.15)",
-              borderRadius: 10,
-              padding: 12,
-            }}
-          >
-            <Label size={12} color="#FF6B6B">
-              {action.error}
-            </Label>
-          </View>
-        )}
-
-        <Label size={12} color="rgba(255,255,255,0.82)" textAlign="center">
-          Scan a friend’s QR to save their UPI ID, or a shop QR to log an expense.
-        </Label>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={pickImage}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            backgroundColor: "rgba(255,255,255,0.18)",
-            paddingVertical: 10,
-            paddingHorizontal: 16,
-            borderRadius: 14,
-            marginTop: 4,
-          }}
-        >
-          <Icon name="image" color="#FFF" size={18} />
-          <Label bold size={13} color="#FFF">
-            Choose QR from Gallery / Photos
-          </Label>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setPasteMode((visible) => !visible)}
-          style={{
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: "rgba(255,255,255,0.12)",
-            paddingVertical: 10,
-            borderRadius: 14,
-          }}
-        >
-          <Label bold size={13} color="#FFF">
-            Enter UPI ID
-          </Label>
-        </Pressable>
-        {pasteMode && (
-          <XStack
-            gap={8}
-            alignItems="flex-end"
-            flexDirection={screenWidth < 340 ? "column" : "row"}
-          >
-            <View
-              style={{ flex: 1, width: screenWidth < 340 ? "100%" : undefined }}
-            >
-              <Field
-                label="UPI ID or UPI URI"
-                placeholder="merchant@upi"
-                value={uri}
-                onChangeText={setUri}
-              />
-            </View>
-            <Button
-              compact
-              style={{ width: screenWidth < 340 ? "100%" : undefined }}
-              onPress={() => inspectEntry(uri)}
-            >
-              Review
-            </Button>
-          </XStack>
-        )}
-      </View>
-    </KeyboardAvoidingView>
-  );
-}
 export function SmsScreen() {
   return (
     <DataScreen>
@@ -784,12 +177,21 @@ function SmsContent({ accountId }: { accountId: string }) {
     [history, setHistory] = useState<Record<string, SmsDecision>>({}),
     [editing, setEditing] = useState<string | null>(null),
     [editTitle, setEditTitle] = useState(""),
-    [showGuide, setShowGuide] = useState(true);
+    [showGuide, setShowGuide] = useState(true),
+    [keepApart, setKeepApart] = useState<ReadonlySet<string>>(new Set());
   const keys = useMemo(() => new Map<string, string>(), []);
   const filteredSuggestions = useMemo(() => {
     const query = search.trim().toLowerCase();
     // Incoming money is kept only for settle-up matching, not expense review.
-    const expenses = suggestions.filter((item) => item.direction !== "CREDIT");
+    const expenses = dedupeSmsSuggestions(
+      suggestions.filter((item) => item.direction !== "CREDIT"),
+      {
+        keepApart,
+        handled: custom
+          ? []
+          : Object.entries(history).map(([fingerprint, record]) => ({ fingerprint, ...record })),
+      },
+    );
     if (!query) return expenses;
     return expenses.filter((suggestion) =>
       [
@@ -804,7 +206,7 @@ function SmsContent({ accountId }: { accountId: string }) {
         .toLowerCase()
         .includes(query),
     );
-  }, [search, suggestions]);
+  }, [search, suggestions, keepApart, history, custom]);
   const perform = async (
     kind: "accept" | "reject" | "refresh",
     fingerprint: string,
@@ -821,31 +223,36 @@ function SmsContent({ accountId }: { accountId: string }) {
   };
   const decideOptimistically = async (
     kind: "accept" | "reject",
-    suggestion: ImportSuggestion,
+    group: SmsGroup,
     work: () => Promise<void>,
     success: string,
   ) => {
-    let previousIndex = 0;
+    const members = new Set(group.fingerprints);
+    let removed: ImportSuggestion[] = [];
     setSuggestions((current) => {
-      previousIndex = Math.max(
-        0,
-        current.findIndex(
-          (item) => item.fingerprint === suggestion.fingerprint,
-        ),
-      );
-      return current.filter(
-        (item) => item.fingerprint !== suggestion.fingerprint,
-      );
+      removed = current.filter((item) => members.has(item.fingerprint));
+      return current.filter((item) => !members.has(item.fingerprint));
     });
-    const saved = await perform(kind, suggestion.fingerprint, work, success);
+    const saved = await perform(kind, group.fingerprint, work, success);
     if (!saved)
       setSuggestions((current) => {
-        if (current.some((item) => item.fingerprint === suggestion.fingerprint))
-          return current;
-        const restored = [...current];
-        restored.splice(previousIndex, 0, suggestion);
-        return restored;
+        const present = new Set(current.map((item) => item.fingerprint));
+        return [...removed.filter((item) => !present.has(item.fingerprint)), ...current];
       });
+  };
+  const markGroup = async (
+    group: SmsGroup,
+    decision: "ACCEPTED" | "REJECTED",
+    title: string,
+  ) => {
+    for (const fingerprint of group.fingerprints)
+      await provider.markHandled(fingerprint, decision, group.occurredAt, {
+        title,
+        amountMinor: group.amountMinor,
+        reference: group.reference,
+        direction: group.direction,
+      });
+    setHistory(await provider.handled());
   };
   useEffect(() => {
     let live = true;
@@ -882,49 +289,18 @@ function SmsContent({ accountId }: { accountId: string }) {
       >
         <YStack flex={1}>
           <PageHero
-            eyebrow="Inbox"
             title="Bank SMS review"
             subtitle="Confirm, correct, or dismiss suggested transactions."
-          />
-        </YStack>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="How Bank SMS review works"
-          accessibilityHint="Shows the privacy explanation"
-          onPress={() => setShowGuide(true)}
-          style={({ pressed }) => ({
-            minHeight: 36,
-            paddingHorizontal: 10,
-            borderRadius: 12,
-            backgroundColor: pressed || showGuide ? c.soft : c.card,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-          })}
-        >
-          <View
-            style={{
-              width: 19,
-              height: 19,
-              borderRadius: 10,
-              borderWidth: 1.5,
-              borderColor: "#64748B",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
+            action={{ label: "How it works", onPress: () => setShowGuide(true) }}
           >
-            <Label bold size={11} color="#64748B">
-              i
-            </Label>
-          </View>
-          <Label bold size={11} color={c.muted}>
-            How it works
-          </Label>
-        </Pressable>
+          </PageHero>
+        </YStack>
+
       </XStack>
       {showGuide && <SmsPrivacyExplainer onClose={() => setShowGuide(false)} />}
       <Card style={{ padding: 14 }}>
         <YStack gap={11}>
+
           {!provider.available() ? (
             <Notice>
               {Platform.OS === "ios"
@@ -935,46 +311,51 @@ function SmsContent({ accountId }: { accountId: string }) {
             </Notice>
           ) : (
             <>
-              <XStack gap={9} alignItems="center">
-                <View
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 11,
-                    backgroundColor: c.soft,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Icon name="sms" size={18} color="#64748B" />
-                </View>
-                <Label muted size={11} flex={1} lineHeight={16}>
-                  The weekly inbox covers today and the previous six days. SMS
-                  bodies are not stored by SettleUp, and AI provider data
-                  collection is disabled.
+              <XStack gap={8} alignItems="center">
+                <Icon name="lock" size={14} color={c.muted} />
+                <Label muted size={12} flex={1}>
+                  Covers the last 7 days. Message text is never stored.
                 </Label>
               </XStack>
-              <XStack gap={8} flexWrap="wrap">
-                <Chip
-                  selected={!custom}
-                  onPress={() => {
-                    setCustom(false);
-                    setEditing(null);
-                    void provider.cachedSuggestions().then(setSuggestions);
-                  }}
-                >
-                  Last 7 days
-                </Chip>
-                <Chip
-                  selected={custom}
-                  onPress={() => {
-                    setCustom(true);
-                    setSuggestions([]);
-                    setEditing(null);
-                  }}
-                >
-                  Choose dates
-                </Chip>
+              <XStack
+                backgroundColor={c.soft}
+                borderRadius={12}
+                padding={4}
+              >
+                {(
+                  [
+                    { key: "week", label: "Last 7 days", on: !custom },
+                    { key: "custom", label: "Choose dates", on: custom },
+                  ] as const
+                ).map((seg) => (
+                  <Pressable
+                    key={seg.key}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: seg.on }}
+                    onPress={() => {
+                      if (seg.key === "week") {
+                        setCustom(false);
+                        setEditing(null);
+                        void provider.cachedSuggestions().then(setSuggestions);
+                      } else {
+                        setCustom(true);
+                        setSuggestions([]);
+                        setEditing(null);
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      alignItems: "center",
+                      paddingVertical: 9,
+                      borderRadius: 9,
+                      backgroundColor: seg.on ? c.card : "transparent",
+                    }}
+                  >
+                    <Label size={13} bold={seg.on} color={seg.on ? c.text : c.muted}>
+                      {seg.label}
+                    </Label>
+                  </Pressable>
+                ))}
               </XStack>
               {custom && (
                 <YStack gap={12}>
@@ -1073,7 +454,7 @@ function SmsContent({ accountId }: { accountId: string }) {
                   justifyContent: "center",
                 }}
               >
-                <Icon name="up" size={18} color="#64748B" />
+                <Icon name={titleIcon(s.title) ?? "wallet"} size={18} color={c.text} />
               </View>
               <YStack flex={1} minWidth={0} gap={2}>
                 {editing === s.fingerprint ? (
@@ -1106,31 +487,51 @@ function SmsContent({ accountId }: { accountId: string }) {
                     <Icon name="edit" size={13} color={c.muted} />
                   </Pressable>
                 )}
-                <Label muted size={10}>
-                  {s.direction.toLowerCase()} ·
-                  {new Date(s.occurredAt).toLocaleString()}
-                  {s.accountSuffix ? ` · A/c •${s.accountSuffix}` : ""}
+                <Label muted size={12}>
+                  {new Date(s.occurredAt).toLocaleString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                  {s.accountSuffix ? ` · A/c ••${s.accountSuffix}` : ""}
                 </Label>
+                {s.fingerprints.length > 1 && (
+                  <XStack gap={6} alignItems="center">
+                    <Label size={11} color={c.muted}>
+                      From {s.fingerprints.length} messages
+                    </Label>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Split into separate messages"
+                      hitSlop={8}
+                      onPress={() =>
+                        setKeepApart((current) => new Set([...current, ...s.fingerprints.slice(1)]))
+                      }
+                    >
+                      <Label size={11} bold color={c.primary}>
+                        Split
+                      </Label>
+                    </Pressable>
+                  </XStack>
+                )}
+                {!!s.possibleDuplicateOf && (
+                  <Label size={11} color={c.negative}>
+                    {s.possibleDuplicateOf === "handled"
+                      ? "Possible duplicate of one you already reviewed"
+                      : "Possible duplicate of a message above"}
+                  </Label>
+                )}
               </YStack>
-              <View
-                style={{
-                  backgroundColor: c.soft,
-                  borderRadius: 12,
-                  maxWidth: width < 360 ? 108 : 150,
-                  paddingHorizontal: width < 360 ? 8 : 11,
-                  paddingVertical: 8,
-                }}
+              <Label
+                size={width < 360 ? 15 : 17}
+                bold
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                maxWidth={width < 360 ? 110 : 150}
               >
-                <Label
-                  bold
-                  size={width < 360 ? 14 : 16}
-                  color="#514B8F"
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                >
-                  {money(s.amountMinor)}
-                </Label>
-              </View>
+                {money(s.amountMinor)}
+              </Label>
             </XStack>
             <XStack gap={7} alignItems="center">
               <Button
@@ -1143,21 +544,13 @@ function SmsContent({ accountId }: { accountId: string }) {
                     "reject",
                     s,
                     async () => {
-                      if (!custom) {
-                        await provider.markHandled(
-                          s.fingerprint,
-                          "REJECTED",
-                          s.occurredAt,
-                          { title: s.title, amountMinor: s.amountMinor },
-                        );
-                        setHistory(await provider.handled());
-                      }
+                      if (!custom) await markGroup(s, "REJECTED", s.title);
                     },
                     "Suggestion dismissed",
                   )
                 }
               >
-                Reject
+                Dismiss
               </Button>
               <Button
                 compact
@@ -1186,25 +579,18 @@ function SmsContent({ accountId }: { accountId: string }) {
                         participants: [],
                         splitMethod: "EQUAL",
                       });
-                      if (!custom) {
-                        await provider.markHandled(
-                          s.fingerprint,
+                      if (!custom)
+                        await markGroup(
+                          s,
                           "ACCEPTED",
-                          s.occurredAt,
-                          {
-                            title:
-                              editing === s.fingerprint ? editTitle : s.title,
-                            amountMinor: s.amountMinor,
-                          },
+                          editing === s.fingerprint ? editTitle : s.title,
                         );
-                        setHistory(await provider.handled());
-                      }
                     },
                     "Suggestion accepted",
                   )
                 }
               >
-                Accept
+                Add expense
               </Button>
             </XStack>
           </YStack>
@@ -1219,7 +605,7 @@ function SmsContent({ accountId }: { accountId: string }) {
       {!custom && Object.keys(history).length > 0 && (
         <Card>
           <YStack gap={12}>
-            <Heading size={18}>Reviewed this week</Heading>
+            <Heading size={17}>Reviewed this week</Heading>
             {Object.entries(history)
               .sort((a, b) => b[1].occurredAt.localeCompare(a[1].occurredAt))
               .map(([key, record]) => (
@@ -1232,12 +618,31 @@ function SmsContent({ accountId }: { accountId: string }) {
                         : ""}
                     </Label>
                     <Label muted size={11}>
-                      {new Date(record.occurredAt).toLocaleString()}
+                      {new Date(record.occurredAt).toLocaleString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
                     </Label>
                   </YStack>
-                  <Label>
-                    {record.decision === "ACCEPTED" ? "Accepted" : "Rejected"}
-                  </Label>
+                  <View
+                    style={{
+                      alignSelf: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      borderRadius: 999,
+                      backgroundColor: record.decision === "ACCEPTED" ? c.mint : c.soft,
+                    }}
+                  >
+                    <Label
+                      size={11}
+                      bold
+                      color={record.decision === "ACCEPTED" ? c.positive : c.muted}
+                    >
+                      {record.decision === "ACCEPTED" ? "Added" : "Dismissed"}
+                    </Label>
+                  </View>
                 </XStack>
               ))}
           </YStack>

@@ -238,6 +238,10 @@ model Transaction {
   deletedAt        DateTime?                @db.Timestamptz
   /// When several people paid one expense: [{ userId, amountMinor }].
   payers           Json?
+  /// Recurring schedule: { frequency, dayOfWeek?, dayOfMonth?, endDate? }
+  recurring        Json?
+  /// Trip mode: original currency before conversion.
+  tripCurrency     String?       @db.Char(3)
   correctsId       String?                  @db.Uuid
   corrects         Transaction?             @relation("Correction", fields: [correctsId], references: [id], onDelete: Restrict)
   corrections      Transaction[]            @relation("Correction")

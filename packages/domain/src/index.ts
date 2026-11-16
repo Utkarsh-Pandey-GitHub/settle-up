@@ -822,6 +822,181 @@ export function parseSms(
     return null;
   }
 }
+export type SmsGroup = ImportSuggestion & {
+  /** Every underlying message; the first is the earliest. */
+  fingerprints: string[];
+  /** Set when a similar message arrived 10–30 minutes apart, or was already handled. */
+  possibleDuplicateOf?: string;
+};
+export type HandledSms = {
+  fingerprint: string;
+  occurredAt: string;
+  amountMinor?: number;
+  reference?: string;
+  direction?: "DEBIT" | "CREDIT";
+};
+
+const MERGE_MS = 10 * 60_000;
+const FLAG_MS = 30 * 60_000;
+const REFERENCE_MS = 24 * 60 * 60_000;
+
+function normalizeReference(value?: string) {
+  const clean = value?.toUpperCase().replace(/[^A-Z0-9]/g, "") ?? "";
+  return clean.length >= 6 ? clean : "";
+}
+// Apps and banks often print different lengths of the same UTR, so compare by suffix.
+const sameReference = (a: string, b: string) =>
+  !!a && !!b && (a === b || a.endsWith(b) || b.endsWith(a));
+const referenceKey = (reference: string) => reference.slice(-6);
+const accountsCompatible = (a?: string, b?: string) => !a || !b || a === b;
+const genericTitle = (title: string) =>
+  /^bank transaction$/i.test(title) ||
+  /\b(UPI|IMPS|NEFT)\s*\/|\/(DR|CR)\//i.test(title) ||
+  (title.replace(/[^0-9]/g, "").length >= 6 && !/\s/.test(title.trim()));
+
+/**
+ * Collapses messages about the same payment (for example a bank SMS and a
+ * Paytm SMS). O(n log n) time for the sort; every other step is a hash lookup
+ * or a scan of same-amount messages inside a 30 minute window.
+ */
+export function dedupeSmsSuggestions(
+  items: ImportSuggestion[],
+  options: { handled?: HandledSms[]; keepApart?: ReadonlySet<string> } = {},
+): SmsGroup[] {
+  const keepApart = options.keepApart ?? new Set<string>();
+  const sorted = [...items].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const time = sorted.map((item) => Date.parse(item.occurredAt));
+  const refs = sorted.map((item) => normalizeReference(item.reference));
+  const groupOf = new Int32Array(sorted.length).fill(-1);
+  const groups: { members: number[]; ref: string; account?: string; flag?: string }[] = [];
+  const join = (i: number, j: number) => {
+    let g = groupOf[j];
+    if (g < 0) {
+      g = groups.push({ members: [j], ref: refs[j], account: sorted[j].accountSuffix }) - 1;
+      groupOf[j] = g;
+    }
+    const group = groups[g];
+    group.members.push(i);
+    group.ref ||= refs[i];
+    group.account ||= sorted[i].accountSuffix;
+    groupOf[i] = g;
+  };
+  const sameMoney = (i: number, j: number) =>
+    sorted[i].direction === sorted[j].direction && sorted[i].amountMinor === sorted[j].amountMinor;
+  const groupRef = (j: number) => (groupOf[j] < 0 ? refs[j] : groups[groupOf[j]].ref);
+  const groupAccount = (j: number) =>
+    groupOf[j] < 0 ? sorted[j].accountSuffix : groups[groupOf[j]].account;
+  const groupSize = (j: number) => (groupOf[j] < 0 ? 1 : groups[groupOf[j]].members.length);
+
+  // Pass 1: matching reference numbers are the strongest signal.
+  const byRef = new Map<string, number[]>();
+  sorted.forEach((item, i) => {
+    if (!refs[i] || keepApart.has(item.fingerprint)) return;
+    const key = referenceKey(refs[i]);
+    const seen = byRef.get(key) ?? [];
+    for (let k = seen.length - 1; k >= 0; k--) {
+      const j = seen[k];
+      if (time[i] - time[j] > REFERENCE_MS) break;
+      if (
+        sameMoney(i, j) &&
+        groupSize(j) < 3 &&
+        sameReference(refs[i], groupRef(j)) &&
+        accountsCompatible(item.accountSuffix, groupAccount(j))
+      ) {
+        join(i, j);
+        break;
+      }
+    }
+    seen.push(i);
+    byRef.set(key, seen);
+  });
+
+  // Pass 2: same amount close together, only between messages not yet paired.
+  const flagged = new Map<number, number>();
+  const byAmount = new Map<string, { list: number[]; head: number }>();
+  sorted.forEach((item, i) => {
+    if (keepApart.has(item.fingerprint)) return;
+    const key = `${item.direction}:${item.amountMinor}`;
+    const bucket = byAmount.get(key) ?? { list: [], head: 0 };
+    while (bucket.head < bucket.list.length && time[i] - time[bucket.list[bucket.head]] > FLAG_MS)
+      bucket.head++;
+    if (groupSize(i) === 1)
+      for (let k = bucket.list.length - 1; k >= bucket.head; k--) {
+        const j = bucket.list[k];
+        if (groupSize(j) !== 1 || flagged.has(j)) continue;
+        const a = refs[i], b = refs[j];
+        if ((a && b && !sameReference(a, b)) || !accountsCompatible(item.accountSuffix, sorted[j].accountSuffix))
+          continue;
+        if (time[i] - time[j] <= MERGE_MS) join(i, j);
+        else flagged.set(i, j);
+        break;
+      }
+    if (groupSize(i) === 1) bucket.list.push(i);
+    byAmount.set(key, bucket);
+  });
+
+  const result: SmsGroup[] = [];
+  const done = new Uint8Array(sorted.length);
+  sorted.forEach((_, i) => {
+    if (done[i]) return;
+    const members = groupOf[i] < 0 ? [i] : groups[groupOf[i]].members.sort((a, b) => a - b);
+    members.forEach((m) => (done[m] = 1));
+    const first = sorted[members[0]];
+    const titled = members.map((m) => sorted[m]).find((m) => !genericTitle(m.title)) ?? first;
+    const flag = flagged.get(i);
+    result.push({
+      ...first,
+      title: titled.title,
+      reference: members.map((m) => sorted[m].reference).find(Boolean),
+      accountSuffix: members.map((m) => sorted[m].accountSuffix).find(Boolean),
+      fingerprints: members.map((m) => sorted[m].fingerprint),
+      possibleDuplicateOf: flag === undefined ? undefined : sorted[flag].fingerprint,
+    });
+  });
+  return matchHandled(result.reverse(), options.handled ?? []);
+}
+
+/** Hides messages whose twin was already accepted or dismissed. */
+function matchHandled(groups: SmsGroup[], handled: HandledSms[]): SmsGroup[] {
+  if (!handled.length) return groups;
+  const refs = new Map<string, HandledSms[]>();
+  const amounts = new Map<string, { at: number; ref: string }[]>();
+  for (const record of handled) {
+    if (record.amountMinor === undefined) continue;
+    const ref = normalizeReference(record.reference);
+    if (ref) refs.set(referenceKey(ref), [...(refs.get(referenceKey(ref)) ?? []), record]);
+    const key = `${record.direction ?? "DEBIT"}:${record.amountMinor}`;
+    amounts.set(key, [...(amounts.get(key) ?? []), { at: Date.parse(record.occurredAt), ref }]);
+  }
+  amounts.forEach((list) => list.sort((a, b) => a.at - b.at));
+  const out: SmsGroup[] = [];
+  for (const group of groups) {
+    const ref = normalizeReference(group.reference);
+    const twin = ref
+      ? refs.get(referenceKey(ref))?.find(
+          (r) => r.amountMinor === group.amountMinor && sameReference(ref, normalizeReference(r.reference)),
+        )
+      : undefined;
+    if (twin) continue;
+    const list = amounts.get(`${group.direction}:${group.amountMinor}`);
+    if (list && !group.possibleDuplicateOf) {
+      const at = Date.parse(group.occurredAt);
+      let lo = 0, hi = list.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (list[mid].at < at - MERGE_MS) lo = mid + 1;
+        else hi = mid;
+      }
+      for (let k = lo; k < list.length && list[k].at <= at + MERGE_MS; k++)
+        if (!ref || !list[k].ref || sameReference(ref, list[k].ref)) {
+          group.possibleDuplicateOf = "handled";
+          break;
+        }
+    }
+    out.push(group);
+  }
+  return out;
+}
 export type Period =
   | "DAY"
   | "WEEK"
@@ -967,4 +1142,181 @@ export function assertShareAccess(
       "This link is unavailable or requires an authorized account.",
       404,
     );
+}
+
+const TAG_RULES: [RegExp, string][] = [
+  [/uber|ola|rapido|cab|taxi|auto|metro|fuel|petrol|diesel|parking|toll|bus|train/i, "Transport"],
+  [/flight|air|indigo|vistara|hotel|stay|trip|travel|airbnb|booking/i, "Travel"],
+  [/swiggy|zomato|food|dinner|lunch|breakfast|cafe|coffee|tea|chai|pizza|burger|restaurant|starbucks|snack|drinks?|bar\b/i, "Food & Drinks"],
+  [/rent|maintenance|society|flat|house|home/i, "Housing"],
+  [/electric|power|bill|wifi|internet|broadband|recharge|mobile|jio|airtel|gas|water/i, "Utilities"],
+  [/amazon|flipkart|myntra|grocer|blinkit|zepto|bigbasket|shopping|mart|store|clothes/i, "Shopping"],
+  [/movie|netflix|prime|hotstar|spotify|concert|game|play|gym|salon/i, "Entertainment"],
+  [/doctor|hospital|pharmacy|medicine|medical|health|lab|test|dental/i, "Health"],
+  [/school|college|course|tuition|book|exam|class|education/i, "Education"],
+  [/maid|cook|laundry|cleaning|dhobi|ironing|helper/i, "Household Help"],
+];
+
+/** Returns the best-matching tag name for a transaction title, or null. */
+export function autoTag(title: string): string | null {
+  const t = title.toLowerCase();
+  for (const [pattern, tag] of TAG_RULES) if (pattern.test(t)) return tag;
+  return null;
+}
+
+export type RecurringSchedule = {
+  frequency: "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+  monthOfYear?: number;
+  endDate?: string;
+};
+
+export function nextOccurrence(
+  schedule: RecurringSchedule,
+  after: string,
+  tz = "Asia/Kolkata",
+): string | null {
+  let dt = DateTime.fromISO(after, { zone: tz });
+  switch (schedule.frequency) {
+    case "DAILY":
+      dt = dt.plus({ days: 1 });
+      break;
+    case "WEEKLY":
+      dt = dt.plus({ weeks: 1 });
+      if (schedule.dayOfWeek != null) dt = dt.set({ weekday: schedule.dayOfWeek as 1|2|3|4|5|6|7 });
+      break;
+    case "MONTHLY":
+      dt = dt.plus({ months: 1 });
+      if (schedule.dayOfMonth) dt = dt.set({ day: Math.min(schedule.dayOfMonth, dt.daysInMonth!) });
+      break;
+    case "YEARLY":
+      dt = dt.plus({ years: 1 });
+      if (schedule.monthOfYear) dt = dt.set({ month: schedule.monthOfYear });
+      if (schedule.dayOfMonth) dt = dt.set({ day: Math.min(schedule.dayOfMonth, dt.daysInMonth!) });
+      break;
+  }
+  if (schedule.endDate && dt.toISODate()! > schedule.endDate) return null;
+  return dt.toISODate()!;
+}
+
+export type PipInsight = {
+  type: "spending_spike" | "stale_debt" | "top_category" | "streak" | "saved";
+  message: string;
+  severity: "info" | "warning";
+};
+
+export function pipInsights(data: {
+  transactions: { amountMinor: number; occurredAt: string; type: string; tagIds: string[]; sourceId: string }[];
+  obligations: { debtorId: string; creditorId: string; remainingMinor: number; currency: string }[];
+  tags: { id: string; name: string }[];
+  accountId: string;
+  people: { id: string; name: string }[];
+}, now = new Date()): PipInsight[] {
+  const insights: PipInsight[] = [];
+  const today = DateTime.fromJSDate(now, { zone: "Asia/Kolkata" });
+  const thisMonth = today.startOf("month");
+  const lastMonth = thisMonth.minus({ months: 1 });
+
+  const expenses = data.transactions.filter(
+    (t) => (t.type === "PERSONAL_EXPENSE" || t.type === "SHARED_EXPENSE") && t.sourceId === data.accountId,
+  );
+
+  const thisMonthTotal = expenses
+    .filter((t) => DateTime.fromISO(t.occurredAt) >= thisMonth)
+    .reduce((s, t) => s + t.amountMinor, 0);
+  const lastMonthTotal = expenses
+    .filter((t) => {
+      const d = DateTime.fromISO(t.occurredAt);
+      return d >= lastMonth && d < thisMonth;
+    })
+    .reduce((s, t) => s + t.amountMinor, 0);
+
+  if (lastMonthTotal > 0 && thisMonthTotal > lastMonthTotal * 1.2) {
+    const pct = Math.round(((thisMonthTotal - lastMonthTotal) / lastMonthTotal) * 100);
+    insights.push({
+      type: "spending_spike",
+      message: `You've spent ${pct}% more this month than last month`,
+      severity: "warning",
+    });
+  }
+
+  const tagTotals = new Map<string, number>();
+  for (const t of expenses.filter((t) => DateTime.fromISO(t.occurredAt) >= thisMonth)) {
+    for (const tagId of t.tagIds) tagTotals.set(tagId, (tagTotals.get(tagId) ?? 0) + t.amountMinor);
+  }
+  if (tagTotals.size) {
+    const [topId, topAmount] = [...tagTotals].sort((a, b) => b[1] - a[1])[0];
+    const tag = data.tags.find((t) => t.id === topId);
+    if (tag && thisMonthTotal > 0) {
+      const pct = Math.round((topAmount / thisMonthTotal) * 100);
+      insights.push({
+        type: "top_category",
+        message: `${tag.name} is ${pct}% of your spending this month (₹${Math.round(topAmount / 100).toLocaleString("en-IN")})`,
+        severity: "info",
+      });
+    }
+  }
+
+  const threeWeeksAgo = now.getTime() - 21 * 86400000;
+  for (const ob of data.obligations) {
+    if (ob.remainingMinor <= 0) continue;
+    const person = ob.debtorId === data.accountId
+      ? null
+      : data.people.find((p) => p.id === ob.debtorId);
+    if (!person) continue;
+    const oldest = data.transactions.find((t) =>
+      data.obligations.some(
+        (o) => o.debtorId === ob.debtorId && o.creditorId === ob.creditorId,
+      ),
+    );
+    if (oldest && Date.parse(oldest.occurredAt) < threeWeeksAgo) {
+      insights.push({
+        type: "stale_debt",
+        message: `${person.name} has owed you ₹${Math.round(ob.remainingMinor / 100).toLocaleString("en-IN")} for over 3 weeks`,
+        severity: "warning",
+      });
+    }
+  }
+
+  if (lastMonthTotal > 0 && thisMonthTotal < lastMonthTotal * 0.9) {
+    const saved = Math.round((lastMonthTotal - thisMonthTotal) / 100);
+    insights.push({
+      type: "saved",
+      message: `Great job! You've spent ₹${saved.toLocaleString("en-IN")} less than last month so far`,
+      severity: "info",
+    });
+  }
+
+  return insights.slice(0, 3);
+}
+
+export function whatsappReminder(input: {
+  personName: string;
+  amountMinor: number;
+  currency?: string;
+  upiId?: string;
+  phone?: string;
+}): { url: string; message: string } {
+  const amt = `₹${(input.amountMinor / 100).toLocaleString("en-IN")}`;
+  let msg = `Hey ${input.personName}! Just a friendly reminder — you owe me ${amt} on SettleUp.`;
+  if (input.upiId) msg += ` You can pay via UPI: ${input.upiId}`;
+  msg += `\n\nSent from SettleUp 💜`;
+  const phone = input.phone?.replace(/[^0-9]/g, "") ?? "";
+  const url = phone
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
+    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  return { url, message: msg };
+}
+
+export function whatsappGroupInvite(input: {
+  groupName: string;
+  inviterName: string;
+  joinLink: string;
+}): { url: string; message: string } {
+  const msg = `${input.inviterName} invited you to join "${input.groupName}" on SettleUp — the easiest way to split expenses!\n\nJoin here: ${input.joinLink}\n\nSent from SettleUp 💜`;
+  return {
+    url: `https://wa.me/?text=${encodeURIComponent(msg)}`,
+    message: msg,
+  };
 }

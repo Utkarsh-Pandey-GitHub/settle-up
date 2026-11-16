@@ -329,6 +329,22 @@ function DraftCard({
   );
 }
 
+function looksLikeExpense(text: string, hasPriorDraft?: boolean): boolean {
+  const t = text.trim().toLowerCase();
+  if (/\d/.test(t)) return true;
+  if (/\b(paid|spent|split|owe[sd]?|dinner|lunch|breakfast|cab|auto|uber|ola|rent|wifi|maid|bill|grocery|groceries|swiggy|zomato|amazon|flipkart)\b/.test(t)) return true;
+  if (hasPriorDraft) return true;
+  return false;
+}
+function casualReply(text: string): string {
+  const t = text.trim().toLowerCase();
+  if (/^(hi|hey|hello|yo|sup)\b/.test(t)) return "Hey! Tell me what you spent, or ask me anything about your money.";
+  if (/\b(thank|thanks|thx)\b/.test(t)) return "Anytime! Let me know if there's anything else.";
+  if (/\b(help|what can you do|what do you do)\b/.test(t)) return "I can log expenses, split bills, answer questions about your spending, and do quick maths. Just tell me what you need!";
+  if (/\b(bye|goodbye|see you)\b/.test(t)) return "See you! Your money is in good hands. 💰";
+  return "I'm not sure I follow — try telling me about an expense, or ask me something about your spending!";
+}
+
 function QuickAddChat({ d }: { d: Dashboard }) {
   const c = useColors();
   const router = useRouter();
@@ -337,7 +353,7 @@ function QuickAddChat({ d }: { d: Dashboard }) {
     {
       id: id(),
       role: "assistant",
-      text: "Tell me what you spent and I’ll draft the expense, or ask me anything about your money.",
+      text: "Hi! I’m Pip. Tell me what you spent, ask about your money, or just chat.",
     },
   ]);
   const [input, setInput] = useState(params.text ?? "");
@@ -371,17 +387,63 @@ function QuickAddChat({ d }: { d: Dashboard }) {
     setMessages((m) => [...m, { id: id(), role: "user", text }]);
     setBusy(true);
     try {
+      // Conversational assistant with server-side tools (spending, balances,
+      // drafts, maths). Falls back to the on-device readers if unavailable.
+      {
+        try {
+          const history = [...messages.slice(1), { role: "user" as const, text }]
+            .slice(-20)
+            .map((m) => ({ role: m.role, content: m.text }));
+          const reply = await request<{
+            reply: string;
+            draft?: QuickAddDraft;
+            result?: AskResult;
+          }>(DEMO ? "/ai/demo-chat" : "/ai/chat", {
+            ...(DEMO ? {} : { accountId: d.account.id }),
+            body: {
+              messages: history,
+              today: DateTime.now().setZone("Asia/Kolkata").toISODate(),
+              ...(DEMO ? { dashboard: d } : {}),
+            },
+          });
+          setMessages((m) => [
+            ...m,
+            {
+              id: id(),
+              role: "assistant",
+              text: reply.reply,
+              draft: reply.draft,
+              result: reply.result
+                ? { ...reply.result, followUps: reply.result.followUps ?? [] }
+                : undefined,
+            },
+          ]);
+          return;
+        } catch {
+          // fall through to offline handling
+        }
+      }
       if (isAskQuestion(text) || forceAsk) {
         const { query, result, offline } = await askData(d, text, lastQuery);
         setMessages((m) => [
           ...m,
           { id: id(), role: "assistant", text: result.answer, result, query, offline },
         ]);
-      } else {
+      } else if (looksLikeExpense(text, !!lastDraft)) {
         const { draft, offline } = await askAssistant(d, text, lastDraft);
         setMessages((m) => [
           ...m,
           { id: id(), role: "assistant", text: draft.reply, draft, offline },
+        ]);
+      } else {
+        setMessages((m) => [
+          ...m,
+          {
+            id: id(),
+            role: "assistant",
+            text: casualReply(text),
+            offline: true,
+          },
         ]);
       }
     } finally {
@@ -423,7 +485,6 @@ function QuickAddChat({ d }: { d: Dashboard }) {
           >
             <Icon name="back" size={20} />
           </Pressable>
-          <Icon name="bolt" size={22} color="#4F46E5" />
           <Heading size={24}>Quick Add</Heading>
         </XStack>
 
@@ -436,7 +497,18 @@ function QuickAddChat({ d }: { d: Dashboard }) {
       >
         {messages.length === 1 && (
           <View style={{ alignItems: "center", paddingVertical: 8 }}>
-            <Mascot size={96} mood="wave" />
+            <View
+              style={{
+                width: 148,
+                height: 148,
+                borderRadius: 74,
+                backgroundColor: c.accentSoft,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Mascot size={122} mood="wave" />
+            </View>
           </View>
         )}
         {messages.map((m) => (
@@ -450,8 +522,18 @@ function QuickAddChat({ d }: { d: Dashboard }) {
             }}
           >
             {m.role === "assistant" && messages.length > 1 && (
-              <View style={{ marginTop: 2 }}>
-                <Mascot size={30} mood={m.draft?.complete ? "success" : "wave"} animate={false} />
+              <View
+                style={{
+                  marginTop: 2,
+                  width: 42,
+                  height: 42,
+                  borderRadius: 21,
+                  backgroundColor: c.accentSoft,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Mascot size={36} mood={m.draft?.complete ? "success" : "wave"} animate={false} />
               </View>
             )}
             <View style={{ flexShrink: 1 }}>
@@ -524,7 +606,7 @@ function QuickAddChat({ d }: { d: Dashboard }) {
       >
         <TextInput
           accessibilityLabel="Describe an expense"
-          placeholder={lastDraft ? "Change something… (e.g. Kabir paid)" : "Add an expense or ask a question"}
+          placeholder="Message Pip"
           placeholderTextColor={c.muted}
           value={input}
           onChangeText={setInput}
